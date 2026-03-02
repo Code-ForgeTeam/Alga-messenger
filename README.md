@@ -1,0 +1,105 @@
+# Alga Messenger (Restored Frontend)
+
+React + TypeScript + Vite client prepared for web and Android (Capacitor) packaging.
+
+## 1) Setup
+
+```bash
+cp .env.example .env
+npm install
+npm run dev
+```
+
+## 2) Environment configuration
+
+All backend endpoints are configured via `.env`:
+
+- `VITE_API_BASE_URL` — REST API base, e.g. `https://api.example.com/api`
+- `VITE_SOCKET_URL` — Socket.IO server, e.g. `https://api.example.com`
+- `VITE_APP_HOST` — optional host for app-level integrations/version checks
+- `VITE_APP_VERSION_NAME` / `VITE_APP_VERSION_CODE` — version values used by client features
+
+To migrate backend to another host later, just update these values and rebuild.
+
+## 3) Production build
+
+```bash
+npm run build
+npm run preview
+```
+
+## 4) Android / APK flow (Capacitor)
+
+```bash
+npm run cap:add:android     # once
+npm run cap:sync            # after every frontend change
+npm run cap:open:android    # opens Android Studio
+```
+
+Then generate APK/AAB from Android Studio (`Build > Build Bundle(s) / APK(s)`).
+
+## 5) Notes
+
+- Project uses Vite env variables (`import.meta.env`), so build-time `.env` must be present.
+- If backend host changes, no code rewrite is needed; only env values should change.
+
+
+## 6) Build troubleshooting (MUI + Emotion)
+
+If you see an error like:
+`CacheProvider is not exported by __vite-optional-peer-dep:@emotion/react`
+it means Emotion peer dependencies are missing.
+
+Install/update:
+
+```bash
+npm install @emotion/react @emotion/styled
+```
+
+Then reinstall/build again:
+
+```bash
+npm install
+npm run build
+```
+
+
+## 7) Capacitor Android platform error
+
+If `npm run cap:add:android` prints:
+`Could not find the android platform`
+install the platform package first:
+
+```bash
+npm install @capacitor/android
+```
+
+Then run:
+
+```bash
+npm run cap:add:android
+npm run cap:sync
+npm run cap:open:android
+```
+
+
+## 8) Backend bootstrap (MySQL + API)
+
+Backend scaffold is in `backend/` and can be started with one flow:
+
+```bash
+cd backend && cp .env.example .env && npm install && docker compose up -d && npm run db:init && npm run dev
+```
+
+Then point frontend `.env` to this backend host.
+
+
+## 9) One-command local setup
+
+You can bootstrap frontend + backend + MySQL with one command:
+
+```bash
+npm run setup:local
+```
+
+Detailed deployment commands are in `DEPLOYMENT.md`.
