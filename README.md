@@ -42,3 +42,23 @@ Then generate APK/AAB from Android Studio (`Build > Build Bundle(s) / APK(s)`).
 
 - Project uses Vite env variables (`import.meta.env`), so build-time `.env` must be present.
 - If backend host changes, no code rewrite is needed; only env values should change.
+
+
+## 6) Build troubleshooting (MUI + Emotion)
+
+If you see an error like:
+`CacheProvider is not exported by __vite-optional-peer-dep:@emotion/react`
+it means Emotion peer dependencies are missing.
+
+Install/update:
+
+```bash
+npm install @emotion/react @emotion/styled
+```
+
+Then reinstall/build again:
+
+```bash
+npm install
+npm run build
+```
