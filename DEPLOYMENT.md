@@ -51,3 +51,14 @@ Then:
 npm install
 npm run build
 ```
+
+
+## 5) Beget free (SQL-only)
+
+If you only have SQL-console access on Beget, run schema script:
+
+```sql
+-- paste contents of backend/sql/beget_init.sql
+```
+
+Then deploy Node backend on another host and connect it to Beget MySQL. Full guide: `backend/BEGET_SQL_ONLY.md`.
