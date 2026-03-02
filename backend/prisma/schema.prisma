@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum ChatType {
+  private
+  group
+  saved
+  ai
+}
+
+enum UserStatus {
+  online
+  offline
+  away
+  hidden
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  closed
+}
+
+model User {
+  id           String      @id @default(uuid())
+  username     String      @unique
+  fullName     String
+  passwordHash String
+  avatar       String?
+  bio          String?
+  badge        String?
+  status       UserStatus  @default(offline)
+  lastSeen     DateTime?
+  isBanned     Boolean     @default(false)
+  banReason    String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  messages       Message[]
+  contactsOwned  Contact[]   @relation("ContactOwner")
+  contactsAsUser Contact[]   @relation("ContactUser")
+  chats          ChatParticipant[]
+  privacy        PrivacySetting?
+  ticketsAuthored SupportTicket[] @relation("TicketAuthor")
+  ticketsClaimed  SupportTicket[] @relation("TicketAgent")
+  supportMessages SupportMessage[]
+}
+
+model Chat {
+  id           String            @id @default(uuid())
+  name         String?
+  type         ChatType
+  avatar       String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  participants ChatParticipant[]
+  messages     Message[]
+}
+
+model ChatParticipant {
+  chatId       String
+  userId       String
+  archived     Boolean @default(false)
+  pinned       Boolean @default(false)
+  muted        Boolean @default(false)
+  blocked      Boolean @default(false)
+  unreadCount  Int     @default(0)
+
+  chat         Chat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, userId])
+}
+
+model Message {
+  id          String       @id @default(uuid())
+  chatId      String
+  userId      String
+  text        String       @db.Text
+  createdAt   DateTime     @default(now())
+  edited      Boolean      @default(false)
+  editedAt    DateTime?
+  replyToId   String?
+
+  chat        Chat         @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
+}
+
+model Attachment {
+  id          String   @id @default(uuid())
+  messageId   String
+  name        String
+  url         String
+  type        String
+  size        Int
+
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model Contact {
+  id            String  @id @default(uuid())
+  ownerUserId   String
+  contactUserId String
+  displayName   String
+
+  owner         User    @relation("ContactOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  user          User    @relation("ContactUser", fields: [contactUserId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerUserId, contactUserId])
+}
+
+model PrivacySetting {
+  userId            String @id
+  lastSeen          Json
+  profilePhoto      Json
+  bio               Json
+  searchByUsername  Json
+  hideReadTime      Boolean @default(false)
+
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id              String   @id @default(uuid())
+  title           String?
+  message         String?
+  icon            String?
+  bgColor         String?
+  textColor       String?
+  buttonText      String?
+  buttonUrl       String?
+  buttonColor     String?
+  buttonTextColor String?
+  dismissable     Boolean  @default(true)
+  showOnce        Boolean  @default(true)
+  minVersionCode  Int      @default(1)
+  isActive        Boolean  @default(true)
+}
+
+model SupportTicket {
+  id          String        @id @default(uuid())
+  authorId    String
+  agentId     String?
+  category    String
+  subject     String
+  status      TicketStatus  @default(open)
+  createdAt   DateTime      @default(now())
+  closedAt    DateTime?
+
+  author      User          @relation("TicketAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  agent       User?         @relation("TicketAgent", fields: [agentId], references: [id], onDelete: SetNull)
+  messages    SupportMessage[]
+}
+
+model SupportMessage {
+  id          String      @id @default(uuid())
+  ticketId    String
+  userId      String
+  text        String      @db.Text
+  createdAt   DateTime    @default(now())
+
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

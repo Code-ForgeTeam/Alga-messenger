@@ -81,3 +81,14 @@ npm run cap:add:android
 npm run cap:sync
 npm run cap:open:android
 ```
+
+
+## 8) Backend bootstrap (MySQL + API)
+
+Backend scaffold is in `backend/` and can be started with one flow:
+
+```bash
+cd backend && cp .env.example .env && npm install && docker compose up -d && npm run db:init && npm run dev
+```
+
+Then point frontend `.env` to this backend host.
