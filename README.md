@@ -62,3 +62,22 @@ Then reinstall/build again:
 npm install
 npm run build
 ```
+
+
+## 7) Capacitor Android platform error
+
+If `npm run cap:add:android` prints:
+`Could not find the android platform`
+install the platform package first:
+
+```bash
+npm install @capacitor/android
+```
+
+Then run:
+
+```bash
+npm run cap:add:android
+npm run cap:sync
+npm run cap:open:android
+```
