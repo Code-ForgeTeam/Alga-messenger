@@ -9,6 +9,7 @@ import { AuthPage } from './components/AuthPage';
 import { BottomNav } from './components/BottomNav';
 import { NotificationBanners } from './components/NotificationBanners';
 import { AppSnackbar } from './components/AppSnackbar';
+import { APP_VERSION_CODE } from './lib/config';
 
 const ChatsPage = lazy(() => import('./pages/ChatsPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
@@ -48,7 +49,7 @@ export default function App() {
     chatStore.initSocketHandlers();
     chatStore.loadChats();
     useSettingsStore.getState().loadPrivacyFromServer();
-    loadBanners(89);
+    loadBanners(APP_VERSION_CODE);
   }, [auth.isAuthenticated]);
 
   if (auth.banned) {

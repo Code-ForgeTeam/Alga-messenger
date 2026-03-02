@@ -20,7 +20,7 @@ api.interceptors.response.use(
         data: {
           error:
             error.code === 'ECONNREFUSED' || String(error.message).includes('Network Error')
-              ? 'Сервер недоступен. Убедитесь, что сервер запущен на порту 3001.'
+              ? `Сервер недоступен (${API_BASE_URL}). Проверьте адрес backend в .env.`
               : 'Ошибка подключения к серверу. Проверьте интернет-соединение.',
         },
       };
