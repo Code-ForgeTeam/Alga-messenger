@@ -4,18 +4,30 @@ import { BrowserRouter } from 'react-router-dom';
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import App from './App';
 import { useSettingsStore } from './stores/settingsStore';
-import { darkTheme, lightTheme } from './theme/themes';
+import { createCustomTheme, darkTheme, lightTheme } from './theme/themes';
 
 function Root() {
-  const { theme } = useSettingsStore();
+  const { theme, customColors } = useSettingsStore();
+  const muiTheme = theme === 'dark' ? darkTheme : theme === 'light' ? lightTheme : createCustomTheme(customColors);
+
   return (
-    <ThemeProvider theme={theme === 'dark' ? darkTheme : lightTheme}>
+    <ThemeProvider theme={muiTheme}>
       <CssBaseline />
       <BrowserRouter>
         <App />
       </BrowserRouter>
     </ThemeProvider>
   );
+}
+
+const viewport = window.visualViewport;
+if (viewport) {
+  const updateHeight = () => {
+    document.documentElement.style.setProperty('--app-height', `${viewport.height}px`);
+  };
+  viewport.addEventListener('resize', updateHeight);
+  viewport.addEventListener('scroll', updateHeight);
+  updateHeight();
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

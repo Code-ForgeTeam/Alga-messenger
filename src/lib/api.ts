@@ -18,9 +18,10 @@ api.interceptors.response.use(
     if (!error.response) {
       error.response = {
         data: {
-          error: error.code === 'ECONNREFUSED' || String(error.message).includes('Network Error')
-            ? 'Сервер недоступен. Убедитесь, что сервер запущен на порту 3001.'
-            : 'Ошибка подключения к серверу. Проверьте интернет-соединение.',
+          error:
+            error.code === 'ECONNREFUSED' || String(error.message).includes('Network Error')
+              ? 'Сервер недоступен. Убедитесь, что сервер запущен на порту 3001.'
+              : 'Ошибка подключения к серверу. Проверьте интернет-соединение.',
         },
       };
     }
@@ -46,24 +47,104 @@ export const authApi = {
     (await api.put('/users/me/password', { currentPassword, newPassword })).data,
 };
 
+export const userApi = {
+  getMe: async () => (await api.get('/users/me')).data,
+  getById: async (id: string) => (await api.get(`/users/${id}`)).data,
+  getByUsername: async (username: string) =>
+    (await api.get(`/users/by-username/${encodeURIComponent(username)}`)).data,
+  search: async (q: string) => (await api.get('/users/search', { params: { q } })).data,
+};
+
+export const aiApi = {
+  getAIChat: async () => (await api.get('/ai/chat')).data,
+  sendMessage: async (chatId: string, text: string) =>
+    (await api.post('/ai/message', { chatId, text })).data,
+};
+
+export const savedApi = {
+  getSavedChat: async () => (await api.get('/saved/chat')).data,
+};
+
 export const chatApi = {
   getChats: async () => (await api.get('/chats')).data,
   getById: async (chatId: string) => (await api.get(`/chats/${chatId}`)).data,
   create: async (name: string, type: string, participantIds: string[]) =>
     (await api.post('/chats', { name, type, participantIds })).data,
+  clear: async (chatId: string) => (await api.delete(`/chats/${chatId}/messages`)).data,
+  delete: async (chatId: string, deleteForAll = false) =>
+    (await api.delete(`/chats/${chatId}`, { data: { deleteForAll } })).data,
+  archive: async (chatId: string) => (await api.post(`/chats/${chatId}/archive`)).data,
+  unarchive: async (chatId: string) => (await api.delete(`/chats/${chatId}/archive`)).data,
+  mute: async (chatId: string) => (await api.post(`/chats/${chatId}/mute`)).data,
+  pin: async (chatId: string) => (await api.post(`/chats/${chatId}/pin`)).data,
+  block: async (chatId: string, userId: string) =>
+    (await api.post(`/chats/${chatId}/block`, { userId })).data,
+  unblock: async (chatId: string, userId: string) =>
+    (await api.delete(`/chats/${chatId}/block`, { data: { userId } })).data,
 };
 
 export const messageApi = {
   getByChatId: async (chatId: string, limit = 50, offset = 0) =>
     (await api.get(`/messages/chat/${chatId}`, { params: { limit, offset } })).data,
-  send: async (chatId: string, text: string, attachments: unknown[] = []) =>
-    (await api.post('/messages', { chatId, text, attachments })).data,
+  send: async (chatId: string, text: string, attachments: unknown[] = [], replyToId?: string) =>
+    (await api.post('/messages', { chatId, text, attachments, replyToId })).data,
   markAsRead: async (chatId: string) => (await api.post('/messages/read', { chatId })).data,
 };
 
-export const userApi = {
-  getById: async (id: string) => (await api.get(`/users/${id}`)).data,
-  getByUsername: async (username: string) =>
-    (await api.get(`/users/by-username/${encodeURIComponent(username)}`)).data,
-  search: async (q: string) => (await api.get('/users/search', { params: { q } })).data,
+export const notificationsApi = {
+  getActive: async (versionCode: number) =>
+    (await api.get('/notifications', { params: { vc: versionCode } })).data,
+  dismiss: async (id: string) => (await api.post(`/notifications/${id}/dismiss`)).data,
+};
+
+export const supportApi = {
+  createTicket: async (category: string, subject: string) =>
+    (await api.post('/support/tickets', { category, subject })).data,
+  getMyTickets: async () => (await api.get('/support/tickets/my')).data,
+  getAllTickets: async (status?: string) =>
+    (await api.get('/support/tickets', { params: status ? { status } : {} })).data,
+  getTicket: async (id: string) => (await api.get(`/support/tickets/${id}`)).data,
+  claimTicket: async (id: string) => (await api.post(`/support/tickets/${id}/claim`)).data,
+  closeTicket: async (id: string) => (await api.post(`/support/tickets/${id}/close`)).data,
+  getMessages: async (id: string) => (await api.get(`/support/tickets/${id}/messages`)).data,
+  sendMessage: async (id: string, text: string) =>
+    (await api.post(`/support/tickets/${id}/messages`, { text })).data,
+};
+
+export const storageApi = {
+  getStats: async () => (await api.get('/upload/storage-stats')).data,
+  clearCache: async () => (await api.delete('/upload/clear-cache')).data,
+};
+
+export const privacyApi = {
+  getSettings: async () => (await api.get('/users/me/privacy')).data,
+  updateSetting: async (
+    settingKey: string,
+    value: string,
+    alwaysShareWith: string[],
+    neverShareWith: string[],
+  ) =>
+    (
+      await api.put('/users/me/privacy', {
+        settingKey,
+        value,
+        alwaysShareWith,
+        neverShareWith,
+      })
+    ).data,
+};
+
+export const uploadApi = {
+  uploadFiles: async (files: File[]) => {
+    const form = new FormData();
+    files.forEach((file) => form.append('files', file));
+
+    const response = await api.post('/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    return response.data.files;
+  },
+  getFileInfo: async (id: string) => (await api.get(`/upload/info/${id}`)).data,
+  deleteFile: async (id: string) => (await api.delete(`/upload/${id}`)).data,
 };

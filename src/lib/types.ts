@@ -18,6 +18,9 @@ export interface Attachment {
   thumbnailUrl?: string;
   type: 'image' | 'video' | 'audio' | 'file';
   size: number;
+  width?: number;
+  height?: number;
+  duration?: number;
 }
 
 export interface Message {
@@ -29,7 +32,9 @@ export interface Message {
   createdAt: string;
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
   edited?: boolean;
+  editedAt?: string;
   replyTo?: { id: string; text: string; fullName?: string };
+  tempId?: string;
 }
 
 export interface Chat {
@@ -47,4 +52,33 @@ export interface Chat {
   lastMessage?: Message;
   lastMessageText?: string;
   lastMessageTime?: string;
+  updatedAt?: string;
+}
+
+export interface Contact {
+  id: string;
+  userId: string;
+  displayName: string;
+  user: User;
+}
+
+export interface NotificationBanner {
+  id: string;
+  title?: string;
+  message?: string;
+  icon?: string;
+  bgColor?: string;
+  textColor?: string;
+  buttonText?: string;
+  buttonUrl?: string;
+  buttonColor?: string;
+  buttonTextColor?: string;
+  dismissable?: boolean | number;
+  showOnce?: boolean;
+}
+
+export interface PrivacyRule {
+  value: 'everybody' | 'contacts' | 'nobody';
+  alwaysShareWith: string[];
+  neverShareWith: string[];
 }

@@ -20,13 +20,32 @@ export const connectSocket = (token: string) => {
     reconnectionDelay: 1000,
   });
 
+  (window as any).__socket = socket;
+
+  socket.on('connect_error', (e) => console.error('Socket connection error:', e));
+  socket.on('error', (e) => console.error('Socket error:', e));
+
   return socket;
 };
 
 export const getSocket = () => socket;
 
+export const isSocketConnected = () => !!(socket && socket.connected);
+
+export const reconnectSocket = () => {
+  const token = localStorage.getItem('token');
+  if (!token) return null;
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+    socket = null;
+  }
+  return connectSocket(token);
+};
+
 export const disconnectSocket = () => {
   if (!socket) return;
   socket.disconnect();
   socket = null;
+  (window as any).__socket = null;
 };
