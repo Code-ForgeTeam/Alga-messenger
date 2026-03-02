@@ -1,53 +1,41 @@
-# Alga Messenger Backend (MySQL)
+# Alga Messenger Backend (PHP)
 
-## Quick start (local)
+Backend rewritten to PHP (no Node.js required).
+
+## Structure
+
+- `public/index.php` — entrypoint/router
+- `app/` — config, db, jwt, API handlers
+- `sql/beget_init.sql` — MySQL schema bootstrap
+
+## 1) Configure environment
 
 ```bash
 cd backend
 cp .env.example .env
-npm install
-docker compose up -d
-npm run db:init
-npm run dev
 ```
 
-API: `http://localhost:3001/api`
-Health: `http://localhost:3001/health`
-
-Default seeded user:
-- username: `admin`
-- password: `admin12345`
-
-## Production (your hosting MySQL)
-
-1. Create MySQL database/user on hosting.
-2. Set `DATABASE_URL` in `.env`.
-3. Run:
-
-```bash
-npm install
-npm run prisma:generate
-npm run prisma:migrate || npm run prisma:push
-npm run prisma:seed
-npm run build
-npm run start
-```
-
-## Frontend wiring
-
-Set frontend `.env`:
+Fill DB credentials in `.env`:
 
 ```env
-VITE_API_BASE_URL=https://YOUR_BACKEND_HOST/api
-VITE_SOCKET_URL=https://YOUR_BACKEND_HOST
-VITE_APP_HOST=https://YOUR_BACKEND_HOST
+DB_HOST=...
+DB_PORT=3306
+DB_NAME=q99916rz_alga
+DB_USER=...
+DB_PASS=...
+JWT_SECRET=...
+CORS_ORIGIN=http://q99916rz.beget.tech
 ```
 
+## 2) Initialize database
 
-## One-command backend setup
+Run SQL from `sql/beget_init.sql` in your MySQL console.
+
+## 3) Run with PHP built-in server (for test)
 
 ```bash
-npm run setup:local
+cd backend
+php -S 0.0.0.0:3001 -t public
 ```
 
-This installs dependencies, starts MySQL in Docker, initializes Prisma schema and seed, and starts the API server.
+Healthcheck: `http://SERVER_IP:3001/health`

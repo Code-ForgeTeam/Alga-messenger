@@ -83,12 +83,15 @@ npm run cap:open:android
 ```
 
 
-## 8) Backend bootstrap (MySQL + API)
+## 8) Backend bootstrap (PHP + MySQL)
 
-Backend scaffold is in `backend/` and can be started with one flow:
+Backend lives in `backend/` and is now PHP-based (no Node.js required).
 
 ```bash
-cd backend && cp .env.example .env && npm install && docker compose up -d && npm run db:init && npm run dev
+cd backend
+cp .env.example .env
+# execute backend/sql/beget_init.sql in MySQL console
+php -S 0.0.0.0:3001 -t public
 ```
 
 Then point frontend `.env` to this backend host.
@@ -96,7 +99,7 @@ Then point frontend `.env` to this backend host.
 
 ## 9) One-command local setup
 
-You can bootstrap frontend + backend + MySQL with one command:
+Prepare frontend and backend `.env` files + install frontend deps:
 
 ```bash
 npm run setup:local
