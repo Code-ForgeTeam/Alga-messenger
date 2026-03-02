@@ -42,3 +42,12 @@ VITE_API_BASE_URL=https://YOUR_BACKEND_HOST/api
 VITE_SOCKET_URL=https://YOUR_BACKEND_HOST
 VITE_APP_HOST=https://YOUR_BACKEND_HOST
 ```
+
+
+## One-command backend setup
+
+```bash
+npm run setup:local
+```
+
+This installs dependencies, starts MySQL in Docker, initializes Prisma schema and seed, and starts the API server.

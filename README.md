@@ -92,3 +92,14 @@ cd backend && cp .env.example .env && npm install && docker compose up -d && npm
 ```
 
 Then point frontend `.env` to this backend host.
+
+
+## 9) One-command local setup
+
+You can bootstrap frontend + backend + MySQL with one command:
+
+```bash
+npm run setup:local
+```
+
+Detailed deployment commands are in `DEPLOYMENT.md`.
