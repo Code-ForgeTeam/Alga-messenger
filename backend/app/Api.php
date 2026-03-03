@@ -7,11 +7,10 @@ use PDO;
 
 final class Api
 {
-    private PDO $db;
+    private ?PDO $db = null;
 
     public function __construct()
     {
-        $this->db = Database::connection();
     }
 
     public function handle(): void
@@ -22,7 +21,8 @@ final class Api
             return;
         }
 
-        $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+        $rawPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+        $path = $this->normalizePath($rawPath);
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
         $body = json_decode(file_get_contents('php://input') ?: '[]', true) ?: [];
 
@@ -49,7 +49,7 @@ final class Api
 
         $id = $this->uuid();
         $hash = password_hash($p, PASSWORD_BCRYPT);
-        $stmt = $this->db->prepare('INSERT INTO users (id, username, full_name, password_hash) VALUES (?, ?, ?, ?)');
+        $stmt = $this->db()->prepare('INSERT INTO users (id, username, full_name, password_hash) VALUES (?, ?, ?, ?)');
         try {
             $stmt->execute([$id, $u, $n, $hash]);
         } catch (\Throwable) {
@@ -64,7 +64,7 @@ final class Api
     {
         $u = trim((string)($body['username'] ?? ''));
         $p = (string)($body['password'] ?? '');
-        $stmt = $this->db->prepare('SELECT id, username, full_name, password_hash FROM users WHERE username = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, password_hash FROM users WHERE username = ? LIMIT 1');
         $stmt->execute([$u]);
         $user = $stmt->fetch();
         if (!$user || !password_verify($p, $user['password_hash'])) $this->json(['error' => 'Invalid credentials'], 401);
@@ -76,7 +76,7 @@ final class Api
     private function verify(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db->prepare('SELECT id, username, full_name FROM users WHERE id = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$userId]);
         $u = $stmt->fetch();
         if (!$u) $this->json(['error' => 'Unauthorized'], 401);
@@ -86,7 +86,7 @@ final class Api
     private function chats(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db->prepare('SELECT c.id, c.name, c.type, c.updated_at FROM chats c JOIN chat_participants cp ON cp.chat_id = c.id WHERE cp.user_id = ? ORDER BY c.updated_at DESC');
+        $stmt = $this->db()->prepare('SELECT c.id, c.name, c.type, c.updated_at FROM chats c JOIN chat_participants cp ON cp.chat_id = c.id WHERE cp.user_id = ? ORDER BY c.updated_at DESC');
         $stmt->execute([$userId]);
         $rows = $stmt->fetchAll();
         foreach ($rows as &$r) {
@@ -100,7 +100,7 @@ final class Api
     private function chatMessages(string $chatId): void
     {
         $this->authUserId();
-        $stmt = $this->db->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
+        $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
         $stmt->execute([$chatId]);
         $this->json($stmt->fetchAll());
     }
@@ -108,10 +108,39 @@ final class Api
     private function authUserId(): string
     {
         $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-        if (!str_starts_with($auth, 'Bearer ')) $this->json(['error' => 'Unauthorized'], 401);
+        if (!$this->startsWith($auth, 'Bearer ')) $this->json(['error' => 'Unauthorized'], 401);
         $payload = Jwt::verify(substr($auth, 7));
         if (!$payload || empty($payload['userId'])) $this->json(['error' => 'Unauthorized'], 401);
         return (string)$payload['userId'];
+    }
+
+
+
+    private function db(): PDO
+    {
+        if ($this->db === null) {
+            $this->db = Database::connection();
+        }
+        return $this->db;
+    }
+
+    private function normalizePath(string $rawPath): string
+    {
+        if (strpos($rawPath, '/index.php/') !== false) {
+            $parts = explode('/index.php/', $rawPath, 2);
+            return '/' . ltrim($parts[1], '/');
+        }
+
+        if (substr($rawPath, -10) === '/index.php') {
+            return '/';
+        }
+
+        return $rawPath;
+    }
+
+    private function startsWith(string $haystack, string $needle): bool
+    {
+        return substr($haystack, 0, strlen($needle)) === $needle;
     }
 
     private function cors(): void
