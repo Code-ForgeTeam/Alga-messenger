@@ -51,6 +51,31 @@ In Android Studio:
 
 Then copy APK from that folder to your phone and install.
 
+
+## 4.1) First-time Android setup (important)
+
+If you see:
+`android platform has not been added yet`
+run first-time init once:
+
+```bash
+npm run cap:prepare:android
+```
+
+Then every build cycle:
+
+```bash
+npm run build
+npm run cap:sync:android
+npm run cap:open:android
+```
+
+Or use one auto command that adds platform if missing, syncs and opens Android Studio:
+
+```bash
+npm run cap:open:android:auto
+```
+
 ## 5) iOS IPA without Xcode (important)
 
 Direct local IPA build **without Xcode** is not supported by Apple toolchain.
