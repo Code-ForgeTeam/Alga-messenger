@@ -1,8 +1,25 @@
-# Alga Messenger (Restored Frontend)
+# Alga Messenger Frontend (Vite + React + Capacitor)
 
-React + TypeScript + Vite client prepared for web and Android (Capacitor) packaging.
+## 1) Important: env path for APK build
 
-## 1) Setup
+For Android/iOS build, Vite reads variables at build time.
+Use **root** file `.env.production` (not backend env):
+
+```bash
+cp .env.production.example .env.production
+```
+
+Set your backend URL in `.env.production`:
+
+```env
+VITE_API_BASE_URL=http://q99916rz.beget.tech/backend/public/index.php/api
+VITE_SOCKET_URL=
+VITE_APP_HOST=http://q99916rz.beget.tech/backend/public/index.php
+```
+
+If this file is missing, app can fallback to localhost in dev mode and fail in APK.
+
+## 2) Local web run
 
 ```bash
 cp .env.example .env
@@ -10,99 +27,46 @@ npm install
 npm run dev
 ```
 
-## 2) Environment configuration
-
-All backend endpoints are configured via `.env`:
-
-- `VITE_API_BASE_URL` — REST API base, e.g. `https://api.example.com/api`
-- `VITE_SOCKET_URL` — Socket.IO server, e.g. `https://api.example.com`
-- `VITE_APP_HOST` — optional host for app-level integrations/version checks
-- `VITE_APP_VERSION_NAME` / `VITE_APP_VERSION_CODE` — version values used by client features
-
-To migrate backend to another host later, just update these values and rebuild.
-
-## 3) Production build
+## 3) Build web production
 
 ```bash
 npm run build
 npm run preview
 ```
 
-## 4) Android / APK flow (Capacitor)
+## 4) Android APK (real file extraction)
 
 ```bash
-npm run cap:add:android     # once
-npm run cap:sync            # after every frontend change
-npm run cap:open:android    # opens Android Studio
-```
-
-Then generate APK/AAB from Android Studio (`Build > Build Bundle(s) / APK(s)`).
-
-## 5) Notes
-
-- Project uses Vite env variables (`import.meta.env`), so build-time `.env` must be present.
-- If backend host changes, no code rewrite is needed; only env values should change.
-
-
-## 6) Build troubleshooting (MUI + Emotion)
-
-If you see an error like:
-`CacheProvider is not exported by __vite-optional-peer-dep:@emotion/react`
-it means Emotion peer dependencies are missing.
-
-Install/update:
-
-```bash
-npm install @emotion/react @emotion/styled
-```
-
-Then reinstall/build again:
-
-```bash
-npm install
 npm run build
-```
-
-
-## 7) Capacitor Android platform error
-
-If `npm run cap:add:android` prints:
-`Could not find the android platform`
-install the platform package first:
-
-```bash
-npm install @capacitor/android
-```
-
-Then run:
-
-```bash
-npm run cap:add:android
 npm run cap:sync
 npm run cap:open:android
 ```
 
+In Android Studio:
+1. `Build` -> `Build Bundle(s) / APK(s)` -> `Build APK(s)`
+2. Click `locate` in success popup
+3. APK path usually:
+   - `android/app/build/outputs/apk/debug/app-debug.apk`
+   - or `android/app/build/outputs/apk/release/app-release.apk`
 
-## 8) Backend bootstrap (PHP + MySQL)
+Then copy APK from that folder to your phone and install.
 
-Backend lives in `backend/` and is now PHP-based (no Node.js required).
+## 5) iOS IPA without Xcode (important)
 
-```bash
-cd backend
-cp .env.example .env
-# execute backend/sql/beget_init.sql in MySQL console
-php -S 0.0.0.0:3001 -t public
-```
+Direct local IPA build **without Xcode** is not supported by Apple toolchain.
+You have options:
 
-Then point frontend `.env` to this backend host.
+- Use a Mac + Xcode (standard way), or
+- Use cloud CI that has macOS/Xcode runners (Codemagic, Bitrise, GitHub Actions macOS, etc.)
 
+So: no pure Windows/Linux local command can produce signed IPA without macOS build environment.
 
-## 9) One-command local setup
+## 6) Backend (PHP)
 
-Prepare frontend and backend `.env` files + install frontend deps:
+Backend is in `backend/` and can run without Node.js.
+DB schema: `backend/sql/beget_init.sql`.
+Health URL check example:
 
-```bash
-npm run setup:local
-```
+- `http://q99916rz.beget.tech/backend/public/index.php/health`
 
-Detailed deployment commands are in `DEPLOYMENT.md`.
+If health returns `{"ok":true}`, backend entrypoint works.
