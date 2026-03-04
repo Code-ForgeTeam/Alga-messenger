@@ -14,13 +14,27 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const requestConfig = error.config ?? {};
+    const originalBaseUrl = String(requestConfig.baseURL || API_BASE_URL || '');
+    const isNetworkError = !error.response;
+    const canRetryWithHttps =
+      isNetworkError &&
+      originalBaseUrl.startsWith('http://') &&
+      !requestConfig.__httpsFallbackRetried;
+
+    if (canRetryWithHttps) {
+      requestConfig.__httpsFallbackRetried = true;
+      requestConfig.baseURL = originalBaseUrl.replace(/^http:\/\//, 'https://');
+      return api.request(requestConfig);
+    }
+
     if (!error.response) {
       error.response = {
         data: {
           error:
             error.code === 'ECONNREFUSED' || String(error.message).includes('Network Error')
-              ? `Сервер недоступен (${API_BASE_URL}). Проверьте адрес backend в .env/.env.production.`
+              ? `Сервер недоступен (${originalBaseUrl || API_BASE_URL}). Проверьте адрес backend в .env/.env.production.`
               : 'Ошибка подключения к серверу. Проверьте интернет-соединение.',
         },
       };
