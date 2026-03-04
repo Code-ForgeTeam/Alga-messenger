@@ -59,7 +59,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (username, password) => {
     set({ isLoading: true, error: null, banned: false, banReason: '' });
     try {
-      const { token, user } = await authApi.login(username, password);
+      const { token, user: responseUser } = await authApi.login(username, password);
+      const user = responseUser ?? (await authApi.verify()).user;
       localStorage.setItem('token', token);
       connectSocket(token);
       set({ user, token, isAuthenticated: true, isLoading: false });
@@ -81,7 +82,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   register: async (username, fullName, password) => {
     set({ isLoading: true, error: null });
     try {
-      const { token, user } = await authApi.register(username, fullName, password);
+      const { token, user: responseUser } = await authApi.register(username, fullName, password);
+      const user = responseUser ?? (await authApi.verify()).user;
       localStorage.setItem('token', token);
       connectSocket(token);
       set({ user, token, isAuthenticated: true, isLoading: false });

@@ -4,6 +4,10 @@ import { SOCKET_URL } from './config';
 let socket: Socket | null = null;
 
 export const connectSocket = (token: string) => {
+  if (!SOCKET_URL) {
+    return null;
+  }
+
   if (socket && (socket.connected || socket.active)) return socket;
 
   if (socket) {
