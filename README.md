@@ -95,3 +95,15 @@ Health URL check example:
 - `http://q99916rz.beget.tech/backend/public/index.php/health`
 
 If health returns `{"ok":true}`, backend entrypoint works.
+
+
+## 7) API endpoint sanity checks
+
+- `.../index.php/health` -> `{"ok":true}`
+- `.../index.php/api` -> `{"ok":true,...}`
+
+Note: `.../index.php/api/auth/register` is the real register endpoint.
+
+If APK says `server unavailable` while browser health is OK, common reasons:
+- Android cleartext HTTP blocked (fixed in `capacitor.config.ts` with `server.cleartext: true`)
+- CORS mismatch for Capacitor origin (`capacitor://localhost`). Set backend `CORS_ORIGIN=*` or include all required origins.

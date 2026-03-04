@@ -27,6 +27,7 @@ final class Api
         $body = json_decode(file_get_contents('php://input') ?: '[]', true) ?: [];
 
         if ($path === '/health') { $this->json(['ok' => true]); }
+        if ($path === '/api') { $this->json(['ok' => true, 'message' => 'API root']); }
 
         if ($path === '/api/auth/register' && $method === 'POST') { $this->register($body); }
         if ($path === '/api/auth/login' && $method === 'POST') { $this->login($body); }
@@ -145,8 +146,21 @@ final class Api
 
     private function cors(): void
     {
-        $origin = Config::get('CORS_ORIGIN', '*');
-        header('Access-Control-Allow-Origin: ' . $origin);
+        $originConfig = (string)Config::get('CORS_ORIGIN', '*');
+        $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+        if ($originConfig === '*') {
+            header('Access-Control-Allow-Origin: *');
+        } else {
+            $allowed = array_map('trim', explode(',', $originConfig));
+            if ($requestOrigin !== '' && in_array($requestOrigin, $allowed, true)) {
+                header('Access-Control-Allow-Origin: ' . $requestOrigin);
+            } else {
+                header('Access-Control-Allow-Origin: ' . $allowed[0]);
+            }
+            header('Vary: Origin');
+        }
+
         header('Access-Control-Allow-Headers: Content-Type, Authorization');
         header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
         header('Content-Type: application/json');
