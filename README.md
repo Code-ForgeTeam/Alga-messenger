@@ -84,6 +84,18 @@ Or use one auto command that adds platform if missing, syncs and opens Android S
 npm run cap:open:android:auto
 ```
 
+If Android Studio shows this error:
+
+`Could not read script '.../android/capacitor.settings.gradle' as it does not exist`
+
+it means Capacitor files were not generated/synced yet. Run:
+
+```bash
+npm run cap:open:android
+```
+
+Now this command always runs `cap sync android` before opening Android Studio.
+
 ## 5) iOS IPA without Xcode (important)
 
 Direct local IPA build **without Xcode** is not supported by Apple toolchain.
