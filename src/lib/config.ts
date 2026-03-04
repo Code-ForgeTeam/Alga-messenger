@@ -10,3 +10,5 @@ export const APP_VERSION_CODE = Number(env.VITE_APP_VERSION_CODE || 1);
 if (!API_BASE_URL) {
   console.warn('[config] VITE_API_BASE_URL is empty. For APK/production, set it in .env.production before build.');
 }
+
+export const DEBUG_API_INFO = env.VITE_DEBUG_API_INFO === '1';

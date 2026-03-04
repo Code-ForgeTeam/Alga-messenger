@@ -19,6 +19,14 @@ VITE_APP_HOST=http://q99916rz.beget.tech/backend/public/index.php
 
 If this file is missing, app can fallback to localhost in dev mode and fail in APK.
 
+For debugging APK backend URL, keep this flag enabled in production env:
+
+```env
+VITE_DEBUG_API_INFO=1
+```
+
+Then on Auth screen app shows resolved API URL.
+
 ## 2) Local web run
 
 ```bash

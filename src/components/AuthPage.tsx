@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Box, Button, CircularProgress, TextField, Typography } from '@mui/material';
 import { useAuthStore } from '../stores/authStore';
+import { API_BASE_URL, DEBUG_API_INFO } from '../lib/config';
 
 export function AuthPage() {
   const { login, register, isLoading, error } = useAuthStore();
@@ -28,6 +29,12 @@ export function AuthPage() {
         <Button fullWidth type="submit" variant="contained" disabled={isLoading}>
           {isLoading ? <CircularProgress size={18} /> : isRegister ? 'Register' : 'Login'}
         </Button>
+
+        {DEBUG_API_INFO && (
+          <Typography sx={{ mt: 2, fontSize: 11, color: 'text.secondary', wordBreak: 'break-all' }}>
+            API: {API_BASE_URL || '(empty)'}
+          </Typography>
+        )}
         <Button fullWidth sx={{ mt: 1 }} onClick={() => setIsRegister((v) => !v)}>
           {isRegister ? 'Have account? Login' : 'No account? Register'}
         </Button>
