@@ -20,6 +20,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
+import { AppHeader } from '../components/AppHeader';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -38,7 +39,7 @@ export default function SettingsPage() {
 
   return (
     <Box sx={{ p: 1.5, height: '100%', overflowY: 'auto' }}>
-      <Typography variant="h6" sx={{ px: 1, mb: 1.5 }}>Настройки</Typography>
+      <AppHeader title="Настройки" />
 
       <Paper elevation={0} sx={{ borderRadius: 3, p: 1.5, mb: 1.5, backgroundColor: 'background.paper' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>

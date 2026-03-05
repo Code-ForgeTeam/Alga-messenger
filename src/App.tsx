@@ -25,6 +25,7 @@ const DataStoragePage = lazy(() => import('./pages/DataStoragePage'));
 const DevicesPage = lazy(() => import('./pages/DevicesPage'));
 const ArchivePage = lazy(() => import('./pages/ArchivePage'));
 const AddContactPage = lazy(() => import('./pages/AddContactPage'));
+const FavoritesPage = lazy(() => import('./pages/FavoritesPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
@@ -126,6 +127,7 @@ export default function App() {
           <Route path="/devices" element={<Guard><DevicesPage /></Guard>} />
           <Route path="/archive" element={<Guard><ArchivePage /></Guard>} />
           <Route path="/add-contact" element={<Guard><AddContactPage /></Guard>} />
+          <Route path="/favorites" element={<Guard><FavoritesPage /></Guard>} />
           <Route path="/admin" element={<Guard><AdminPage /></Guard>} />
           <Route path="/support" element={<Guard><SupportPage /></Guard>} />
           <Route path="/support-agent" element={<Guard><SupportAgentPage /></Guard>} />

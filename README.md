@@ -1,15 +1,16 @@
-# Alga Messenger Frontend (Vite + React + Capacitor)
+# Alga Messenger
 
-## 1) Important: env path for APK build
+Короткая инструкция по сборке фронтенда и APK.
 
-For Android/iOS build, Vite reads variables at build time.
-Use **root** file `.env.production` (not backend env):
+## 1) Подготовка env
+
+Создайте `.env.production` в корне:
 
 ```bash
 cp .env.production.example .env.production
 ```
 
-Set your backend URL in `.env.production`:
+Пример:
 
 ```env
 VITE_API_BASE_URL=http://q99916rz.beget.tech/backend/public/index.php/api
@@ -18,108 +19,28 @@ VITE_APP_HOST=http://q99916rz.beget.tech/backend/public/index.php
 VITE_FORCE_HTTPS=0
 ```
 
-If this file is missing, app can fallback to localhost in dev mode and fail in APK.
+> Если нет SSL — оставляйте `http://`.
 
-## 2) Local web run
+## 2) Сборка APK (обязательная последовательность)
 
 ```bash
-cp .env.example .env
 npm install
-npm run dev
-```
-
-## 3) Build web production
-
-```bash
+npm audit fix --force
 npm run build
-npm run preview
-```
-
-## 4) Android APK (real file extraction)
-
-```bash
-npm run build
-npm run cap:sync
-npm run cap:open:android
-```
-
-In Android Studio:
-1. `Build` -> `Build Bundle(s) / APK(s)` -> `Build APK(s)`
-2. Click `locate` in success popup
-3. APK path usually:
-   - `android/app/build/outputs/apk/debug/app-debug.apk`
-   - or `android/app/build/outputs/apk/release/app-release.apk`
-
-Then copy APK from that folder to your phone and install.
-
-
-## 4.1) First-time Android setup (important)
-
-If you see:
-`android platform has not been added yet`
-run first-time init once:
-
-```bash
 npm run cap:prepare:android
-```
-
-Then every build cycle:
-
-```bash
-npm run build
-npm run cap:sync:android
 npm run cap:open:android
 ```
 
-Or use one auto command that adds platform if missing, syncs and opens Android Studio:
+Дальше в Android Studio:
+- `Build` → `Build Bundle(s) / APK(s)` → `Build APK(s)`
+- готовый APK обычно в `android/app/build/outputs/apk/...`
 
-```bash
-npm run cap:open:android:auto
-```
+## 3) Быстрая проверка backend
 
-If Android Studio shows this error:
+- `.../index.php/health` → `{"ok":true}`
+- `.../index.php/api` → `{"ok":true,...}`
+- регистрация: `POST .../index.php/api/auth/register`
 
-`Could not read script '.../android/capacitor.settings.gradle' as it does not exist`
+## 4) Backend
 
-it means Capacitor files were not generated/synced yet. Run:
-
-```bash
-npm run cap:open:android
-```
-
-Now this command always runs `cap sync android` before opening Android Studio.
-
-## 5) iOS IPA without Xcode (important)
-
-Direct local IPA build **without Xcode** is not supported by Apple toolchain.
-You have options:
-
-- Use a Mac + Xcode (standard way), or
-- Use cloud CI that has macOS/Xcode runners (Codemagic, Bitrise, GitHub Actions macOS, etc.)
-
-So: no pure Windows/Linux local command can produce signed IPA without macOS build environment.
-
-## 6) Backend (PHP)
-
-Backend is in `backend/` and can run without Node.js.
-DB schema: `backend/sql/beget_init.sql`.
-Health URL check example:
-
-- `http://q99916rz.beget.tech/backend/public/index.php/health`
-
-If health returns `{"ok":true}`, backend entrypoint works.
-
-
-## 7) API endpoint sanity checks
-
-- `.../index.php/health` -> `{"ok":true}`
-- `.../index.php/api` -> `{"ok":true,...}`
-
-Note: `.../index.php/api/auth/register` is the real register endpoint.
-
-If APK says `server unavailable` while browser health is OK, common reasons:
-- Android cleartext HTTP blocked (fixed in `capacitor.config.ts` with `server.cleartext: true`)
-- CORS mismatch for Capacitor origin (`capacitor://localhost`). Set backend `CORS_ORIGIN=*` or include all required origins.
-
-If you DO have SSL certificate, switch to `https://` in `.env.production` (or set `VITE_FORCE_HTTPS=1`).
-If SSL is NOT configured, keep `http://`.
+PHP backend находится в `backend/`, SQL схема — `backend/sql/beget_init.sql`.

@@ -1,6 +1,7 @@
 import { Box, Button, List, ListItemButton, ListItemText, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useContactsStore } from '../stores/contactsStore';
+import { AppHeader } from '../components/AppHeader';
 
 export default function ContactsPage() {
   const navigate = useNavigate();
@@ -8,10 +9,11 @@ export default function ContactsPage() {
 
   return (
     <Box sx={{ p: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-        <Typography variant="h6">Контакты</Typography>
-        <Button size="small" onClick={() => navigate('/add-contact')}>Add</Button>
-      </Box>
+      <AppHeader
+        title="Контакты"
+        showBack={false}
+        rightSlot={<Button size="small" onClick={() => navigate('/add-contact')}>Добавить</Button>}
+      />
 
       <List>
         {contacts.map((contact) => (

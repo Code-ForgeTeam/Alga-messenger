@@ -13,18 +13,18 @@ export function BottomNav() {
   const isAdmin = ['2'].includes(String(user?.id || ''));
 
   const tabs = [
-    { path: '/chats', label: 'Chats', icon: <ChatIcon /> },
-    { path: '/contacts', label: 'Contacts', icon: <ContactsIcon /> },
-    { path: '/settings', label: 'Settings', icon: <SettingsIcon /> },
-    ...(isAdmin ? [{ path: '/admin', label: 'Admin', icon: <AdminPanelSettingsIcon /> }] : []),
+    { path: '/chats', label: 'Чаты', icon: <ChatIcon /> },
+    { path: '/contacts', label: 'Контакты', icon: <ContactsIcon /> },
+    { path: '/settings', label: 'Настройки', icon: <SettingsIcon /> },
+    ...(isAdmin ? [{ path: '/admin', label: 'Админ', icon: <AdminPanelSettingsIcon /> }] : []),
   ];
 
   const value = tabs.findIndex((t) => t.path === pathname);
   if (value < 0) return null;
 
   return (
-    <Paper sx={{ position: 'fixed', left: 12, right: 12, bottom: 12, borderRadius: 4 }} elevation={8}>
-      <BottomNavigation value={value} onChange={(_, v) => navigate(tabs[v].path)}>
+    <Paper sx={{ position: 'fixed', left: 12, right: 12, bottom: 12, borderRadius: 6, overflow: 'hidden' }} elevation={8}>
+      <BottomNavigation value={value} onChange={(_, v) => navigate(tabs[v].path)} showLabels>
         {tabs.map((tab) => (
           <BottomNavigationAction key={tab.path} label={tab.label} icon={tab.icon} />
         ))}

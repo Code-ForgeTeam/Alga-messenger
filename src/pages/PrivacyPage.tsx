@@ -1,5 +1,6 @@
 import { Box, List, ListItemButton, ListItemText, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { AppHeader } from '../components/AppHeader';
 
 const ITEMS = [
   { key: 'lastSeen', label: 'Last seen' },
@@ -13,7 +14,7 @@ export default function PrivacyPage() {
 
   return (
     <Box sx={{ p: 2 }}>
-      <Typography variant="h6" sx={{ mb: 1 }}>Privacy</Typography>
+      <AppHeader title="Конфиденциальность" />
       <List>
         {ITEMS.map((item) => (
           <ListItemButton key={item.key} onClick={() => navigate(`/privacy/${item.key}`)}>

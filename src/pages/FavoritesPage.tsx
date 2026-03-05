@@ -3,18 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../stores/chatStore';
 import { AppHeader } from '../components/AppHeader';
 
-export default function ArchivePage() {
+export default function FavoritesPage() {
   const navigate = useNavigate();
-  const chats = useChatStore((s) => s.chats.filter((c) => c.archived));
+  const favorites = useChatStore((s) => s.chats.filter((c) => c.pinned || c.type === 'saved'));
 
   return (
     <Box sx={{ p: 2 }}>
-      <AppHeader title="Архив" />
-      {chats.length === 0 ? (
-        <Typography color="text.secondary">Архив пуст</Typography>
+      <AppHeader title="Избранное" />
+
+      {favorites.length === 0 ? (
+        <Typography color="text.secondary">Пока ничего нет в избранном.</Typography>
       ) : (
         <List>
-          {chats.map((chat) => (
+          {favorites.map((chat) => (
             <ListItemButton key={chat.id} onClick={() => navigate(`/chat/${chat.id}`)}>
               <ListItemText primary={chat.name || 'Чат'} secondary={chat.lastMessageText || ''} />
             </ListItemButton>
@@ -24,3 +25,4 @@ export default function ArchivePage() {
     </Box>
   );
 }
+

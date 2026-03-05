@@ -1,12 +1,13 @@
 import { Box, FormControlLabel, MenuItem, Switch, TextField, Typography } from '@mui/material';
 import { useSettingsStore } from '../stores/settingsStore';
+import { AppHeader } from '../components/AppHeader';
 
 export default function DevicesPage() {
   const { glowMode, setGlowMode, bgEffect, setBgEffect, fontSize, setFontSize } = useSettingsStore();
 
   return (
     <Box sx={{ p: 2 }}>
-      <Typography variant="h6" sx={{ mb: 1 }}>Спец возможности</Typography>
+      <AppHeader title="Спец возможности" />
       <Typography color="text.secondary" sx={{ mb: 2 }}>
         Быстрые визуальные настройки интерфейса в стиле Telegram.
       </Typography>

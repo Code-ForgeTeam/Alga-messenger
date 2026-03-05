@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Button, List, ListItemText, TextField, Typography } from '@mui/material';
 import { supportApi } from '../lib/api';
+import { AppHeader } from '../components/AppHeader';
 
 export default function SupportPage() {
   const [subject, setSubject] = useState('');
@@ -15,7 +16,7 @@ export default function SupportPage() {
 
   return (
     <Box sx={{ p: 2 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>Support</Typography>
+      <AppHeader title="Поддержка" />
       <TextField fullWidth sx={{ mb: 1 }} label="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
       <TextField fullWidth sx={{ mb: 1 }} label="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
       <Button variant="contained" onClick={async () => {

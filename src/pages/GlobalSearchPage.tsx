@@ -3,6 +3,7 @@ import { Box, CircularProgress, List, ListItemButton, ListItemText, TextField, T
 import { useNavigate } from 'react-router-dom';
 import { userApi } from '../lib/api';
 import type { User } from '../lib/types';
+import { AppHeader } from '../components/AppHeader';
 
 export default function GlobalSearchPage() {
   const [q, setQ] = useState('');
@@ -15,8 +16,18 @@ export default function GlobalSearchPage() {
     if (!value.trim()) return setUsers([]);
     setLoading(true);
     try {
-      const result = await userApi.search(value);
-      setUsers(result || []);
+      const query = value.replace('@', '').trim();
+      const result = await userApi.search(query);
+      if (Array.isArray(result) && result.length > 0) {
+        setUsers(result);
+      } else {
+        try {
+          const exact = await userApi.getByUsername(query);
+          setUsers(exact ? [exact] : []);
+        } catch {
+          setUsers([]);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -24,7 +35,8 @@ export default function GlobalSearchPage() {
 
   return (
     <Box sx={{ p: 2 }}>
-      <TextField fullWidth placeholder="Search" value={q} onChange={(e) => search(e.target.value)} />
+      <AppHeader title="Поиск пользователей" />
+      <TextField fullWidth placeholder="username или @username" value={q} onChange={(e) => search(e.target.value)} />
       {loading ? <CircularProgress sx={{ mt: 2 }} /> : null}
       <List>
         {users.map((u) => (
