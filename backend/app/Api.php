@@ -108,11 +108,42 @@ final class Api
 
     private function authUserId(): string
     {
-        $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-        if (!$this->startsWith($auth, 'Bearer ')) $this->json(['error' => 'Unauthorized'], 401);
-        $payload = Jwt::verify(substr($auth, 7));
+        $auth = $this->getAuthorizationHeader();
+        if ($auth === '' || stripos($auth, 'Bearer ') !== 0) {
+            $this->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $payload = Jwt::verify(trim(substr($auth, 7)));
         if (!$payload || empty($payload['userId'])) $this->json(['error' => 'Unauthorized'], 401);
         return (string)$payload['userId'];
+    }
+
+    private function getAuthorizationHeader(): string
+    {
+        $candidates = [
+            $_SERVER['HTTP_AUTHORIZATION'] ?? null,
+            $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null,
+            $_SERVER['Authorization'] ?? null,
+        ];
+
+        foreach ($candidates as $value) {
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        if (function_exists('getallheaders')) {
+            $headers = getallheaders();
+            if (is_array($headers)) {
+                foreach ($headers as $key => $value) {
+                    if (strcasecmp((string)$key, 'Authorization') === 0 && is_string($value) && trim($value) !== '') {
+                        return trim($value);
+                    }
+                }
+            }
+        }
+
+        return '';
     }
 
 
