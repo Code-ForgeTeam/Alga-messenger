@@ -12,9 +12,10 @@ cp .env.production.example .env.production
 Set your backend URL in `.env.production`:
 
 ```env
-VITE_API_BASE_URL=https://q99916rz.beget.tech/backend/public/index.php/api
+VITE_API_BASE_URL=http://q99916rz.beget.tech/backend/public/index.php/api
 VITE_SOCKET_URL=
-VITE_APP_HOST=https://q99916rz.beget.tech/backend/public/index.php
+VITE_APP_HOST=http://q99916rz.beget.tech/backend/public/index.php
+VITE_FORCE_HTTPS=0
 ```
 
 If this file is missing, app can fallback to localhost in dev mode and fail in APK.
@@ -112,7 +113,7 @@ Backend is in `backend/` and can run without Node.js.
 DB schema: `backend/sql/beget_init.sql`.
 Health URL check example:
 
-- `https://q99916rz.beget.tech/backend/public/index.php/health`
+- `http://q99916rz.beget.tech/backend/public/index.php/health`
 
 If health returns `{"ok":true}`, backend entrypoint works.
 
@@ -128,4 +129,5 @@ If APK says `server unavailable` while browser health is OK, common reasons:
 - Android cleartext HTTP blocked (fixed in `capacitor.config.ts` with `server.cleartext: true`)
 - CORS mismatch for Capacitor origin (`capacitor://localhost`). Set backend `CORS_ORIGIN=*` or include all required origins.
 
-Important: for public domains use `https://` in `.env.production`. Android devices often block plain `http://` depending on security/network policy.
+If you DO have SSL certificate, switch to `https://` in `.env.production` (or set `VITE_FORCE_HTTPS=1`).
+If SSL is NOT configured, keep `http://`.

@@ -1,25 +1,17 @@
 const env = import.meta.env;
 const isDev = !!env.DEV;
+const forceHttps = env.VITE_FORCE_HTTPS === '1' && !isDev;
 
-const preferHttpsForRemoteHost = (url: string): string => {
-  if (!url || isDev || !url.startsWith('http://')) return url;
-
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase();
-    const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
-    if (isLocalHost) return url;
-    return url.replace(/^http:\/\//, 'https://');
-  } catch {
-    return url;
-  }
+const maybeUpgradeToHttps = (url: string): string => {
+  if (!forceHttps || !url || !url.startsWith('http://')) return url;
+  return url.replace(/^http:\/\//, 'https://');
 };
 
 const rawApiBaseUrl = env.VITE_API_BASE_URL || (isDev ? 'http://localhost:3001/api' : '');
 const rawSocketUrl = env.VITE_SOCKET_URL || (isDev ? 'http://localhost:3001' : '');
 
-export const API_BASE_URL = preferHttpsForRemoteHost(rawApiBaseUrl);
-export const SOCKET_URL = preferHttpsForRemoteHost(rawSocketUrl);
+export const API_BASE_URL = maybeUpgradeToHttps(rawApiBaseUrl);
+export const SOCKET_URL = maybeUpgradeToHttps(rawSocketUrl);
 export const APP_HOST = env.VITE_APP_HOST || SOCKET_URL;
 export const APP_VERSION_NAME = env.VITE_APP_VERSION_NAME || '1.0.0';
 export const APP_VERSION_CODE = Number(env.VITE_APP_VERSION_CODE || 1);
