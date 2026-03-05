@@ -74,12 +74,41 @@ export default function App() {
       }}
     >
       {bgEffect === 'snow' ? (
-        <Box sx={{ position: 'fixed', inset: 0, pointerEvents: 'none', opacity: 0.08, zIndex: 0 }}>
-          <Typography sx={{ p: 2 }}>❄️</Typography>
+        <Box
+          sx={{
+            position: 'fixed',
+            inset: 0,
+            pointerEvents: 'none',
+            zIndex: 0,
+            overflow: 'hidden',
+            '@keyframes fall': {
+              '0%': { transform: 'translateY(-10vh)', opacity: 0 },
+              '20%': { opacity: 0.65 },
+              '100%': { transform: 'translateY(110vh)', opacity: 0 },
+            },
+          }}
+        >
+          {Array.from({ length: 28 }).map((_, i) => (
+            <Box
+              key={i}
+              sx={{
+                position: 'absolute',
+                top: '-10vh',
+                left: `${(i * 13) % 100}%`,
+                fontSize: `${10 + (i % 5) * 4}px`,
+                color: 'primary.main',
+                opacity: 0.45,
+                animation: `fall ${6 + (i % 7)}s linear infinite`,
+                animationDelay: `${(i % 10) * 0.6}s`,
+              }}
+            >
+              ❄
+            </Box>
+          ))}
         </Box>
       ) : null}
 
-      <Suspense fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>}>
+      <Suspense fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}>
         <Routes>
           <Route path="/auth" element={auth.isAuthenticated ? <Navigate to="/chats" replace /> : <AuthPage />} />
 

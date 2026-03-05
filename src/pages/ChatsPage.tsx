@@ -37,7 +37,7 @@ export default function ChatsPage() {
 
   return (
     <Box sx={{ p: 1, height: '100%', overflow: 'auto' }}>
-      <Typography variant="h6" sx={{ p: 1 }}>Leet</Typography>
+      <Typography variant="h6" sx={{ p: 1 }}>Alga</Typography>
       <Box sx={{ px: 1, pb: 1 }}>
         <TextField fullWidth size="small" placeholder="Поиск чата" value={q} onChange={(e) => setQ(e.target.value)} />
       </Box>

@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.leet.messenger',
-  appName: 'Leet',
+  appId: 'com.alga.messenger',
+  appName: 'Alga',
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {
