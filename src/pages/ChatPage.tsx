@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, CircularProgress, IconButton, Menu, MenuItem, TextField, Typography } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate, useParams } from 'react-router-dom';
 import { uploadApi } from '../lib/api';
 import { useChatStore } from '../stores/chatStore';
@@ -42,9 +43,17 @@ export default function ChatPage() {
     loadMessages(chatId);
     markAsRead(chatId).catch(() => null);
     return () => setCurrentChat(null);
-  }, [chatId]);
+  }, [chatId, loadMessages, markAsRead, setCurrentChat]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
+
+  const title = useMemo(() => {
+    if (!chat) return 'Чат';
+    if (chat.type === 'saved') return 'Избранное';
+    if (chat.name?.trim()) return chat.name.trim();
+    const peer = chat.participants?.find((p) => p.id !== me?.id) || chat.participants?.[0];
+    return peer?.fullName || (peer?.username ? `@${peer.username}` : 'Чат');
+  }, [chat, me?.id]);
 
   const onPickFiles = async (list: FileList | null) => {
     if (!list?.length) return;
@@ -55,6 +64,7 @@ export default function ChatPage() {
   };
 
   const submit = async () => {
+    if (!text.trim() && !uploaded.length) return;
     await sendMessage(chatId, text, uploaded);
     setText('');
     setFiles([]);
@@ -64,30 +74,33 @@ export default function ChatPage() {
   if (!chat) {
     return (
       <Box sx={{ p: 3 }}>
-        <Typography>Chat not found</Typography>
-        <Button onClick={() => navigate('/chats')}>Back</Button>
+        <Typography>Чат не найден</Typography>
+        <Button onClick={() => navigate('/chats')}>Назад</Button>
       </Box>
     );
   }
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <IconButton onClick={() => navigate(-1)}>
+          <ArrowBackIcon />
+        </IconButton>
         <Box sx={{ flex: 1 }}>
-          <Typography sx={{ fontWeight: 600 }}>{chat.name || 'Chat'}</Typography>
-          {!!typingUsers[chatId]?.length && <Typography variant="caption" color="primary.main">typing...</Typography>}
+          <Typography sx={{ fontWeight: 700 }}>{title}</Typography>
+          {!!typingUsers[chatId]?.length && <Typography variant="caption" color="primary.main">печатает...</Typography>}
         </Box>
         <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}><MoreVertIcon /></IconButton>
       </Box>
 
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
-        <MenuItem onClick={() => { pinChat(chatId); setMenuAnchor(null); }}>{chat.pinned ? 'Unpin' : 'Pin'}</MenuItem>
-        <MenuItem onClick={() => { muteChat(chatId); setMenuAnchor(null); }}>{chat.muted ? 'Unmute' : 'Mute'}</MenuItem>
+        <MenuItem onClick={() => { pinChat(chatId); setMenuAnchor(null); }}>{chat.pinned ? 'Открепить' : 'Закрепить'}</MenuItem>
+        <MenuItem onClick={() => { muteChat(chatId); setMenuAnchor(null); }}>{chat.muted ? 'Включить звук' : 'Выключить звук'}</MenuItem>
         <MenuItem onClick={() => { chat.archived ? unarchiveChat(chatId) : archiveChat(chatId); setMenuAnchor(null); }}>
-          {chat.archived ? 'Unarchive' : 'Archive'}
+          {chat.archived ? 'Вернуть из архива' : 'В архив'}
         </MenuItem>
-        <MenuItem onClick={() => { clearChat(chatId); setMenuAnchor(null); }}>Clear messages</MenuItem>
-        <MenuItem onClick={() => { deleteChat(chatId); setMenuAnchor(null); navigate('/chats'); }} sx={{ color: 'error.main' }}>Delete chat</MenuItem>
+        <MenuItem onClick={() => { clearChat(chatId); setMenuAnchor(null); }}>Очистить чат</MenuItem>
+        <MenuItem onClick={() => { deleteChat(chatId); setMenuAnchor(null); navigate('/chats'); }} sx={{ color: 'error.main' }}>Удалить чат</MenuItem>
       </Menu>
 
       <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
@@ -133,7 +146,7 @@ export default function ChatPage() {
             }
           }}
         />
-        <Button variant="contained" onClick={submit} disabled={!text.trim() && !uploaded.length}>Send</Button>
+        <Button variant="contained" onClick={submit} disabled={!text.trim() && !uploaded.length}>Отпр.</Button>
       </Box>
     </Box>
   );

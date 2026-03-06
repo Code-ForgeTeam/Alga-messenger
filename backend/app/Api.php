@@ -47,6 +47,7 @@ final class Api
 
         if ($path === '/api/chats' && $method === 'GET') { $this->chats(); }
         if ($path === '/api/chats' && $method === 'POST') { $this->createChat($body); }
+        if ($path === '/api/saved/chat' && $method === 'GET') { $this->savedChat(); }
         if ($path === '/api/messages' && $method === 'POST') { $this->sendMessage($body); }
         if ($path === '/api/messages/read' && $method === 'POST') { $this->json(['ok' => true]); }
 
@@ -101,15 +102,19 @@ final class Api
     private function chats(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT c.id, c.name, c.type, c.updated_at FROM chats c JOIN chat_participants cp ON cp.chat_id = c.id WHERE cp.user_id = ? ORDER BY c.updated_at DESC');
+        $stmt = $this->db()->prepare(
+            'SELECT c.id, c.name, c.type, c.avatar, c.updated_at,
+                    cp.archived, cp.pinned, cp.muted, cp.blocked, cp.unread_count
+             FROM chats c
+             JOIN chat_participants cp ON cp.chat_id = c.id
+             WHERE cp.user_id = ?
+             ORDER BY cp.pinned DESC, c.updated_at DESC'
+        );
         $stmt->execute([$userId]);
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$r) {
-            $r['participants'] = [];
-            $r['lastMessageText'] = '';
-            $r['unreadCount'] = 0;
-        }
-        $this->json($rows);
+
+        $payload = array_map(fn ($row) => $this->buildChatPayload($row, $userId), $rows ?: []);
+        $this->json($payload);
     }
 
     private function createChat(array $body): void
@@ -135,13 +140,10 @@ final class Api
             $stmt->execute([$allParticipants[0], $allParticipants[1]]);
             $existing = $stmt->fetchColumn();
             if ($existing) {
-                $this->json([
-                    'id' => (string)$existing,
-                    'name' => $name,
-                    'type' => 'private',
-                    'participants' => [],
-                    'updatedAt' => date('c'),
-                ]);
+                $chat = $this->chatByIdForUser((string)$existing, $ownerId);
+                if ($chat) {
+                    $this->json($chat);
+                }
             }
         }
 
@@ -154,13 +156,46 @@ final class Api
             $insertParticipant->execute([$chatId, $uid]);
         }
 
-        $this->json([
+        $chat = $this->chatByIdForUser($chatId, $ownerId);
+        $this->json($chat ?: [
             'id' => $chatId,
             'name' => $name,
             'type' => $type,
             'participants' => [],
             'updatedAt' => date('c'),
         ], 201);
+    }
+
+    private function savedChat(): void
+    {
+        $userId = $this->authUserId();
+
+        $stmt = $this->db()->prepare(
+            'SELECT c.id
+             FROM chats c
+             JOIN chat_participants cp ON cp.chat_id = c.id
+             WHERE c.type = "saved" AND cp.user_id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$userId]);
+        $existing = $stmt->fetchColumn();
+
+        if (!$existing) {
+            $chatId = $this->uuid();
+            $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, "saved")');
+            $insertChat->execute([$chatId, 'Избранное']);
+
+            $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, pinned) VALUES (?, ?, 1)');
+            $insertParticipant->execute([$chatId, $userId]);
+            $existing = $chatId;
+        }
+
+        $chat = $this->chatByIdForUser((string)$existing, $userId);
+        if (!$chat) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $this->json($chat);
     }
 
     private function sendMessage(array $body): void
@@ -302,6 +337,99 @@ final class Api
         $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
         $stmt->execute([$chatId]);
         $this->json($stmt->fetchAll());
+    }
+
+    private function chatByIdForUser(string $chatId, string $userId): ?array
+    {
+        $stmt = $this->db()->prepare(
+            'SELECT c.id, c.name, c.type, c.avatar, c.updated_at,
+                    cp.archived, cp.pinned, cp.muted, cp.blocked, cp.unread_count
+             FROM chats c
+             JOIN chat_participants cp ON cp.chat_id = c.id
+             WHERE c.id = ? AND cp.user_id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$chatId, $userId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return null;
+        }
+
+        return $this->buildChatPayload($row, $userId);
+    }
+
+    private function buildChatPayload(array $row, string $viewerId): array
+    {
+        $participants = $this->chatParticipants((string)$row['id'], $viewerId, (string)$row['type']);
+        $last = $this->chatLastMessage((string)$row['id']);
+
+        return [
+            'id' => $row['id'],
+            'name' => $row['name'],
+            'type' => $row['type'],
+            'avatar' => $row['avatar'],
+            'participants' => $participants,
+            'archived' => (bool)$row['archived'],
+            'pinned' => (bool)$row['pinned'],
+            'muted' => (bool)$row['muted'],
+            'blocked' => (bool)$row['blocked'],
+            'unreadCount' => (int)$row['unread_count'],
+            'lastMessageText' => $last['text'] ?? '',
+            'lastMessageTime' => $last['createdAt'] ?? null,
+            'updatedAt' => isset($row['updated_at']) ? date('c', strtotime((string)$row['updated_at'])) : null,
+        ];
+    }
+
+    private function chatParticipants(string $chatId, string $viewerId, string $chatType): array
+    {
+        if ($chatType === 'saved') {
+            return [];
+        }
+
+        $stmt = $this->db()->prepare(
+            'SELECT u.id, u.username, u.full_name, u.avatar, u.bio, u.status, u.last_seen, u.badge
+             FROM chat_participants cp
+             JOIN users u ON u.id = cp.user_id
+             WHERE cp.chat_id = ? AND cp.user_id <> ?'
+        );
+        $stmt->execute([$chatId, $viewerId]);
+
+        $rows = $stmt->fetchAll();
+        return array_map(static fn ($u) => [
+            'id' => $u['id'],
+            'username' => $u['username'],
+            'fullName' => $u['full_name'],
+            'avatar' => $u['avatar'] ?? null,
+            'bio' => $u['bio'] ?? null,
+            'status' => $u['status'] ?? 'offline',
+            'lastSeen' => $u['last_seen'] ? date('c', strtotime((string)$u['last_seen'])) : null,
+            'badge' => $u['badge'] ?? null,
+        ], $rows ?: []);
+    }
+
+    private function chatLastMessage(string $chatId): ?array
+    {
+        $stmt = $this->db()->prepare(
+            'SELECT id, chat_id, user_id, text, created_at, edited
+             FROM messages
+             WHERE chat_id = ?
+             ORDER BY created_at DESC
+             LIMIT 1'
+        );
+        $stmt->execute([$chatId]);
+        $m = $stmt->fetch();
+        if (!$m) {
+            return null;
+        }
+
+        return [
+            'id' => $m['id'],
+            'chatId' => $m['chat_id'],
+            'userId' => $m['user_id'],
+            'text' => $m['text'],
+            'createdAt' => date('c', strtotime((string)$m['created_at'])),
+            'edited' => (bool)$m['edited'],
+        ];
     }
 
     private function authUserId(): string

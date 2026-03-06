@@ -8,6 +8,7 @@ import {
   IconButton,
   List,
   ListItemButton,
+  ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
@@ -22,7 +23,9 @@ import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded';
-import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
+import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
+import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../stores/chatStore';
 import { useContactsStore } from '../stores/contactsStore';
@@ -30,10 +33,33 @@ import { useAuthStore } from '../stores/authStore';
 import { AppHeader } from '../components/AppHeader';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { useTheme } from '@mui/material/styles';
+import { useSettingsStore } from '../stores/settingsStore';
+import type { Chat } from '../lib/types';
+
+const formatChatDate = (value?: string) => {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+};
+
+function getChatName(chat: Chat, myId?: string) {
+  if (chat.type === 'saved') return 'Избранное';
+  if (chat.name?.trim()) return chat.name.trim();
+  const peer = chat.participants?.find((p) => p.id !== myId) || chat.participants?.[0];
+  return peer?.fullName || (peer?.username ? `@${peer.username}` : 'Чат');
+}
+
+function getChatAvatar(chat: Chat, myId?: string) {
+  if (chat.type === 'saved') return 'И';
+  const title = getChatName(chat, myId);
+  return title.slice(0, 1).toUpperCase();
+}
 
 export default function ChatsPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
+  const setTheme = useSettingsStore((s) => s.setTheme);
   const navigate = useNavigate();
   const { chats, isLoading, loadChats } = useChatStore();
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
@@ -54,12 +80,12 @@ export default function ChatsPage() {
     if (!needle) return base;
 
     return base.filter((chat) => {
-      const peer = chat.participants?.[0];
+      const peer = chat.participants?.find((p) => p.id !== user?.id) || chat.participants?.[0];
       const contactName = peer ? getContactByUserId(peer.id)?.displayName : '';
-      const name = chat.name || contactName || peer?.fullName || '';
+      const name = chat.name || contactName || peer?.fullName || peer?.username || '';
       return name.toLowerCase().includes(needle);
     });
-  }, [chats, q, getContactByUserId]);
+  }, [chats, q, getContactByUserId, user?.id]);
 
   if (isLoading) {
     return <Box sx={{ p: 4, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
@@ -72,7 +98,11 @@ export default function ChatsPage() {
         showBack={false}
         leftSlot={
           <IconButton onClick={() => setDrawerOpen(true)}>
-            <MenuRoundedIcon sx={{ color: isDark ? '#BFD4EA' : '#647789' }} />
+            <Box sx={{ width: 20, display: 'grid', gap: 0.5 }}>
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#2DBB63' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #D2D7DF' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#E8443A' }} />
+            </Box>
           </IconButton>
         }
         rightSlot={
@@ -85,7 +115,7 @@ export default function ChatsPage() {
       <TextField
         fullWidth
         size="small"
-        placeholder="Поиск чата"
+        placeholder="Поиск"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         InputProps={{
@@ -94,17 +124,17 @@ export default function ChatsPage() {
         sx={{
           '& .MuiOutlinedInput-root': {
             borderRadius: 4,
-            bgcolor: isDark ? 'rgba(26,40,56,0.95)' : 'rgba(255,255,255,0.8)',
+            bgcolor: isDark ? 'rgba(26,40,56,0.95)' : 'rgba(255,255,255,0.85)',
           },
         }}
       />
 
       <List sx={{ mt: 1 }}>
         {visible.map((chat) => {
-          const name = chat.name || chat.participants?.[0]?.fullName || 'Чат';
-          const subtitle = chat.lastMessageText || 'Без сообщений';
-          const date = (chat.lastMessageTime || chat.updatedAt || '').slice(5, 10).replace('-', '.');
-          const initial = (name || 'A').slice(0, 1).toUpperCase();
+          const name = getChatName(chat, user?.id);
+          const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'Сообщения самому себе' : 'Без сообщений');
+          const date = formatChatDate(chat.lastMessageTime || chat.updatedAt);
+          const initial = getChatAvatar(chat, user?.id);
 
           return (
             <ListItemButton
@@ -112,14 +142,17 @@ export default function ChatsPage() {
               onClick={() => navigate(`/chat/${chat.id}`)}
               sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2 }}
             >
-              <Avatar sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#6B5BEE' : '#5A69F6' }}>
+              <Avatar sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#6B5BEE' : 'primary.main' }}>
                 {initial}
               </Avatar>
               <ListItemText
                 primary={<Typography fontWeight={700}>{name}</Typography>}
                 secondary={<Typography color="text.secondary" noWrap>{subtitle}</Typography>}
               />
-              <Typography variant="body2" color="text.secondary">{date || ''}</Typography>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="body2" color="text.secondary">{date}</Typography>
+                {chat.lastMessageText && <DoneAllIcon sx={{ fontSize: 16, color: 'text.secondary', mt: 0.5 }} />}
+              </Box>
             </ListItemButton>
           );
         })}
@@ -136,41 +169,48 @@ export default function ChatsPage() {
           <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', gap: 1.5 }}>
-              <Avatar sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
-                {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
-              </Avatar>
+                <Avatar sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
+                  {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
+                </Avatar>
                 <Box>
-                  <Typography variant="h6" fontWeight={700}>{user?.fullName || 'BVE'}</Typography>
-                  <Typography color="text.secondary">@{user?.username || 'AlfaCode'}</Typography>
+                  <Typography variant="h6" fontWeight={700}>{user?.fullName || 'Пользователь'}</Typography>
+                  <Typography color="text.secondary">@{user?.username || 'username'}</Typography>
                 </Box>
               </Box>
-              <Typography color="text.secondary">☀️</Typography>
+
+              <IconButton
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                size="small"
+                sx={{ border: '1px solid', borderColor: 'divider' }}
+              >
+                {isDark ? <LightModeOutlinedIcon sx={{ color: '#111' }} /> : <DarkModeOutlinedIcon sx={{ color: '#222' }} />}
+              </IconButton>
             </Box>
           </Box>
 
           <List sx={{ pt: 1 }}>
             <ListItemButton onClick={() => { navigate('/edit-profile'); setDrawerOpen(false); }}>
-              <PersonIcon sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemIcon><PersonIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
               <ListItemText primary="Мой профиль" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/contacts'); setDrawerOpen(false); }}>
-              <Groups2RoundedIcon sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemIcon><Groups2RoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
               <ListItemText primary="Контакты" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/favorites'); setDrawerOpen(false); }}>
-              <BookmarkRoundedIcon sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemIcon><BookmarkRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
               <ListItemText primary="Избранное" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/settings'); setDrawerOpen(false); }}>
-              <SettingsRoundedIcon sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemIcon><SettingsRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
               <ListItemText primary="Настройки" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/support'); setDrawerOpen(false); }}>
-              <SupportAgentRoundedIcon sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemIcon><SupportAgentRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
               <ListItemText primary="Поддержка" />
             </ListItemButton>
             <ListItemButton onClick={logout}>
-              <ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main' }} />
+              <ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main', sx: { ml: 1 } }} />
             </ListItemButton>
           </List>
         </Box>
