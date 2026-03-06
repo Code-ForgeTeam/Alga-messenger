@@ -50,6 +50,7 @@ final class Api
         if ($path === '/api/saved/chat' && $method === 'GET') { $this->savedChat(); }
         if ($path === '/api/messages' && $method === 'POST') { $this->sendMessage($body); }
         if ($path === '/api/messages/read' && $method === 'POST') { $this->json(['ok' => true]); }
+        if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
 
         if (preg_match('#^/api/messages/chat/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatMessages($m[1]); }
 
@@ -435,6 +436,59 @@ final class Api
             'createdAt' => date('c', strtotime((string)$m['created_at'])),
             'edited' => (bool)$m['edited'],
         ];
+    }
+
+    private function uploadAvatar(): void
+    {
+        $this->authUserId();
+
+        if (!isset($_FILES['avatar']) || !is_array($_FILES['avatar'])) {
+            $this->json(['error' => 'Avatar file is required'], 400);
+        }
+
+        $file = $_FILES['avatar'];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $this->json(['error' => 'Upload failed'], 400);
+        }
+
+        $tmp = (string)($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            $this->json(['error' => 'Invalid upload'], 400);
+        }
+
+        $maxSize = 5 * 1024 * 1024;
+        if (($file['size'] ?? 0) > $maxSize) {
+            $this->json(['error' => 'File too large'], 400);
+        }
+
+        $mime = mime_content_type($tmp) ?: '';
+        $allowed = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+
+        if (!isset($allowed[$mime])) {
+            $this->json(['error' => 'Unsupported image format'], 400);
+        }
+
+        $ext = $allowed[$mime];
+        $fileName = $this->uuid() . '.' . $ext;
+        $uploadDir = dirname(__DIR__) . '/public/uploads/avatars';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            $this->json(['error' => 'Cannot create upload directory'], 500);
+        }
+
+        $dest = $uploadDir . '/' . $fileName;
+        if (!move_uploaded_file($tmp, $dest)) {
+            $this->json(['error' => 'Cannot save file'], 500);
+        }
+
+        $base = rtrim((string)Config::get('APP_URL', ''), '/');
+        $relative = '/uploads/avatars/' . $fileName;
+        $url = $base !== '' ? ($base . $relative) : $relative;
+
+        $this->json(['url' => $url], 201);
     }
 
     private function authUserId(): string

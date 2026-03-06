@@ -69,6 +69,15 @@ export const userApi = {
   search: async (q: string) => (await api.get('/users/search', { params: { q } })).data,
 };
 
+
+export const profileApi = {
+  uploadAvatar: async (file: File) => {
+    const form = new FormData();
+    form.append('avatar', file);
+    return (await api.post('/upload/avatar', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+  },
+};
+
 export const aiApi = {
   getAIChat: async () => (await api.get('/ai/chat')).data,
   sendMessage: async (chatId: string, text: string) =>
