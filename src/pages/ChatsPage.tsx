@@ -95,55 +95,40 @@ export default function ChatsPage() {
   return (
     <Box sx={{ p: 1.5, height: '100%', overflow: 'auto' }}>
       <AppHeader
-        title="Alga"
+        title="Leet"
         showBack={false}
         leftSlot={
           <IconButton onClick={() => setDrawerOpen(true)}>
-            <Box sx={{ width: 20, display: 'grid', gap: 0.5 }}>
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#2DBB63' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #D2D7DF' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#E8443A' }} />
+            <Box sx={{ width: 22, display: 'grid', gap: 0.6 }}>
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#8797A5' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#8797A5' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#8797A5' }} />
             </Box>
           </IconButton>
         }
-        rightSlot={
-          <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
-            <MoreVertIcon />
-          </IconButton>
-        }
+        rightSlot={<IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}><MoreVertIcon /></IconButton>}
       />
 
       <TextField
         fullWidth
         size="small"
-        placeholder="Поиск"
+        placeholder="Поиск чата"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        InputProps={{
-          startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-        }}
-        sx={{
-          '& .MuiOutlinedInput-root': {
-            borderRadius: 4,
-            bgcolor: isDark ? 'rgba(26,40,56,0.95)' : 'rgba(255,255,255,0.85)',
-          },
-        }}
+        InputProps={{ startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
+        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 4, bgcolor: isDark ? 'rgba(26,40,56,0.95)' : '#EEF0F3' } }}
       />
 
       <List sx={{ mt: 1 }}>
         {visible.map((chat) => {
           const name = getChatName(chat, user?.id);
-          const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'Сообщения самому себе' : 'Без сообщений');
+          const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'сообщения самому себе' : '');
           const date = formatChatDate(chat.lastMessageTime || chat.updatedAt);
           const avatarData = getChatAvatar(chat, user?.id);
 
           return (
-            <ListItemButton
-              key={chat.id}
-              onClick={() => navigate(`/chat/${chat.id}`)}
-              sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2 }}
-            >
-              <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#6B5BEE' : 'primary.main' }}>
+            <ListItemButton key={chat.id} onClick={() => navigate(`/chat/${chat.id}`)} sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2 }}>
+              <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#5E5BF0' : 'primary.main' }}>
                 {avatarData.initial}
               </Avatar>
               <ListItemText
@@ -161,7 +146,7 @@ export default function ChatsPage() {
 
       {!visible.length && <Typography sx={{ p: 2, textAlign: 'center' }} color="text.secondary">Пока нет чатов</Typography>}
 
-      <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110 }} onClick={() => navigate('/add-contact')}>
+      <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110, boxShadow: '0 10px 24px rgba(125,106,227,0.45)' }} onClick={() => navigate('/add-contact')}>
         <EditIcon />
       </Fab>
 
@@ -178,52 +163,35 @@ export default function ChatsPage() {
                   <Typography color="text.secondary">@{user?.username || 'username'}</Typography>
                 </Box>
               </Box>
-
-              <IconButton
-                onClick={() => setTheme(isDark ? 'light' : 'dark')}
-                size="small"
-                sx={{ border: '1px solid', borderColor: 'divider' }}
-              >
-                {isDark ? <LightModeOutlinedIcon sx={{ color: '#111' }} /> : <DarkModeOutlinedIcon sx={{ color: '#222' }} />}
+              <IconButton onClick={() => setTheme(isDark ? 'light' : 'dark')} size="small" sx={{ border: '1px solid', borderColor: 'divider' }}>
+                {isDark ? <LightModeOutlinedIcon sx={{ color: '#111' }} /> : <DarkModeOutlinedIcon sx={{ color: '#7891A8' }} />}
               </IconButton>
             </Box>
           </Box>
 
           <List sx={{ pt: 1 }}>
             <ListItemButton onClick={() => { navigate('/edit-profile'); setDrawerOpen(false); }}>
-              <ListItemIcon><PersonIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
-              <ListItemText primary="Мой профиль" />
+              <ListItemIcon><PersonIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Мой профиль" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/contacts'); setDrawerOpen(false); }}>
-              <ListItemIcon><Groups2RoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
-              <ListItemText primary="Контакты" />
+              <ListItemIcon><Groups2RoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Контакты" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/favorites'); setDrawerOpen(false); }}>
-              <ListItemIcon><BookmarkRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
-              <ListItemText primary="Избранное" />
+              <ListItemIcon><BookmarkRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Избранное" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/settings'); setDrawerOpen(false); }}>
-              <ListItemIcon><SettingsRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
-              <ListItemText primary="Настройки" />
+              <ListItemIcon><SettingsRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Настройки" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/support'); setDrawerOpen(false); }}>
-              <ListItemIcon><SupportAgentRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon>
-              <ListItemText primary="Поддержка" />
+              <ListItemIcon><SupportAgentRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Поддержка" />
             </ListItemButton>
-            <ListItemButton onClick={logout}>
-              <ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main', sx: { ml: 1 } }} />
-            </ListItemButton>
+            <ListItemButton onClick={logout}><ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main', sx: { ml: 1 } }} /></ListItemButton>
           </List>
         </Box>
       </Drawer>
 
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
-        <MenuItem
-          onClick={() => {
-            pushSnackbar({ message: 'Режим выделения чатов включим следующим шагом.', timeout: 2200 });
-            setMenuAnchor(null);
-          }}
-        >
+        <MenuItem onClick={() => { pushSnackbar({ message: 'Режим выделения чатов включим следующим шагом.', timeout: 2200 }); setMenuAnchor(null); }}>
           Выделить чаты
         </MenuItem>
       </Menu>

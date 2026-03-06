@@ -31,13 +31,13 @@ export function BottomNav() {
         position: 'fixed',
         left: 16,
         right: 16,
-        bottom: 16,
+        bottom: 14,
         borderRadius: 99,
         overflow: 'hidden',
-        backdropFilter: 'blur(6px)',
-        bgcolor: isDark ? 'rgba(20,32,45,0.95)' : 'rgba(255,255,255,0.96)',
+        backdropFilter: 'blur(10px)',
+        bgcolor: isDark ? 'rgba(23,33,43,0.95)' : 'rgba(252,252,255,0.92)',
       }}
-      elevation={6}
+      elevation={8}
     >
       <BottomNavigation
         value={value}
@@ -45,8 +45,12 @@ export function BottomNav() {
         showLabels
         sx={{
           height: 74,
-          '& .MuiBottomNavigationAction-root': { color: isDark ? '#8CA1B5' : '#8A8F98' },
-          '& .MuiBottomNavigationAction-root.Mui-selected': { color: 'primary.main' },
+          '& .MuiBottomNavigationAction-root': {
+            color: isDark ? '#95A2B3' : '#8E9199',
+            minWidth: 64,
+          },
+          '& .MuiBottomNavigationAction-label': { fontSize: 12 },
+          '& .MuiBottomNavigationAction-root.Mui-selected': { color: '#7D6AE3' },
           bgcolor: 'transparent',
         }}
       >

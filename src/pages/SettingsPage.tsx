@@ -22,6 +22,7 @@ import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import AddAPhotoRoundedIcon from '@mui/icons-material/AddAPhotoRounded';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
@@ -31,29 +32,27 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
-  const { theme, bgEffect, language, setTheme, setBgEffect, fontSize, setFontSize } = useSettingsStore();
+  const { theme, bgEffect, language, setTheme, setBgEffect } = useSettingsStore();
   const push = useSnackbarStore((s) => s.push);
-
-  const cycleFont = () => {
-    const next = fontSize === 'small' ? 'medium' : fontSize === 'medium' ? 'large' : 'small';
-    setFontSize(next);
-  };
 
   return (
     <Box sx={{ p: 1.5, height: '100%', overflowY: 'auto' }}>
       <Paper elevation={0} sx={{ p: 1.5, mb: 1.2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <IconButton onClick={() => navigate(-1)}><ArrowBackIcon /></IconButton>
-          <Typography variant="h6" sx={{ fontWeight: 700, ml: 1, flex: 1 }}>Настройки</Typography>
+          <Typography variant="h5" sx={{ fontWeight: 700, ml: 1, flex: 1 }}>Настройки</Typography>
           <IconButton onClick={() => navigate('/edit-profile')}><EditIcon /></IconButton>
         </Box>
 
-        <Box sx={{ textAlign: 'center', pb: 1 }}>
-          <Avatar sx={{ width: 96, height: 96, mx: 'auto', mb: 1, bgcolor: 'primary.main', fontSize: 34 }}>
+        <Box sx={{ textAlign: 'center', pb: 1, position: 'relative' }}>
+          <Avatar src={user?.avatar} sx={{ width: 112, height: 112, mx: 'auto', mb: 1, bgcolor: 'primary.main', fontSize: 34 }}>
             {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
           </Avatar>
           <Typography variant="h5" fontWeight={700}>{user?.fullName || 'BVE'}</Typography>
           <Typography color="primary.main">в сети</Typography>
+          <IconButton onClick={() => navigate('/edit-profile')} sx={{ position: 'absolute', right: 4, top: 58, bgcolor: 'primary.main', color: '#fff', '&:hover': { bgcolor: 'primary.dark' } }}>
+            <AddAPhotoRoundedIcon />
+          </IconButton>
         </Box>
       </Paper>
 
@@ -81,7 +80,7 @@ export default function SettingsPage() {
             <ListItemText primary="Конфиденциальность" />
           </ListItemButton>
           <Divider />
-          <ListItemButton onClick={() => push({ message: 'Уведомления и звуки будут расширены далее.', timeout: 1800 })}>
+          <ListItemButton onClick={() => push({ message: 'Уведомления и звуки добавим следующим шагом.', timeout: 1800 })}>
             <ListItemIcon><NotificationsNoneRoundedIcon /></ListItemIcon>
             <ListItemText primary="Уведомления и звуки" />
           </ListItemButton>
@@ -100,42 +99,33 @@ export default function SettingsPage() {
             <ListItemText primary="Устройства" />
           </ListItemButton>
           <Divider />
-          <ListItemButton onClick={() => push({ message: 'Языки: русский, английский, китайский.', timeout: 1800 })}>
+          <ListItemButton onClick={() => push({ message: 'Русский язык уже активен', timeout: 1600 })}>
             <ListItemIcon><LanguageRoundedIcon /></ListItemIcon>
-            <ListItemText primary="Язык" />
-            <Typography color="primary.main">{language === 'ru' ? 'Русский' : language === 'en' ? 'English' : '中文'}</Typography>
+            <ListItemText primary="Язык" secondary={language === 'ru' ? 'Русский' : 'English'} />
           </ListItemButton>
           <Divider />
-          <ListItemButton onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+          <ListItemButton onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
             <ListItemIcon><PaletteOutlinedIcon /></ListItemIcon>
-            <ListItemText primary="Оформление" />
-            <Typography color="primary.main">{theme === 'dark' ? 'Тёмная' : 'Светлая'}</Typography>
+            <ListItemText primary="Оформление" secondary={theme === 'light' ? 'Светлая' : 'Тёмная'} />
           </ListItemButton>
           <Divider />
           <ListItemButton onClick={() => setBgEffect(bgEffect === 'snow' ? 'none' : 'snow')}>
             <ListItemIcon><AutoAwesomeRoundedIcon /></ListItemIcon>
-            <ListItemText primary="Эффекты" />
-            <Typography color="primary.main">{bgEffect === 'snow' ? 'Снегопад' : 'Откл.'}</Typography>
-          </ListItemButton>
-          <Divider />
-          <ListItemButton onClick={cycleFont}>
-            <ListItemIcon><AutoAwesomeRoundedIcon /></ListItemIcon>
-            <ListItemText primary="Размер шрифта" />
-            <Typography color="primary.main">{fontSize === 'small' ? 'Маленький' : fontSize === 'medium' ? 'Средний' : 'Крупный'}</Typography>
+            <ListItemText primary="Эффекты" secondary={bgEffect === 'snow' ? 'Снегопад' : 'Выключены'} />
           </ListItemButton>
         </List>
       </Paper>
 
-      <Paper elevation={0}>
+      <Paper elevation={0} sx={{ mb: 1.2 }}>
         <List>
-          <ListItemButton>
+          <ListItemButton onClick={() => push({ message: 'Leet v1.0.0', timeout: 1800 })}>
             <ListItemIcon><InfoOutlinedIcon /></ListItemIcon>
-            <ListItemText primary="О приложении" secondary="Alga v1.0.0" />
+            <ListItemText primary="О приложении" secondary="Leet v1.0.0" />
           </ListItemButton>
           <Divider />
           <ListItemButton onClick={logout}>
-            <ListItemIcon><LogoutRoundedIcon color="error" /></ListItemIcon>
-            <ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main' }} />
+            <ListItemIcon><LogoutRoundedIcon sx={{ color: '#D14747' }} /></ListItemIcon>
+            <ListItemText primary="Выйти" primaryTypographyProps={{ color: '#C84646' }} />
           </ListItemButton>
         </List>
       </Paper>

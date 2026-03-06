@@ -14,9 +14,7 @@ export default function ContactsPage() {
   const filtered = useMemo(() => {
     const needle = q.toLowerCase().trim();
     if (!needle) return contacts;
-    return contacts.filter((c) =>
-      `${c.displayName} ${c.user.username}`.toLowerCase().includes(needle),
-    );
+    return contacts.filter((c) => `${c.displayName} ${c.user.username}`.toLowerCase().includes(needle));
   }, [contacts, q]);
 
   return (
@@ -33,7 +31,7 @@ export default function ContactsPage() {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         InputProps={{ startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
-        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 5, bgcolor: 'rgba(255,255,255,0.8)' } }}
+        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 5, bgcolor: '#EEF0F3' } }}
       />
 
       <List sx={{ mt: 1.5 }}>
@@ -50,7 +48,7 @@ export default function ContactsPage() {
         </Typography>
       )}
 
-      <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110 }} onClick={() => navigate('/add-contact')}>
+      <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110, boxShadow: '0 10px 24px rgba(125,106,227,0.45)' }} onClick={() => navigate('/add-contact')}>
         <PersonAddAlt1RoundedIcon />
       </Fab>
     </Box>
