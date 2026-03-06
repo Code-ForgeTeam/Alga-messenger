@@ -73,30 +73,30 @@ final class Api
         }
 
         $token = Jwt::issue(['userId' => $id]);
-        $this->json(['token' => $token, 'user' => ['id' => $id, 'username' => $u, 'fullName' => $n]]);
+        $this->json(['token' => $token, 'user' => ['id' => $id, 'username' => $u, 'fullName' => $n, 'avatar' => null]]);
     }
 
     private function login(array $body): void
     {
         $u = trim((string)($body['username'] ?? ''));
         $p = (string)($body['password'] ?? '');
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, password_hash FROM users WHERE username = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, avatar, password_hash FROM users WHERE username = ? LIMIT 1');
         $stmt->execute([$u]);
         $user = $stmt->fetch();
         if (!$user || !password_verify($p, $user['password_hash'])) $this->json(['error' => 'Invalid credentials'], 401);
 
         $token = Jwt::issue(['userId' => $user['id']]);
-        $this->json(['token' => $token, 'user' => ['id' => $user['id'], 'username' => $user['username'], 'fullName' => $user['full_name']]]);
+        $this->json(['token' => $token, 'user' => ['id' => $user['id'], 'username' => $user['username'], 'fullName' => $user['full_name'], 'avatar' => $user['avatar'] ?? null]]);
     }
 
     private function verify(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name FROM users WHERE id = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, avatar FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$userId]);
         $u = $stmt->fetch();
         if (!$u) $this->json(['error' => 'Unauthorized'], 401);
-        $this->json(['user' => ['id' => $u['id'], 'username' => $u['username'], 'fullName' => $u['full_name']]]);
+        $this->json(['user' => ['id' => $u['id'], 'username' => $u['username'], 'fullName' => $u['full_name'], 'avatar' => $u['avatar'] ?? null]]);
     }
 
     private function chats(): void
@@ -235,7 +235,7 @@ final class Api
     private function me(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio FROM users WHERE id = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$userId]);
         $u = $stmt->fetch();
         if (!$u) {
@@ -247,6 +247,7 @@ final class Api
             'username' => $u['username'],
             'fullName' => $u['full_name'],
             'bio' => $u['bio'] ?? null,
+            'avatar' => $u['avatar'] ?? null,
         ]);
     }
 
@@ -255,6 +256,7 @@ final class Api
         $userId = $this->authUserId();
         $fullName = trim((string)($body['fullName'] ?? ''));
         $bio = trim((string)($body['bio'] ?? ''));
+        $avatar = trim((string)($body['avatar'] ?? ''));
 
         if ($fullName === '') {
             $stmt = $this->db()->prepare('SELECT full_name FROM users WHERE id = ? LIMIT 1');
@@ -263,8 +265,8 @@ final class Api
             $fullName = (string)($row['full_name'] ?? '');
         }
 
-        $stmt = $this->db()->prepare('UPDATE users SET full_name = ?, bio = ? WHERE id = ?');
-        $stmt->execute([$fullName, $bio === '' ? null : $bio, $userId]);
+        $stmt = $this->db()->prepare('UPDATE users SET full_name = ?, bio = ?, avatar = ? WHERE id = ?');
+        $stmt->execute([$fullName, $bio === '' ? null : $bio, $avatar === '' ? null : $avatar, $userId]);
         $this->me();
     }
 
@@ -277,7 +279,7 @@ final class Api
         }
 
         $like = '%' . $q . '%';
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio FROM users WHERE username LIKE ? OR full_name LIKE ? ORDER BY updated_at DESC LIMIT 30');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar FROM users WHERE username LIKE ? OR full_name LIKE ? ORDER BY updated_at DESC LIMIT 30');
         $stmt->execute([$like, $like]);
         $rows = $stmt->fetchAll();
         $result = array_map(fn ($u) => [
@@ -285,6 +287,7 @@ final class Api
             'username' => $u['username'],
             'fullName' => $u['full_name'],
             'bio' => $u['bio'] ?? null,
+            'avatar' => $u['avatar'] ?? null,
         ], $rows ?: []);
 
         $this->json($result);
@@ -298,7 +301,7 @@ final class Api
             $this->json(['error' => 'Not found'], 404);
         }
 
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio FROM users WHERE username = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar FROM users WHERE username = ? LIMIT 1');
         $stmt->execute([$u]);
         $row = $stmt->fetch();
         if (!$row) {
@@ -310,13 +313,14 @@ final class Api
             'username' => $row['username'],
             'fullName' => $row['full_name'],
             'bio' => $row['bio'] ?? null,
+            'avatar' => $row['avatar'] ?? null,
         ]);
     }
 
     private function userById(string $id): void
     {
         $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio FROM users WHERE id = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$id]);
         $row = $stmt->fetch();
         if (!$row) {
@@ -328,6 +332,7 @@ final class Api
             'username' => $row['username'],
             'fullName' => $row['full_name'],
             'bio' => $row['bio'] ?? null,
+            'avatar' => $row['avatar'] ?? null,
         ]);
     }
 

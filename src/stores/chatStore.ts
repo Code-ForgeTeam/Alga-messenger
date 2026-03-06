@@ -139,6 +139,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setCurrentChat: (chatId) => set({ currentChatId: chatId }),
 
   sendMessage: async (chatId, text, attachments = [], replyToId) => {
+    const normalizedText = text ?? '';
+    if (!normalizedText.trim() && !attachments.length) return;
+
     const userId = useAuthStore.getState().user?.id || '';
     const chat = get().chats.find((c) => c.id === chatId);
 
@@ -148,7 +151,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         id: tempId,
         chatId,
         userId,
-        text,
+        text: normalizedText,
         attachments: attachments as any,
         status: 'sending',
         createdAt: new Date().toISOString(),
@@ -159,7 +162,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
 
       try {
-        const payload = await aiApi.sendMessage(chatId, text);
+        const payload = await aiApi.sendMessage(chatId, normalizedText);
         const userMessage = payload.userMessage as Message;
         const aiMessage = payload.aiMessage as Message;
 
@@ -192,19 +195,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    const socket = getSocket();
-    if (!socket?.connected) {
-      const sent = await messageApi.send(chatId, text, attachments, replyToId);
-      get().handleNewMessage(sent.message ?? sent);
-      return;
-    }
-
     const tempId = `temp-${Date.now()}-${Math.random()}`;
     const optimistic: Message = {
       id: tempId,
       chatId,
       userId,
-      text,
+      text: normalizedText,
       attachments: attachments as any,
       status: 'sending',
       createdAt: new Date().toISOString(),
@@ -215,14 +211,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: { ...state.messages, [chatId]: [...(state.messages[chatId] || []), optimistic] },
       chats: state.chats.map((c) =>
         c.id === chatId
-          ? { ...c, lastMessage: optimistic, lastMessageText: text, lastMessageTime: optimistic.createdAt }
+          ? { ...c, lastMessage: optimistic, lastMessageText: normalizedText, lastMessageTime: optimistic.createdAt }
           : c,
       ),
     }));
 
-    socket.emit('message:send', { chatId, text, attachments, tempId, replyToId }, (res: any) => {
-      if (res?.success && res.message) get().handleNewMessage(res.message);
-    });
+    try {
+      const sent = await messageApi.send(chatId, normalizedText, attachments, replyToId);
+      get().handleNewMessage(sent.message ?? sent);
+    } catch {
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [chatId]: (state.messages[chatId] || []).map((m) =>
+            m.id === tempId ? { ...m, status: 'error' } : m,
+          ),
+        },
+      }));
+    }
   },
 
   markAsRead: async (chatId) => {

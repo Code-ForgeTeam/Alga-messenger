@@ -51,9 +51,10 @@ function getChatName(chat: Chat, myId?: string) {
 }
 
 function getChatAvatar(chat: Chat, myId?: string) {
-  if (chat.type === 'saved') return 'И';
+  if (chat.type === 'saved') return { initial: 'И', src: undefined as string | undefined };
+  const peer = chat.participants?.find((p) => p.id !== myId) || chat.participants?.[0];
   const title = getChatName(chat, myId);
-  return title.slice(0, 1).toUpperCase();
+  return { initial: title.slice(0, 1).toUpperCase(), src: chat.avatar || peer?.avatar };
 }
 
 export default function ChatsPage() {
@@ -134,7 +135,7 @@ export default function ChatsPage() {
           const name = getChatName(chat, user?.id);
           const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'Сообщения самому себе' : 'Без сообщений');
           const date = formatChatDate(chat.lastMessageTime || chat.updatedAt);
-          const initial = getChatAvatar(chat, user?.id);
+          const avatarData = getChatAvatar(chat, user?.id);
 
           return (
             <ListItemButton
@@ -142,8 +143,8 @@ export default function ChatsPage() {
               onClick={() => navigate(`/chat/${chat.id}`)}
               sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2 }}
             >
-              <Avatar sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#6B5BEE' : 'primary.main' }}>
-                {initial}
+              <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#6B5BEE' : 'primary.main' }}>
+                {avatarData.initial}
               </Avatar>
               <ListItemText
                 primary={<Typography fontWeight={700}>{name}</Typography>}
@@ -169,7 +170,7 @@ export default function ChatsPage() {
           <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', gap: 1.5 }}>
-                <Avatar sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
+                <Avatar src={user?.avatar} sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
                   {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
                 </Avatar>
                 <Box>
