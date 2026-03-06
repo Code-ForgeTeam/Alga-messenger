@@ -5,8 +5,11 @@ import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { useTheme } from '@mui/material/styles';
 
 export function BottomNav() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const user = useAuthStore((s) => s.user);
@@ -32,6 +35,7 @@ export function BottomNav() {
         borderRadius: 99,
         overflow: 'hidden',
         backdropFilter: 'blur(6px)',
+        bgcolor: isDark ? 'rgba(20,32,45,0.95)' : 'rgba(255,255,255,0.96)',
       }}
       elevation={6}
     >
@@ -41,9 +45,9 @@ export function BottomNav() {
         showLabels
         sx={{
           height: 74,
-          '& .MuiBottomNavigationAction-root': { color: '#8A8F98' },
+          '& .MuiBottomNavigationAction-root': { color: isDark ? '#8CA1B5' : '#8A8F98' },
           '& .MuiBottomNavigationAction-root.Mui-selected': { color: 'primary.main' },
-          bgcolor: 'rgba(255,255,255,0.96)',
+          bgcolor: 'transparent',
         }}
       >
         {tabs.map((tab) => (

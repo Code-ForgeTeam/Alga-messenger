@@ -22,14 +22,18 @@ import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded';
+import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../stores/chatStore';
 import { useContactsStore } from '../stores/contactsStore';
 import { useAuthStore } from '../stores/authStore';
 import { AppHeader } from '../components/AppHeader';
 import { useSnackbarStore } from '../stores/snackbarStore';
+import { useTheme } from '@mui/material/styles';
 
 export default function ChatsPage() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const navigate = useNavigate();
   const { chats, isLoading, loadChats } = useChatStore();
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
@@ -68,11 +72,7 @@ export default function ChatsPage() {
         showBack={false}
         leftSlot={
           <IconButton onClick={() => setDrawerOpen(true)}>
-            <Box sx={{ width: 20, display: 'grid', gap: 0.5 }}>
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#2DBB63' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #D2D7DF' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#E8443A' }} />
-            </Box>
+            <MenuRoundedIcon sx={{ color: isDark ? '#BFD4EA' : '#647789' }} />
           </IconButton>
         }
         rightSlot={
@@ -94,7 +94,7 @@ export default function ChatsPage() {
         sx={{
           '& .MuiOutlinedInput-root': {
             borderRadius: 4,
-            bgcolor: 'rgba(255,255,255,0.75)',
+            bgcolor: isDark ? 'rgba(26,40,56,0.95)' : 'rgba(255,255,255,0.8)',
           },
         }}
       />
@@ -136,9 +136,9 @@ export default function ChatsPage() {
           <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', gap: 1.5 }}>
-                <Avatar sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
-                  {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
-                </Avatar>
+              <Avatar sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
+                {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
+              </Avatar>
                 <Box>
                   <Typography variant="h6" fontWeight={700}>{user?.fullName || 'BVE'}</Typography>
                   <Typography color="text.secondary">@{user?.username || 'AlfaCode'}</Typography>

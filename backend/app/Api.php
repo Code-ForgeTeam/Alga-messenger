@@ -46,6 +46,8 @@ final class Api
         }
 
         if ($path === '/api/chats' && $method === 'GET') { $this->chats(); }
+        if ($path === '/api/chats' && $method === 'POST') { $this->createChat($body); }
+        if ($path === '/api/messages' && $method === 'POST') { $this->sendMessage($body); }
         if ($path === '/api/messages/read' && $method === 'POST') { $this->json(['ok' => true]); }
 
         if (preg_match('#^/api/messages/chat/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatMessages($m[1]); }
@@ -108,6 +110,91 @@ final class Api
             $r['unreadCount'] = 0;
         }
         $this->json($rows);
+    }
+
+    private function createChat(array $body): void
+    {
+        $ownerId = $this->authUserId();
+        $type = (string)($body['type'] ?? 'private');
+        $name = trim((string)($body['name'] ?? ''));
+        $participantIds = $body['participantIds'] ?? [];
+        if (!is_array($participantIds)) {
+            $participantIds = [];
+        }
+
+        $allParticipants = array_values(array_unique(array_filter(array_merge([$ownerId], $participantIds), fn ($v) => is_string($v) && $v !== '')));
+
+        if ($type === 'private' && count($allParticipants) === 2) {
+            sort($allParticipants);
+            $stmt = $this->db()->prepare(
+                'SELECT cp1.chat_id FROM chat_participants cp1
+                 JOIN chat_participants cp2 ON cp2.chat_id = cp1.chat_id
+                 JOIN chats c ON c.id = cp1.chat_id
+                 WHERE c.type = "private" AND cp1.user_id = ? AND cp2.user_id = ? LIMIT 1'
+            );
+            $stmt->execute([$allParticipants[0], $allParticipants[1]]);
+            $existing = $stmt->fetchColumn();
+            if ($existing) {
+                $this->json([
+                    'id' => (string)$existing,
+                    'name' => $name,
+                    'type' => 'private',
+                    'participants' => [],
+                    'updatedAt' => date('c'),
+                ]);
+            }
+        }
+
+        $chatId = $this->uuid();
+        $stmt = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, ?)');
+        $stmt->execute([$chatId, $name === '' ? null : $name, $type]);
+
+        $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
+        foreach ($allParticipants as $uid) {
+            $insertParticipant->execute([$chatId, $uid]);
+        }
+
+        $this->json([
+            'id' => $chatId,
+            'name' => $name,
+            'type' => $type,
+            'participants' => [],
+            'updatedAt' => date('c'),
+        ], 201);
+    }
+
+    private function sendMessage(array $body): void
+    {
+        $userId = $this->authUserId();
+        $chatId = (string)($body['chatId'] ?? '');
+        $text = trim((string)($body['text'] ?? ''));
+        if ($chatId === '' || $text === '') {
+            $this->json(['error' => 'Invalid payload'], 400);
+        }
+
+        $check = $this->db()->prepare('SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1');
+        $check->execute([$chatId, $userId]);
+        if (!$check->fetchColumn()) {
+            $this->json(['error' => 'Forbidden'], 403);
+        }
+
+        $messageId = $this->uuid();
+        $insert = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text) VALUES (?, ?, ?, ?)');
+        $insert->execute([$messageId, $chatId, $userId, $text]);
+
+        $updateChat = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $updateChat->execute([$chatId]);
+
+        $message = [
+            'id' => $messageId,
+            'chatId' => $chatId,
+            'userId' => $userId,
+            'text' => $text,
+            'createdAt' => date('c'),
+            'edited' => 0,
+        ];
+
+        $this->json(['message' => $message], 201);
     }
 
     private function me(): void
