@@ -14,9 +14,14 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import ArchiveIcon from '@mui/icons-material/Archive';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import PersonIcon from '@mui/icons-material/Person';
+import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded';
+import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
+import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../stores/chatStore';
 import { useContactsStore } from '../stores/contactsStore';
@@ -39,8 +44,6 @@ export default function ChatsPage() {
     loadChats();
   }, [loadChats]);
 
-  const archived = chats.filter((c) => c.archived);
-
   const visible = useMemo(() => {
     const needle = q.toLowerCase().trim();
     const base = chats.filter((c) => !c.archived);
@@ -59,16 +62,16 @@ export default function ChatsPage() {
   }
 
   return (
-    <Box sx={{ p: 1, height: '100%', overflow: 'auto' }}>
+    <Box sx={{ p: 1.5, height: '100%', overflow: 'auto' }}>
       <AppHeader
         title="Alga"
         showBack={false}
         leftSlot={
           <IconButton onClick={() => setDrawerOpen(true)}>
-            <Box sx={{ width: 18, display: 'grid', gap: 0.45 }}>
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#1FA35B' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #DDE6E0' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#E53935' }} />
+            <Box sx={{ width: 20, display: 'grid', gap: 0.5 }}>
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#2DBB63' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #D2D7DF' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#E8443A' }} />
             </Box>
           </IconButton>
         }
@@ -79,59 +82,95 @@ export default function ChatsPage() {
         }
       />
 
-      <Box sx={{ px: 1, pb: 1 }}>
-        <TextField fullWidth size="small" placeholder="Поиск чата" value={q} onChange={(e) => setQ(e.target.value)} />
-      </Box>
+      <TextField
+        fullWidth
+        size="small"
+        placeholder="Поиск чата"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        InputProps={{
+          startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+        }}
+        sx={{
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 4,
+            bgcolor: 'rgba(255,255,255,0.75)',
+          },
+        }}
+      />
 
-      {archived.length > 0 && !q && (
-        <ListItemButton onClick={() => navigate('/archive')}>
-          <ArchiveIcon sx={{ mr: 1 }} />
-          <ListItemText primary="Архив" secondary={`${archived.length} чатов`} />
-        </ListItemButton>
-      )}
+      <List sx={{ mt: 1 }}>
+        {visible.map((chat) => {
+          const name = chat.name || chat.participants?.[0]?.fullName || 'Чат';
+          const subtitle = chat.lastMessageText || 'Без сообщений';
+          const date = (chat.lastMessageTime || chat.updatedAt || '').slice(5, 10).replace('-', '.');
+          const initial = (name || 'A').slice(0, 1).toUpperCase();
 
-      <List>
-        {visible.map((chat) => (
-          <ListItemButton key={chat.id} onClick={() => navigate(`/chat/${chat.id}`)}>
-            <ListItemText
-              primary={chat.name || chat.participants?.[0]?.fullName || 'Чат'}
-              secondary={chat.lastMessageText || 'Без сообщений'}
-            />
-            {!!chat.unreadCount && <Typography color="primary.main">{chat.unreadCount}</Typography>}
-          </ListItemButton>
-        ))}
+          return (
+            <ListItemButton
+              key={chat.id}
+              onClick={() => navigate(`/chat/${chat.id}`)}
+              sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2 }}
+            >
+              <Avatar sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#6B5BEE' : '#5A69F6' }}>
+                {initial}
+              </Avatar>
+              <ListItemText
+                primary={<Typography fontWeight={700}>{name}</Typography>}
+                secondary={<Typography color="text.secondary" noWrap>{subtitle}</Typography>}
+              />
+              <Typography variant="body2" color="text.secondary">{date || ''}</Typography>
+            </ListItemButton>
+          );
+        })}
       </List>
 
-      {!visible.length && <Typography sx={{ p: 2 }} color="text.secondary">Пока нет чатов</Typography>}
+      {!visible.length && <Typography sx={{ p: 2, textAlign: 'center' }} color="text.secondary">Пока нет чатов</Typography>}
 
-      <Fab color="primary" sx={{ position: 'fixed', right: 16, bottom: 88 }} onClick={() => navigate('/add-contact')}>
-        <AddIcon />
+      <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110 }} onClick={() => navigate('/add-contact')}>
+        <EditIcon />
       </Fab>
 
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-        <Box sx={{ width: 290, p: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-            <Avatar sx={{ bgcolor: 'primary.main' }}>{(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}</Avatar>
-            <Box>
-              <ListItemText primary={user?.fullName || 'Alga user'} secondary={`@${user?.username || 'username'}`} />
+        <Box sx={{ width: 320 }}>
+          <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', gap: 1.5 }}>
+                <Avatar sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
+                  {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
+                </Avatar>
+                <Box>
+                  <Typography variant="h6" fontWeight={700}>{user?.fullName || 'BVE'}</Typography>
+                  <Typography color="text.secondary">@{user?.username || 'AlfaCode'}</Typography>
+                </Box>
+              </Box>
+              <Typography color="text.secondary">☀️</Typography>
             </Box>
           </Box>
 
-          <List>
-            <ListItemButton onClick={() => { navigate('/settings'); setDrawerOpen(false); }}>
-              <ListItemText primary="Настройки" />
+          <List sx={{ pt: 1 }}>
+            <ListItemButton onClick={() => { navigate('/edit-profile'); setDrawerOpen(false); }}>
+              <PersonIcon sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemText primary="Мой профиль" />
+            </ListItemButton>
+            <ListItemButton onClick={() => { navigate('/contacts'); setDrawerOpen(false); }}>
+              <Groups2RoundedIcon sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemText primary="Контакты" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/favorites'); setDrawerOpen(false); }}>
+              <BookmarkRoundedIcon sx={{ mr: 2, color: 'text.secondary' }} />
               <ListItemText primary="Избранное" />
             </ListItemButton>
-            <ListItemButton onClick={() => { navigate('/archive'); setDrawerOpen(false); }}>
-              <ListItemText primary="Архив" />
+            <ListItemButton onClick={() => { navigate('/settings'); setDrawerOpen(false); }}>
+              <SettingsRoundedIcon sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemText primary="Настройки" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/support'); setDrawerOpen(false); }}>
+              <SupportAgentRoundedIcon sx={{ mr: 2, color: 'text.secondary' }} />
               <ListItemText primary="Поддержка" />
             </ListItemButton>
             <ListItemButton onClick={logout}>
-              <ListItemText primary="Выйти" />
+              <ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main' }} />
             </ListItemButton>
           </List>
         </Box>

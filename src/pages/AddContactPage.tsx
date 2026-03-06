@@ -1,19 +1,27 @@
 import { useState } from 'react';
-import { Box, Button, CircularProgress, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material';
+import { Box, CircularProgress, IconButton, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import { useNavigate } from 'react-router-dom';
 import { userApi } from '../lib/api';
 import { useContactsStore } from '../stores/contactsStore';
 import type { User } from '../lib/types';
-import { AppHeader } from '../components/AppHeader';
 
 export default function AddContactPage() {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const addContact = useContactsStore((s) => s.addContact);
 
-  const search = async () => {
-    const queryValue = query.replace('@', '').trim();
-    if (!queryValue) return setUsers([]);
+  const search = async (value: string) => {
+    const queryValue = value.replace('@', '').trim();
+    setQuery(value);
+
+    if (queryValue.length < 2) {
+      setUsers([]);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -34,30 +42,36 @@ export default function AddContactPage() {
   };
 
   return (
-    <Box sx={{ p: 2 }}>
-      <AppHeader title="Добавить контакт" />
-      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+    <Box sx={{ p: 2, height: '100%', overflowY: 'auto' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+        <IconButton onClick={() => navigate(-1)}><ArrowBackIcon /></IconButton>
         <TextField
+          autoFocus
           fullWidth
+          size="small"
+          placeholder="Поиск по имени пользователя..."
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') search();
-          }}
-          placeholder="username или @username"
+          onChange={(e) => search(e.target.value)}
+          InputProps={{ startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
+          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 5, bgcolor: 'rgba(255,255,255,0.8)' } }}
         />
-        <Button variant="contained" onClick={search}>Найти</Button>
       </Box>
-      {loading ? <CircularProgress /> : null}
+
+      {loading && <CircularProgress sx={{ mt: 2 }} />}
+
+      {!loading && query.trim().length < 2 && (
+        <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 8, fontSize: 18 }}>
+          Введите минимум 2 символа для поиска
+        </Typography>
+      )}
+
       <List>
         {users.map((u) => (
-          <ListItemButton key={u.id}>
+          <ListItemButton key={u.id} onClick={() => addContact(u)}>
             <ListItemText primary={u.fullName} secondary={`@${u.username}`} />
-            <Button onClick={() => addContact(u)}>Добавить</Button>
           </ListItemButton>
         ))}
       </List>
-      {!loading && users.length === 0 && query.trim() && <Typography color="text.secondary">Пользователь не найден</Typography>}
     </Box>
   );
 }
