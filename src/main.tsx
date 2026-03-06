@@ -5,10 +5,20 @@ import { CssBaseline, ThemeProvider } from '@mui/material';
 import App from './App';
 import { useSettingsStore } from './stores/settingsStore';
 import { createCustomTheme, darkTheme, lightTheme } from './theme/themes';
+import { useEffect } from 'react';
 
 function Root() {
-  const { theme, customColors } = useSettingsStore();
+  const { theme, customColors, fontSize } = useSettingsStore();
   const muiTheme = theme === 'dark' ? darkTheme : theme === 'light' ? lightTheme : createCustomTheme(customColors);
+
+  useEffect(() => {
+    const sizeMap: Record<typeof fontSize, string> = {
+      small: '14px',
+      medium: '16px',
+      large: '18px',
+    };
+    document.documentElement.style.fontSize = sizeMap[fontSize] || '16px';
+  }, [fontSize]);
 
   return (
     <ThemeProvider theme={muiTheme}>

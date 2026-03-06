@@ -33,6 +33,18 @@ final class Api
         if ($path === '/api/auth/login' && $method === 'POST') { $this->login($body); }
         if ($path === '/api/auth/verify' && $method === 'GET') { $this->verify(); }
 
+        if ($path === '/api/users/me' && $method === 'GET') { $this->me(); }
+        if ($path === '/api/users/me' && $method === 'PUT') { $this->updateMe($body); }
+        if ($path === '/api/users/search' && $method === 'GET') { $this->searchUsers(); }
+
+        if (preg_match('#^/api/users/by-username/([^/]+)$#', $path, $m) && $method === 'GET') {
+            $this->userByUsername(urldecode($m[1]));
+        }
+
+        if (preg_match('#^/api/users/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') {
+            $this->userById($m[1]);
+        }
+
         if ($path === '/api/chats' && $method === 'GET') { $this->chats(); }
         if ($path === '/api/messages/read' && $method === 'POST') { $this->json(['ok' => true]); }
 
@@ -96,6 +108,105 @@ final class Api
             $r['unreadCount'] = 0;
         }
         $this->json($rows);
+    }
+
+    private function me(): void
+    {
+        $userId = $this->authUserId();
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio FROM users WHERE id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $u = $stmt->fetch();
+        if (!$u) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $this->json([
+            'id' => $u['id'],
+            'username' => $u['username'],
+            'fullName' => $u['full_name'],
+            'bio' => $u['bio'] ?? null,
+        ]);
+    }
+
+    private function updateMe(array $body): void
+    {
+        $userId = $this->authUserId();
+        $fullName = trim((string)($body['fullName'] ?? ''));
+        $bio = trim((string)($body['bio'] ?? ''));
+
+        if ($fullName === '') {
+            $stmt = $this->db()->prepare('SELECT full_name FROM users WHERE id = ? LIMIT 1');
+            $stmt->execute([$userId]);
+            $row = $stmt->fetch();
+            $fullName = (string)($row['full_name'] ?? '');
+        }
+
+        $stmt = $this->db()->prepare('UPDATE users SET full_name = ?, bio = ? WHERE id = ?');
+        $stmt->execute([$fullName, $bio === '' ? null : $bio, $userId]);
+        $this->me();
+    }
+
+    private function searchUsers(): void
+    {
+        $this->authUserId();
+        $q = trim((string)($_GET['q'] ?? ''));
+        if ($q === '' || strlen($q) < 2) {
+            $this->json([]);
+        }
+
+        $like = '%' . $q . '%';
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio FROM users WHERE username LIKE ? OR full_name LIKE ? ORDER BY updated_at DESC LIMIT 30');
+        $stmt->execute([$like, $like]);
+        $rows = $stmt->fetchAll();
+        $result = array_map(fn ($u) => [
+            'id' => $u['id'],
+            'username' => $u['username'],
+            'fullName' => $u['full_name'],
+            'bio' => $u['bio'] ?? null,
+        ], $rows ?: []);
+
+        $this->json($result);
+    }
+
+    private function userByUsername(string $username): void
+    {
+        $this->authUserId();
+        $u = trim($username);
+        if ($u === '') {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio FROM users WHERE username = ? LIMIT 1');
+        $stmt->execute([$u]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $this->json([
+            'id' => $row['id'],
+            'username' => $row['username'],
+            'fullName' => $row['full_name'],
+            'bio' => $row['bio'] ?? null,
+        ]);
+    }
+
+    private function userById(string $id): void
+    {
+        $this->authUserId();
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio FROM users WHERE id = ? LIMIT 1');
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $this->json([
+            'id' => $row['id'],
+            'username' => $row['username'],
+            'fullName' => $row['full_name'],
+            'bio' => $row['bio'] ?? null,
+        ]);
     }
 
     private function chatMessages(string $chatId): void

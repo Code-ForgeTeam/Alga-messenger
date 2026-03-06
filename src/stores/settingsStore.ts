@@ -44,7 +44,7 @@ const defaultRule: PrivacyRule = {
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  theme: 'dark',
+  theme: 'light',
   fontSize: 'medium',
   language: 'ru',
   customColors: {

@@ -25,46 +25,53 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
+import { useSnackbarStore } from '../stores/snackbarStore';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
-  const { theme, bgEffect } = useSettingsStore();
+  const { theme, bgEffect, language, setTheme, setBgEffect, fontSize, setFontSize } = useSettingsStore();
+  const push = useSnackbarStore((s) => s.push);
+
+  const cycleFont = () => {
+    const next = fontSize === 'small' ? 'medium' : fontSize === 'medium' ? 'large' : 'small';
+    setFontSize(next);
+  };
 
   return (
     <Box sx={{ p: 1.5, height: '100%', overflowY: 'auto' }}>
-      <Paper elevation={0} sx={{ borderRadius: 0, p: 1.5, mb: 1.2 }}>
+      <Paper elevation={0} sx={{ p: 1.5, mb: 1.2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <IconButton onClick={() => navigate(-1)}><ArrowBackIcon /></IconButton>
-          <Typography variant="h5" sx={{ fontWeight: 700, ml: 1, flex: 1 }}>Настройки</Typography>
+          <Typography variant="h6" sx={{ fontWeight: 700, ml: 1, flex: 1 }}>Настройки</Typography>
           <IconButton onClick={() => navigate('/edit-profile')}><EditIcon /></IconButton>
         </Box>
 
-        <Box sx={{ textAlign: 'center', pb: 1, position: 'relative' }}>
-          <Avatar sx={{ width: 120, height: 120, mx: 'auto', mb: 1, bgcolor: 'primary.main', fontSize: 42 }}>
+        <Box sx={{ textAlign: 'center', pb: 1 }}>
+          <Avatar sx={{ width: 96, height: 96, mx: 'auto', mb: 1, bgcolor: 'primary.main', fontSize: 34 }}>
             {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
           </Avatar>
-          <Typography variant="h4" fontWeight={700} sx={{ fontSize: 42 }}>{user?.fullName || 'BVE'}</Typography>
-          <Typography color="primary.main" sx={{ fontSize: 18 }}>в сети</Typography>
+          <Typography variant="h5" fontWeight={700}>{user?.fullName || 'BVE'}</Typography>
+          <Typography color="primary.main">в сети</Typography>
         </Box>
       </Paper>
 
       <Paper elevation={0} sx={{ p: 2, mb: 1.2 }}>
-        <Typography color="primary.main" fontWeight={700} sx={{ mb: 1.5 }}>АККАУНТ</Typography>
-        <Typography sx={{ fontSize: 34 }}>@{user?.username || 'AlfaCode'}</Typography>
+        <Typography color="primary.main" fontWeight={700} sx={{ mb: 1.2 }}>АККАУНТ</Typography>
+        <Typography>@{user?.username || 'AlfaCode'}</Typography>
         <Typography color="text.secondary">Имя пользователя</Typography>
-        <Divider sx={{ my: 1.5 }} />
-        <Typography sx={{ fontSize: 30 }}>{String(user?.id || '51...')}</Typography>
+        <Divider sx={{ my: 1.2 }} />
+        <Typography>{String(user?.id || '51...')}</Typography>
         <Typography color="text.secondary">ID</Typography>
-        <Divider sx={{ my: 1.5 }} />
-        <Typography sx={{ fontSize: 30 }}>{user?.bio || 'Не указано'}</Typography>
+        <Divider sx={{ my: 1.2 }} />
+        <Typography>{user?.bio || 'Не указано'}</Typography>
         <Typography color="text.secondary">О себе</Typography>
       </Paper>
 
       <Paper elevation={0} sx={{ mb: 1.2 }}>
         <List>
-          <ListItemButton onClick={() => navigate('/settings')}>
+          <ListItemButton onClick={() => push({ message: 'Настройки чата будут расширены далее.', timeout: 1800 })}>
             <ListItemIcon><ChatBubbleOutlineRoundedIcon /></ListItemIcon>
             <ListItemText primary="Настройки чата" />
           </ListItemButton>
@@ -74,7 +81,7 @@ export default function SettingsPage() {
             <ListItemText primary="Конфиденциальность" />
           </ListItemButton>
           <Divider />
-          <ListItemButton>
+          <ListItemButton onClick={() => push({ message: 'Уведомления и звуки будут расширены далее.', timeout: 1800 })}>
             <ListItemIcon><NotificationsNoneRoundedIcon /></ListItemIcon>
             <ListItemText primary="Уведомления и звуки" />
           </ListItemButton>
@@ -93,22 +100,28 @@ export default function SettingsPage() {
             <ListItemText primary="Устройства" />
           </ListItemButton>
           <Divider />
-          <ListItemButton>
+          <ListItemButton onClick={() => push({ message: 'Языки: русский, английский, китайский.', timeout: 1800 })}>
             <ListItemIcon><LanguageRoundedIcon /></ListItemIcon>
             <ListItemText primary="Язык" />
-            <Typography color="primary.main">Русский</Typography>
+            <Typography color="primary.main">{language === 'ru' ? 'Русский' : language === 'en' ? 'English' : '中文'}</Typography>
           </ListItemButton>
           <Divider />
-          <ListItemButton>
+          <ListItemButton onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
             <ListItemIcon><PaletteOutlinedIcon /></ListItemIcon>
             <ListItemText primary="Оформление" />
             <Typography color="primary.main">{theme === 'dark' ? 'Тёмная' : 'Светлая'}</Typography>
           </ListItemButton>
           <Divider />
-          <ListItemButton onClick={() => navigate('/devices')}>
+          <ListItemButton onClick={() => setBgEffect(bgEffect === 'snow' ? 'none' : 'snow')}>
             <ListItemIcon><AutoAwesomeRoundedIcon /></ListItemIcon>
             <ListItemText primary="Эффекты" />
             <Typography color="primary.main">{bgEffect === 'snow' ? 'Снегопад' : 'Откл.'}</Typography>
+          </ListItemButton>
+          <Divider />
+          <ListItemButton onClick={cycleFont}>
+            <ListItemIcon><AutoAwesomeRoundedIcon /></ListItemIcon>
+            <ListItemText primary="Размер шрифта" />
+            <Typography color="primary.main">{fontSize === 'small' ? 'Маленький' : fontSize === 'medium' ? 'Средний' : 'Крупный'}</Typography>
           </ListItemButton>
         </List>
       </Paper>
