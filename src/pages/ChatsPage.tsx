@@ -93,16 +93,16 @@ export default function ChatsPage() {
   }
 
   return (
-    <Box sx={{ p: 1.5, height: '100%', overflow: 'auto' }}>
+    <Box sx={{ p: 1.5, height: '100%', overflow: 'auto', bgcolor: isDark ? 'transparent' : '#FFFFFF' }}>
       <AppHeader
-        title="Leet"
+        title="Alga"
         showBack={false}
         leftSlot={
           <IconButton onClick={() => setDrawerOpen(true)}>
             <Box sx={{ width: 22, display: 'grid', gap: 0.6 }}>
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#8797A5' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#8797A5' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#8797A5' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#2DBB63' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #D2D7DF' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#E8443A' }} />
             </Box>
           </IconButton>
         }
@@ -116,7 +116,7 @@ export default function ChatsPage() {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         InputProps={{ startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
-        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 4, bgcolor: isDark ? 'rgba(26,40,56,0.95)' : '#EEF0F3' } }}
+        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 4, bgcolor: isDark ? 'rgba(26,40,56,0.95)' : '#F5F7F8' } }}
       />
 
       <List sx={{ mt: 1 }}>
@@ -127,7 +127,7 @@ export default function ChatsPage() {
           const avatarData = getChatAvatar(chat, user?.id);
 
           return (
-            <ListItemButton key={chat.id} onClick={() => navigate(`/chat/${chat.id}`)} sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2 }}>
+            <ListItemButton key={chat.id} onClick={() => navigate(`/chat/${chat.id}`)} sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2, bgcolor: isDark ? 'transparent' : '#FFFFFF' }}>
               <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#5E5BF0' : 'primary.main' }}>
                 {avatarData.initial}
               </Avatar>
@@ -146,7 +146,7 @@ export default function ChatsPage() {
 
       {!visible.length && <Typography sx={{ p: 2, textAlign: 'center' }} color="text.secondary">Пока нет чатов</Typography>}
 
-      <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110, boxShadow: '0 10px 24px rgba(125,106,227,0.45)' }} onClick={() => navigate('/add-contact')}>
+      <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110, boxShadow: isDark ? '0 10px 24px rgba(125,106,227,0.45)' : '0 10px 24px rgba(31,163,91,0.35)' }} onClick={() => navigate('/add-contact')}>
         <EditIcon />
       </Fab>
 

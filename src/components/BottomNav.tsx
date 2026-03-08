@@ -46,11 +46,11 @@ export function BottomNav() {
         sx={{
           height: 74,
           '& .MuiBottomNavigationAction-root': {
-            color: isDark ? '#95A2B3' : '#8E9199',
+            color: isDark ? '#95A2B3' : '#7AA08B',
             minWidth: 64,
           },
           '& .MuiBottomNavigationAction-label': { fontSize: 12 },
-          '& .MuiBottomNavigationAction-root.Mui-selected': { color: '#7D6AE3' },
+          '& .MuiBottomNavigationAction-root.Mui-selected': { color: isDark ? '#7D6AE3' : '#1FA35B' },
           bgcolor: 'transparent',
         }}
       >
