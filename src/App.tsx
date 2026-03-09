@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useChatStore } from './stores/chatStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -40,6 +40,8 @@ export default function App() {
   const chatStore = useChatStore();
   const loadBanners = useNotificationStore((s) => s.loadBanners);
   const { bgEffect, glowMode } = useSettingsStore();
+  const { pathname } = useLocation();
+  const isChatRoute = pathname.startsWith('/chat/');
 
   useEffect(() => {
     auth.checkAuth();
@@ -69,7 +71,7 @@ export default function App() {
       className={glowMode ? 'glow-mode' : ''}
       sx={{
         height: '100dvh',
-        pb: 10,
+        pb: isChatRoute ? 0 : 10,
         overflow: 'hidden',
         backgroundColor: 'background.default',
       }}

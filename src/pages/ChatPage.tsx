@@ -5,6 +5,7 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
 import { uploadApi } from '../lib/api';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
@@ -31,6 +32,8 @@ export default function ChatPage() {
   } = useChatStore();
 
   const me = useAuthStore((s) => s.user);
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [text, setText] = useState('');
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -87,15 +90,15 @@ export default function ChatPage() {
   }
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#0A1A32', color: '#EAF1FF' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 1, borderBottom: '1px solid rgba(255,255,255,0.08)', bgcolor: 'rgba(20,33,52,0.88)' }}>
-        <IconButton onClick={() => navigate(-1)} sx={{ color: '#AFC1D9' }}><ArrowBackIcon /></IconButton>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: isDark ? '#0A1A32' : '#FFFFFF', color: isDark ? '#EAF1FF' : 'text.primary' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, pt: 'max(env(safe-area-inset-top), 8px)', pb: 1, borderBottom: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider', bgcolor: isDark ? 'rgba(20,33,52,0.88)' : '#FFFFFF' }}>
+        <IconButton onClick={() => navigate(-1)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><ArrowBackIcon /></IconButton>
         <Avatar src={avatarSrc} sx={{ width: 46, height: 46, bgcolor: '#5E5BF0' }}>{title.slice(0, 1).toUpperCase()}</Avatar>
         <Box sx={{ flex: 1 }}>
           <Typography sx={{ fontWeight: 700, fontSize: 34 }}>{title}</Typography>
-          {!!typingUsers[chatId]?.length && <Typography variant="caption" color="#B7C8DD">печатает...</Typography>}
+          {!!typingUsers[chatId]?.length && <Typography variant="caption" color={isDark ? '#B7C8DD' : 'text.secondary'}>печатает...</Typography>}
         </Box>
-        <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: '#AFC1D9' }}><MoreVertIcon /></IconButton>
+        <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><MoreVertIcon /></IconButton>
       </Box>
 
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
@@ -106,14 +109,14 @@ export default function ChatPage() {
         <MenuItem onClick={() => { deleteChat(chatId); setMenuAnchor(null); navigate('/chats'); }} sx={{ color: 'error.main' }}>Удалить чат</MenuItem>
       </Menu>
 
-      <Box sx={{ flex: 1, overflow: 'auto', p: 1.2 }}>
+      <Box sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
         {isLoadingMessages && chatMessages.length === 0 ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}><CircularProgress /></Box>
         ) : (
           chatMessages.map((m) => (
             <Box key={m.id} sx={{ mb: 1, display: 'flex', justifyContent: m.userId === me?.id ? 'flex-end' : 'flex-start' }}>
-              <Box sx={{ px: 1.5, py: 0.95, borderRadius: 2.8, maxWidth: '72%', bgcolor: m.userId === me?.id ? '#2F5888' : '#152741' }}>
-                <Typography sx={{ fontSize: 18 }}>{m.text}</Typography>
+              <Box sx={{ px: 1.5, py: 0.95, borderRadius: 2.8, maxWidth: '72%', bgcolor: m.userId === me?.id ? (isDark ? '#2F5888' : '#D8F2E4') : (isDark ? '#152741' : '#F2F5F8') }}>
+                <Typography sx={{ fontSize: 18, color: isDark ? '#EAF1FF' : '#1D2A22' }}>{m.text}</Typography>
                 <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                   {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                 </Typography>
@@ -124,14 +127,14 @@ export default function ChatPage() {
       </Box>
 
       {!!files.length && (
-        <Box sx={{ px: 1.5, py: 0.8, borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', gap: 1, overflowX: 'auto' }}>
+        <Box sx={{ px: 1.5, py: 0.8, borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider', display: 'flex', gap: 1, overflowX: 'auto' }}>
           {files.map((f, i) => <Typography key={`${f.name}-${i}`} variant="caption">{f.name}</Typography>)}
         </Box>
       )}
 
-      <Box sx={{ p: 1, display: 'flex', gap: 1, alignItems: 'center', bgcolor: 'rgba(14,29,47,0.95)' }}>
+      <Box sx={{ px: 1, pt: 1, pb: 'max(env(safe-area-inset-bottom), 8px)', display: 'flex', gap: 1, alignItems: 'center', bgcolor: isDark ? 'rgba(14,29,47,0.95)' : '#FFFFFF', borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider' }}>
         <input ref={inputRef} type="file" multiple style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
-        <IconButton onClick={() => inputRef.current?.click()} sx={{ color: '#8EA3BB' }}><AttachFileIcon /></IconButton>
+        <IconButton onClick={() => inputRef.current?.click()} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><AttachFileIcon /></IconButton>
         <TextField
           fullWidth
           size="small"
@@ -144,9 +147,9 @@ export default function ChatPage() {
               submit();
             }
           }}
-          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 99, bgcolor: 'rgba(255,255,255,0.08)', color: '#fff' } }}
+          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 99, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#F3F5F7', color: isDark ? '#fff' : '#1D2A22' } }}
         />
-        <IconButton onClick={submit} disabled={!text.trim() && !uploaded.length} sx={{ color: '#8EA3BB' }}><SendRoundedIcon /></IconButton>
+        <IconButton onClick={submit} disabled={!text.trim() && !uploaded.length} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><SendRoundedIcon /></IconButton>
       </Box>
     </Box>
   );
