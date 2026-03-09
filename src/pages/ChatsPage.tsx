@@ -22,7 +22,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
-import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded';
+import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
@@ -98,7 +98,7 @@ export default function ChatsPage() {
         title="Alga"
         showBack={false}
         leftSlot={
-          <IconButton onClick={() => setDrawerOpen(true)}>
+          <IconButton onClick={() => setDrawerOpen(true)} sx={{ bgcolor: isDark ? 'rgba(39,57,78,0.75)' : 'rgba(31,163,91,0.12)' }}>
             <Box sx={{ width: 22, display: 'grid', gap: 0.6 }}>
               <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#2DBB63' }} />
               <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #D2D7DF' }} />
@@ -151,20 +151,20 @@ export default function ChatsPage() {
       </Fab>
 
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-        <Box sx={{ width: 320 }}>
-          <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Box sx={{ width: 320, height: '100%', bgcolor: isDark ? '#0E1B2A' : '#F7FAF8' }}>
+          <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', background: isDark ? 'linear-gradient(160deg, #13283D, #0E1B2A)' : 'linear-gradient(160deg, #1FA35B, #22C36A)' }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', gap: 1.5 }}>
                 <Avatar src={user?.avatar} sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
                   {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
                 </Avatar>
                 <Box>
-                  <Typography variant="h6" fontWeight={700}>{user?.fullName || 'Пользователь'}</Typography>
-                  <Typography color="text.secondary">@{user?.username || 'username'}</Typography>
+                  <Typography variant="h6" fontWeight={700} sx={{ color: '#fff' }}>{user?.fullName || 'Пользователь'}</Typography>
+                  <Typography sx={{ color: 'rgba(255,255,255,0.85)' }}>@{user?.username || 'username'}</Typography>
                 </Box>
               </Box>
-              <IconButton onClick={() => setTheme(isDark ? 'light' : 'dark')} size="small" sx={{ border: '1px solid', borderColor: 'divider' }}>
-                {isDark ? <LightModeOutlinedIcon sx={{ color: '#111' }} /> : <DarkModeOutlinedIcon sx={{ color: '#7891A8' }} />}
+              <IconButton onClick={() => setTheme(isDark ? 'light' : 'dark')} size="small" sx={{ border: '1px solid', borderColor: 'rgba(255,255,255,0.45)', color: '#fff', bgcolor: 'rgba(255,255,255,0.12)' }}>
+                {isDark ? <LightModeOutlinedIcon sx={{ color: '#fff' }} /> : <DarkModeOutlinedIcon sx={{ color: '#fff' }} />}
               </IconButton>
             </Box>
           </Box>
@@ -183,7 +183,7 @@ export default function ChatsPage() {
               <ListItemIcon><SettingsRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Настройки" />
             </ListItemButton>
             <ListItemButton onClick={() => { navigate('/support'); setDrawerOpen(false); }}>
-              <ListItemIcon><SupportAgentRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Поддержка" />
+              <ListItemIcon><PsychologyRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="AI" />
             </ListItemButton>
             <ListItemButton onClick={logout}><ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main', sx: { ml: 1 } }} /></ListItemButton>
           </List>

@@ -23,6 +23,7 @@ const PrivacySettingPage = lazy(() => import('./pages/PrivacySettingPage'));
 const UserPickerPage = lazy(() => import('./pages/UserPickerPage'));
 const DataStoragePage = lazy(() => import('./pages/DataStoragePage'));
 const DevicesPage = lazy(() => import('./pages/DevicesPage'));
+const SpecialFeaturesPage = lazy(() => import('./pages/SpecialFeaturesPage'));
 const ArchivePage = lazy(() => import('./pages/ArchivePage'));
 const AddContactPage = lazy(() => import('./pages/AddContactPage'));
 const FavoritesPage = lazy(() => import('./pages/FavoritesPage'));
@@ -31,7 +32,13 @@ const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
 
 
-function BackgroundEffects({ effect }: { effect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain' }) {
+function BackgroundEffects({
+  effect,
+  intensity = 100,
+}: {
+  effect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain';
+  intensity?: number;
+}) {
   if (effect === 'none') return null;
 
   const config =
@@ -42,6 +49,8 @@ function BackgroundEffects({ effect }: { effect: 'none' | 'snow' | 'leaves' | 'f
         : effect === 'flowers'
           ? { symbol: '🌸', count: 18, color: 'primary.light', sizeBase: 14 }
           : { symbol: '💧', count: 34, color: '#7EB6E8', sizeBase: 12 };
+
+  const count = Math.max(8, Math.round((config.count * intensity) / 100));
 
   return (
     <Box
@@ -58,7 +67,7 @@ function BackgroundEffects({ effect }: { effect: 'none' | 'snow' | 'leaves' | 'f
         },
       }}
     >
-      {Array.from({ length: config.count }).map((_, i) => (
+      {Array.from({ length: count }).map((_, i) => (
         <Box
           key={`${effect}-${i}`}
           sx={{
@@ -89,7 +98,7 @@ export default function App() {
   const auth = useAuthStore();
   const chatStore = useChatStore();
   const loadBanners = useNotificationStore((s) => s.loadBanners);
-  const { bgEffect, glowMode } = useSettingsStore();
+  const { bgEffect, effectIntensity, glowMode } = useSettingsStore();
   const { pathname } = useLocation();
   const isChatRoute = pathname.startsWith('/chat/');
 
@@ -126,7 +135,7 @@ export default function App() {
         backgroundColor: 'background.default',
       }}
     >
-      <BackgroundEffects effect={bgEffect} />
+      <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
 
       <Suspense fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}>
         <Routes>
@@ -144,6 +153,7 @@ export default function App() {
           <Route path="/privacy/:settingKey/:exceptionType" element={<Guard><UserPickerPage /></Guard>} />
           <Route path="/data-storage" element={<Guard><DataStoragePage /></Guard>} />
           <Route path="/devices" element={<Guard><DevicesPage /></Guard>} />
+          <Route path="/special-features" element={<Guard><SpecialFeaturesPage /></Guard>} />
           <Route path="/archive" element={<Guard><ArchivePage /></Guard>} />
           <Route path="/add-contact" element={<Guard><AddContactPage /></Guard>} />
           <Route path="/favorites" element={<Guard><FavoritesPage /></Guard>} />

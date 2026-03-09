@@ -312,12 +312,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => {
       const list = state.messages[message.chatId] || [];
       const tempIdx = list.findIndex((m) => m.id === message.tempId);
+      const closePendingIdx =
+        tempIdx < 0
+          ? list.findIndex((m) =>
+              String(m.id).startsWith('temp-') &&
+              m.userId === message.userId &&
+              (m.text || '').trim() === (message.text || '').trim() &&
+              Math.abs(new Date(m.createdAt).getTime() - new Date(message.createdAt).getTime()) < 20000,
+            )
+          : -1;
       let next = list;
       let own = false;
 
-      if (tempIdx >= 0) {
+      if (tempIdx >= 0 || closePendingIdx >= 0) {
+        const idx = tempIdx >= 0 ? tempIdx : closePendingIdx;
         next = [...list];
-        next[tempIdx] = { ...message, status: 'delivered' };
+        next[idx] = { ...message, status: 'delivered' };
         own = true;
       } else if (!list.some((m) => m.id === message.id)) {
         own = message.userId === me;
