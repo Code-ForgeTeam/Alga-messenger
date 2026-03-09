@@ -5,7 +5,7 @@ import { useNotificationStore } from '../stores/notificationStore';
 export function NotificationBanners() {
   const { banners, dismissBanner } = useNotificationStore();
 
-  if (!banners.length) return null;
+  if (!Array.isArray(banners) || !banners.length) return null;
 
   return (
     <Box sx={{

@@ -80,14 +80,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       try {
         const ai = await aiApi.getAIChat();
-        if (!next.some((c) => c.id === ai.id)) next.unshift(ai);
+        if (ai && typeof ai === 'object' && typeof ai.id === 'string' && !next.some((c) => c.id === ai.id)) {
+          next.unshift(ai as Chat);
+        }
       } catch {
         // ignore
       }
 
       try {
         const saved = await savedApi.getSavedChat();
-        if (!next.some((c) => c.id === saved.id)) next.unshift(saved);
+        if (saved && typeof saved === 'object' && typeof saved.id === 'string' && !next.some((c) => c.id === saved.id)) {
+          next.unshift(saved as Chat);
+        }
       } catch {
         // ignore
       }
@@ -110,9 +114,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadMessages: async (chatId) => {
     set({ isLoadingMessages: true });
     try {
-      const messages = (await messageApi.getByChatId(chatId)) as Message[];
+      const response = await messageApi.getByChatId(chatId);
+      const messages = Array.isArray(response)
+        ? (response as Message[])
+        : Array.isArray((response as { items?: Message[] })?.items)
+          ? (response as { items: Message[] }).items
+          : [];
       set((state) => ({
-        messages: { ...state.messages, [chatId]: messages || [] },
+        messages: { ...state.messages, [chatId]: messages },
         isLoadingMessages: false,
       }));
     } catch (e: any) {
