@@ -35,6 +35,24 @@ export default function SettingsPage() {
   const { theme, bgEffect, language, setTheme, setBgEffect } = useSettingsStore();
   const push = useSnackbarStore((s) => s.push);
 
+  const cycleEffect = () => {
+    const order = ['snow', 'leaves', 'flowers', 'rain', 'none'] as const;
+    const currentIdx = order.indexOf(bgEffect as (typeof order)[number]);
+    const next = order[(currentIdx + 1) % order.length];
+    setBgEffect(next);
+  };
+
+  const effectLabel =
+    bgEffect === 'snow'
+      ? 'Снегопад'
+      : bgEffect === 'leaves'
+        ? 'Листопад'
+        : bgEffect === 'flowers'
+          ? 'Цветочки'
+          : bgEffect === 'rain'
+            ? 'Дождик'
+            : 'Выключены';
+
   return (
     <Box sx={{ p: 1.5, height: '100%', overflowY: 'auto' }}>
       <Paper elevation={0} sx={{ p: 1.5, mb: 1.2 }}>
@@ -109,18 +127,18 @@ export default function SettingsPage() {
             <ListItemText primary="Оформление" secondary={theme === 'light' ? 'Светлая' : 'Тёмная'} />
           </ListItemButton>
           <Divider />
-          <ListItemButton onClick={() => setBgEffect(bgEffect === 'snow' ? 'none' : 'snow')}>
+          <ListItemButton onClick={cycleEffect}>
             <ListItemIcon><AutoAwesomeRoundedIcon /></ListItemIcon>
-            <ListItemText primary="Эффекты" secondary={bgEffect === 'snow' ? 'Снегопад' : 'Выключены'} />
+            <ListItemText primary="Эффекты" secondary={effectLabel} />
           </ListItemButton>
         </List>
       </Paper>
 
       <Paper elevation={0} sx={{ mb: 1.2 }}>
         <List>
-          <ListItemButton onClick={() => push({ message: 'Leet v1.0.0', timeout: 1800 })}>
+          <ListItemButton onClick={() => push({ message: 'Alga v1.0.0', timeout: 1800 })}>
             <ListItemIcon><InfoOutlinedIcon /></ListItemIcon>
-            <ListItemText primary="О приложении" secondary="Leet v1.0.0" />
+            <ListItemText primary="О приложении" secondary="Alga v1.0.0" />
           </ListItemButton>
           <Divider />
           <ListItemButton onClick={logout}>

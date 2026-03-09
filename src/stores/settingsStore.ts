@@ -24,13 +24,13 @@ interface SettingsState {
     paper: string;
   };
   privacySettings: PrivacySettings;
-  bgEffect: 'none' | 'snow';
+  bgEffect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain';
   glowMode: boolean;
   setTheme: (theme: ThemeMode) => void;
   setFontSize: (fontSize: FontSize) => void;
   setLanguage: (lang: 'ru' | 'en' | 'zh') => void;
   setCustomColors: (colors: SettingsState['customColors']) => void;
-  setBgEffect: (effect: 'none' | 'snow') => void;
+  setBgEffect: (effect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain') => void;
   setGlowMode: (value: boolean) => void;
   updatePrivacyRule: (key: keyof Omit<PrivacySettings, 'hideReadTime'>, patch: Partial<PrivacyRule>) => Promise<void>;
   setHideReadTime: (value: boolean) => void;

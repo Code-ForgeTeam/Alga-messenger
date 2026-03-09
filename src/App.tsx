@@ -30,6 +30,56 @@ const AdminPage = lazy(() => import('./pages/AdminPage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
 
+
+function BackgroundEffects({ effect }: { effect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain' }) {
+  if (effect === 'none') return null;
+
+  const config =
+    effect === 'snow'
+      ? { symbol: '❄', count: 28, color: 'primary.main', sizeBase: 10 }
+      : effect === 'leaves'
+        ? { symbol: '🍃', count: 20, color: 'primary.light', sizeBase: 13 }
+        : effect === 'flowers'
+          ? { symbol: '🌸', count: 18, color: 'primary.light', sizeBase: 14 }
+          : { symbol: '💧', count: 34, color: '#7EB6E8', sizeBase: 12 };
+
+  return (
+    <Box
+      sx={{
+        position: 'fixed',
+        inset: 0,
+        pointerEvents: 'none',
+        zIndex: 0,
+        overflow: 'hidden',
+        '@keyframes fall': {
+          '0%': { transform: 'translateY(-12vh) translateX(0)', opacity: 0 },
+          '20%': { opacity: 0.65 },
+          '100%': { transform: 'translateY(110vh) translateX(8px)', opacity: 0 },
+        },
+      }}
+    >
+      {Array.from({ length: config.count }).map((_, i) => (
+        <Box
+          key={`${effect}-${i}`}
+          sx={{
+            position: 'absolute',
+            top: '-12vh',
+            left: `${(i * 11) % 100}%`,
+            fontSize: `${config.sizeBase + (i % 4) * 4}px`,
+            color: config.color,
+            opacity: 0.55,
+            animation: `fall ${6 + (i % 7)}s linear infinite`,
+            animationDelay: `${(i % 10) * 0.5}s`,
+            filter: effect === 'rain' ? 'blur(0.2px)' : 'none',
+          }}
+        >
+          {config.symbol}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function Guard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/auth" replace />;
@@ -76,40 +126,7 @@ export default function App() {
         backgroundColor: 'background.default',
       }}
     >
-      {bgEffect === 'snow' ? (
-        <Box
-          sx={{
-            position: 'fixed',
-            inset: 0,
-            pointerEvents: 'none',
-            zIndex: 0,
-            overflow: 'hidden',
-            '@keyframes fall': {
-              '0%': { transform: 'translateY(-10vh)', opacity: 0 },
-              '20%': { opacity: 0.65 },
-              '100%': { transform: 'translateY(110vh)', opacity: 0 },
-            },
-          }}
-        >
-          {Array.from({ length: 28 }).map((_, i) => (
-            <Box
-              key={i}
-              sx={{
-                position: 'absolute',
-                top: '-10vh',
-                left: `${(i * 13) % 100}%`,
-                fontSize: `${10 + (i % 5) * 4}px`,
-                color: 'primary.main',
-                opacity: 0.45,
-                animation: `fall ${6 + (i % 7)}s linear infinite`,
-                animationDelay: `${(i % 10) * 0.6}s`,
-              }}
-            >
-              ❄
-            </Box>
-          ))}
-        </Box>
-      ) : null}
+      <BackgroundEffects effect={bgEffect} />
 
       <Suspense fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}>
         <Routes>
