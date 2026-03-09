@@ -112,6 +112,8 @@ export const messageApi = {
   send: async (chatId: string, text: string, attachments: unknown[] = [], replyToId?: string) =>
     (await api.post('/messages', { chatId, text, attachments, replyToId })).data,
   markAsRead: async (chatId: string) => (await api.post('/messages/read', { chatId })).data,
+  delete: async (messageId: string, deleteForAll = false) =>
+    (await api.delete(`/messages/${messageId}`, { data: { deleteForAll } })).data,
 };
 
 export const notificationsApi = {

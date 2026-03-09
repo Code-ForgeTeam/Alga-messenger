@@ -22,6 +22,7 @@ interface ChatState {
   setCurrentChat: (chatId: string | null) => void;
   sendMessage: (chatId: string, text: string, attachments?: unknown[], replyToId?: string) => Promise<void>;
   markAsRead: (chatId: string) => Promise<void>;
+  deleteMessage: (chatId: string, messageId: string, deleteForAll?: boolean) => Promise<void>;
 
   createChat: (name: string, type: string, participantIds: string[]) => Promise<Chat>;
   clearChat: (chatId: string) => Promise<void>;
@@ -246,6 +247,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       chats: state.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
     }));
+  },
+
+  deleteMessage: async (chatId, messageId, deleteForAll = false) => {
+    const me = useAuthStore.getState().user?.id;
+    const target = (get().messages[chatId] || []).find((m) => m.id === messageId);
+
+    if (!target) return;
+    if (deleteForAll && target.userId !== me) return;
+
+    try {
+      await messageApi.delete(messageId, deleteForAll);
+    } catch {
+      // ignore backend errors for local UX continuity
+    }
+
+    set((state) => {
+      const nextMessages = (state.messages[chatId] || []).filter((m) => m.id !== messageId);
+      const last = nextMessages[nextMessages.length - 1];
+
+      return {
+        messages: { ...state.messages, [chatId]: nextMessages },
+        chats: state.chats.map((c) =>
+          c.id === chatId
+            ? {
+                ...c,
+                lastMessage: last,
+                lastMessageText: last?.text || '',
+                lastMessageTime: last?.createdAt,
+              }
+            : c,
+        ),
+      };
+    });
   },
 
   createChat: async (name, type, participantIds) => {

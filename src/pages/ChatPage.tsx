@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Avatar, Box, Button, CircularProgress, IconButton, Menu, MenuItem, TextField, Typography } from '@mui/material';
+import {
+  Avatar,
+  Box,
+  Button,
+  CircularProgress,
+  IconButton,
+  Menu,
+  MenuItem,
+  TextField,
+  Typography,
+} from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -9,6 +19,7 @@ import { useTheme } from '@mui/material/styles';
 import { uploadApi } from '../lib/api';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
+import type { Message } from '../lib/types';
 
 export default function ChatPage() {
   const { chatId = '' } = useParams();
@@ -29,6 +40,7 @@ export default function ChatPage() {
     muteChat,
     pinChat,
     deleteChat,
+    deleteMessage,
   } = useChatStore();
 
   const me = useAuthStore((s) => s.user);
@@ -36,6 +48,8 @@ export default function ChatPage() {
   const isDark = theme.palette.mode === 'dark';
   const [text, setText] = useState('');
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [msgMenuAnchor, setMsgMenuAnchor] = useState<HTMLElement | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [uploaded, setUploaded] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -50,6 +64,26 @@ export default function ChatPage() {
   }, [chatId, loadMessages, markAsRead, setCurrentChat]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
+
+  const rows = useMemo(() => {
+    const result: Array<{ type: 'date'; key: string; label: string } | { type: 'message'; key: string; value: Message }> = [];
+    let prevDate = '';
+
+    for (const m of chatMessages) {
+      const d = new Date(m.createdAt);
+      const dateKey = Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+      if (dateKey !== prevDate) {
+        const label = Number.isNaN(d.getTime())
+          ? 'Сегодня'
+          : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+        result.push({ type: 'date', key: `date-${dateKey || m.id}`, label });
+        prevDate = dateKey;
+      }
+      result.push({ type: 'message', key: m.id, value: m });
+    }
+
+    return result;
+  }, [chatMessages]);
 
   const title = useMemo(() => {
     if (!chat) return 'Чат';
@@ -109,20 +143,72 @@ export default function ChatPage() {
         <MenuItem onClick={() => { deleteChat(chatId); setMenuAnchor(null); navigate('/chats'); }} sx={{ color: 'error.main' }}>Удалить чат</MenuItem>
       </Menu>
 
+      <Menu anchorEl={msgMenuAnchor} open={!!msgMenuAnchor} onClose={() => { setMsgMenuAnchor(null); setSelectedMessage(null); }}>
+        <MenuItem
+          onClick={() => {
+            if (selectedMessage) deleteMessage(chatId, selectedMessage.id, false);
+            setMsgMenuAnchor(null);
+            setSelectedMessage(null);
+          }}
+        >
+          Удалить у себя
+        </MenuItem>
+        <MenuItem
+          disabled={!selectedMessage || selectedMessage.userId !== me?.id}
+          onClick={() => {
+            if (selectedMessage) deleteMessage(chatId, selectedMessage.id, true);
+            setMsgMenuAnchor(null);
+            setSelectedMessage(null);
+          }}
+        >
+          Удалить у всех
+        </MenuItem>
+      </Menu>
+
       <Box sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
         {isLoadingMessages && chatMessages.length === 0 ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}><CircularProgress /></Box>
         ) : (
-          chatMessages.map((m) => (
-            <Box key={m.id} sx={{ mb: 1, display: 'flex', justifyContent: m.userId === me?.id ? 'flex-end' : 'flex-start' }}>
-              <Box sx={{ px: 1.5, py: 0.95, borderRadius: 2.8, maxWidth: '72%', bgcolor: m.userId === me?.id ? (isDark ? '#2F5888' : '#D8F2E4') : (isDark ? '#152741' : '#F2F5F8') }}>
-                <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.text}</Typography>
-                <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
-                  {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                </Typography>
+          rows.map((row) => {
+            if (row.type === 'date') {
+              return (
+                <Box key={row.key} sx={{ display: 'flex', justifyContent: 'center', my: 1.2 }}>
+                  <Box sx={{ px: 1.2, py: 0.4, borderRadius: 99, bgcolor: isDark ? 'rgba(255,255,255,0.11)' : '#E8EDF2' }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, color: isDark ? '#D0DCEE' : '#6A7785' }}>{row.label}</Typography>
+                  </Box>
+                </Box>
+              );
+            }
+
+            const m = row.value;
+            return (
+              <Box key={row.key} sx={{ mb: 1, display: 'flex', justifyContent: m.userId === me?.id ? 'flex-end' : 'flex-start' }}>
+                <Box
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setSelectedMessage(m);
+                    setMsgMenuAnchor(e.currentTarget);
+                  }}
+                  onPointerDown={(e) => {
+                    const target = e.currentTarget as HTMLElement;
+                    const timer = window.setTimeout(() => {
+                      setSelectedMessage(m);
+                      setMsgMenuAnchor(target);
+                    }, 450);
+                    const clear = () => window.clearTimeout(timer);
+                    target.addEventListener('pointerup', clear, { once: true });
+                    target.addEventListener('pointerleave', clear, { once: true });
+                  }}
+                  sx={{ px: 1.5, py: 0.95, borderRadius: 2.8, maxWidth: '72%', bgcolor: m.userId === me?.id ? (isDark ? '#2F5888' : '#D8F2E4') : (isDark ? '#152741' : '#F2F5F8') }}
+                >
+                  <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.text}</Typography>
+                  <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
+                    {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                  </Typography>
+                </Box>
               </Box>
-            </Box>
-          ))
+            );
+          })
         )}
       </Box>
 

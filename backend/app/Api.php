@@ -50,9 +50,12 @@ final class Api
         if ($path === '/api/saved/chat' && $method === 'GET') { $this->savedChat(); }
         if ($path === '/api/messages' && $method === 'POST') { $this->sendMessage($body); }
         if ($path === '/api/messages/read' && $method === 'POST') { $this->json(['ok' => true]); }
+        if ($path === '/api/ai/chat' && $method === 'GET') { $this->aiChat(); }
+        if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
 
         if (preg_match('#^/api/messages/chat/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatMessages($m[1]); }
+        if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteMessage($m[1], $body); }
 
         $this->json(['error' => 'Not found', 'path' => $path], 404);
     }
@@ -231,6 +234,130 @@ final class Api
         ];
 
         $this->json(['message' => $message], 201);
+    }
+
+
+    private function aiChat(): void
+    {
+        $userId = $this->authUserId();
+        $stmt = $this->db()->prepare(
+            'SELECT c.id
+             FROM chats c
+             JOIN chat_participants cp ON cp.chat_id = c.id
+             WHERE c.type = "ai" AND cp.user_id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$userId]);
+        $existing = $stmt->fetchColumn();
+
+        if (!$existing) {
+            $chatId = $this->uuid();
+            $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, "ai")');
+            $insertChat->execute([$chatId, 'AI']);
+
+            $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, pinned) VALUES (?, ?, 1)');
+            $insertParticipant->execute([$chatId, $userId]);
+            $existing = $chatId;
+        }
+
+        $chat = $this->chatByIdForUser((string)$existing, $userId);
+        if (!$chat) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $this->json($chat);
+    }
+
+    private function aiMessage(array $body): void
+    {
+        $userId = $this->authUserId();
+        $chatId = (string)($body['chatId'] ?? '');
+        $text = trim((string)($body['text'] ?? ''));
+
+        if ($chatId === '' || $text === '') {
+            $this->json(['error' => 'Invalid payload'], 400);
+        }
+
+        $check = $this->db()->prepare('SELECT c.id FROM chats c JOIN chat_participants cp ON cp.chat_id = c.id WHERE c.id = ? AND c.type = "ai" AND cp.user_id = ? LIMIT 1');
+        $check->execute([$chatId, $userId]);
+        if (!$check->fetchColumn()) {
+            $this->json(['error' => 'Forbidden'], 403);
+        }
+
+        $messageId = $this->uuid();
+        $insert = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text) VALUES (?, ?, ?, ?)');
+        $insert->execute([$messageId, $chatId, $userId, $text]);
+
+        $replyText = 'AI: ' . $this->composeAiReply($text);
+        $replyId = $this->uuid();
+        $insert->execute([$replyId, $chatId, $userId, $replyText]);
+
+        $updateChat = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $updateChat->execute([$chatId]);
+
+        $this->json([
+            'userMessage' => [
+                'id' => $messageId,
+                'chatId' => $chatId,
+                'userId' => $userId,
+                'text' => $text,
+                'createdAt' => date('c'),
+                'edited' => 0,
+            ],
+            'aiMessage' => [
+                'id' => $replyId,
+                'chatId' => $chatId,
+                'userId' => $userId,
+                'text' => $replyText,
+                'createdAt' => date('c'),
+                'edited' => 0,
+            ],
+            'message' => $replyText,
+        ], 201);
+    }
+
+    private function composeAiReply(string $text): string
+    {
+        if (preg_match('/(hello|привет|здрав)/iu', $text)) {
+            return 'Привет! Чем могу помочь?';
+        }
+        if (preg_match('/(ошибка|error|bug)/iu', $text)) {
+            return 'Понял. Опиши шаги воспроизведения и текст ошибки — помогу точечно.';
+        }
+
+        return 'Получил: ' . substr($text, 0, 300);
+    }
+
+    private function deleteMessage(string $messageId, array $body): void
+    {
+        $userId = $this->authUserId();
+        $deleteForAll = (bool)($body['deleteForAll'] ?? false);
+
+        $stmt = $this->db()->prepare('SELECT id, chat_id, user_id FROM messages WHERE id = ? LIMIT 1');
+        $stmt->execute([$messageId]);
+        $message = $stmt->fetch();
+        if (!$message) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $part = $this->db()->prepare('SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1');
+        $part->execute([$message['chat_id'], $userId]);
+        if (!$part->fetchColumn()) {
+            $this->json(['error' => 'Forbidden'], 403);
+        }
+
+        if ($deleteForAll && $message['user_id'] !== $userId) {
+            $this->json(['error' => 'Delete for all is allowed only for own messages'], 403);
+        }
+
+        // Пока без таблицы персональных удалений: удаляем физически.
+        $del = $this->db()->prepare('DELETE FROM messages WHERE id = ?');
+        $del->execute([$messageId]);
+
+        $updateChat = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $updateChat->execute([$message['chat_id']]);
+
+        $this->json(['ok' => true]);
     }
 
     private function me(): void
