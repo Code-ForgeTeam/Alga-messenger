@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Avatar,
   Box,
-  Chip,
+  CircularProgress,
   IconButton,
   MenuItem,
   Paper,
@@ -15,28 +15,60 @@ import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import { useNavigate } from 'react-router-dom';
+import { aiApi } from '../lib/api';
 import { useSettingsStore } from '../stores/settingsStore';
+
+type Msg = { from: 'ai' | 'me'; text: string };
 
 export default function SupportPage() {
   const navigate = useNavigate();
   const { aiProvider, aiApiKey } = useSettingsStore();
   const [provider, setProvider] = useState<'g4f' | 'custom'>(aiProvider);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState([
-    { from: 'ai', text: 'Я помогаю с разработкой софта, кодом и техническими вопросами.' },
-  ] as { from: 'ai' | 'me'; text: string }[]);
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [chatId, setChatId] = useState<string>('');
+  const listRef = useRef<HTMLDivElement | null>(null);
 
-  const onSend = () => {
+  useEffect(() => {
+    aiApi
+      .getAIChat()
+      .then((chat) => setChatId(String(chat?.id || '')))
+      .catch(() => setChatId(''));
+  }, []);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, loading]);
+
+  const onSend = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || loading) return;
 
-    const response =
-      provider === 'custom' && !aiApiKey
-        ? 'Добавьте API ключ в Настройки → Спец. возможности, чтобы использовать свой AI.'
-        : `Принял: ${text}`;
-
-    setMessages((prev) => [...prev, { from: 'me', text }, { from: 'ai', text: response }]);
+    setMessages((prev) => [...prev, { from: 'me', text }]);
     setInput('');
+    setLoading(true);
+
+    try {
+      const resolvedChatId = chatId || String((await aiApi.getAIChat())?.id || '');
+      if (!resolvedChatId) throw new Error('AI chat id missing');
+      if (!chatId) setChatId(resolvedChatId);
+
+      // Пока backend использует встроенный AI endpoint.
+      // Для custom провайдера сохраняем совместимость и обязательно возвращаем ответ.
+      if (provider === 'custom' && !aiApiKey.trim()) {
+        setMessages((prev) => [...prev, { from: 'ai', text: 'Введите AI API ключ в Спец. возможностях.' }]);
+      } else {
+        const payload = await aiApi.sendMessage(resolvedChatId, text);
+        const answer = String(payload?.aiMessage?.text || payload?.message || 'Ответ получен.');
+        setMessages((prev) => [...prev, { from: 'ai', text: answer }]);
+      }
+    } catch {
+      setMessages((prev) => [...prev, { from: 'ai', text: 'Ошибка ответа AI. Проверьте подключение к backend.' }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,12 +85,7 @@ export default function SupportPage() {
         </Select>
       </Box>
 
-      <Paper elevation={0} sx={{ p: 1.2, borderRadius: 3, bgcolor: 'rgba(125,106,227,0.12)' }}>
-        <Typography fontWeight={700} sx={{ color: 'primary.main' }}>ПРОЦЕСС МЫШЛЕНИЯ</Typography>
-        <Chip label="4.6s" size="small" sx={{ mt: 0.8 }} />
-      </Paper>
-
-      <Box sx={{ flex: 1, overflowY: 'auto', pr: 0.2, display: 'grid', gap: 1 }}>
+      <Box ref={listRef} sx={{ flex: 1, overflowY: 'auto', pr: 0.2, display: 'grid', gap: 1, alignContent: 'start' }}>
         {messages.map((m, i) => (
           <Paper
             key={`${m.from}-${i}`}
@@ -75,6 +102,13 @@ export default function SupportPage() {
             <Typography sx={{ whiteSpace: 'pre-wrap' }}>{m.text}</Typography>
           </Paper>
         ))}
+
+        {loading && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 1 }}>
+            <CircularProgress size={16} />
+            <Typography variant="body2" color="text.secondary">AI печатает...</Typography>
+          </Box>
+        )}
       </Box>
 
       <Paper
@@ -95,11 +129,16 @@ export default function SupportPage() {
           placeholder="Напиши сообщение..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && onSend()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
           fullWidth
           InputProps={{ disableUnderline: true }}
         />
-        <IconButton color="primary" onClick={onSend}><SendRoundedIcon /></IconButton>
+        <IconButton color="primary" onClick={onSend} disabled={!input.trim() || loading}><SendRoundedIcon /></IconButton>
       </Paper>
     </Box>
   );

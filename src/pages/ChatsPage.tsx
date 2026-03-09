@@ -152,18 +152,39 @@ export default function ChatsPage() {
 
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Box sx={{ width: 320, height: '100%', bgcolor: isDark ? '#0E1B2A' : '#F7FAF8' }}>
-          <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', background: isDark ? 'linear-gradient(160deg, #13283D, #0E1B2A)' : 'linear-gradient(160deg, #1FA35B, #22C36A)' }}>
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-              <Box sx={{ display: 'flex', gap: 1.5 }}>
-                <Avatar src={user?.avatar} sx={{ width: 74, height: 74, bgcolor: 'primary.main' }}>
-                  {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
-                </Avatar>
-                <Box>
-                  <Typography variant="h6" fontWeight={700} sx={{ color: '#fff' }}>{user?.fullName || 'Пользователь'}</Typography>
-                  <Typography sx={{ color: 'rgba(255,255,255,0.85)' }}>@{user?.username || 'username'}</Typography>
-                </Box>
+          <Box
+            sx={{
+              pt: 'max(env(safe-area-inset-top), 12px)',
+              px: 2,
+              pb: 1.5,
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              background: isDark ? 'linear-gradient(160deg, #13283D, #0E1B2A)' : 'linear-gradient(160deg, #1FA35B, #22C36A)',
+            }}
+          >
+            <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'center' }}>
+              <Avatar src={user?.avatar} sx={{ width: 58, height: 58, bgcolor: 'primary.main', flexShrink: 0 }}>
+                {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
+              </Avatar>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="h6" fontWeight={700} sx={{ color: '#fff', fontSize: 18 }} noWrap>
+                  {user?.fullName || 'Пользователь'}
+                </Typography>
+                <Typography sx={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }} noWrap>
+                  @{user?.username || 'username'}
+                </Typography>
               </Box>
-              <IconButton onClick={() => setTheme(isDark ? 'light' : 'dark')} size="small" sx={{ border: '1px solid', borderColor: 'rgba(255,255,255,0.45)', color: '#fff', bgcolor: 'rgba(255,255,255,0.12)' }}>
+              <IconButton
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                size="small"
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'rgba(255,255,255,0.45)',
+                  color: '#fff',
+                  bgcolor: 'rgba(255,255,255,0.12)',
+                  flexShrink: 0,
+                }}
+              >
                 {isDark ? <LightModeOutlinedIcon sx={{ color: '#fff' }} /> : <DarkModeOutlinedIcon sx={{ color: '#fff' }} />}
               </IconButton>
             </Box>

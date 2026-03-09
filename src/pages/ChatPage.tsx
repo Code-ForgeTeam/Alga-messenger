@@ -95,7 +95,7 @@ export default function ChatPage() {
         <IconButton onClick={() => navigate(-1)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><ArrowBackIcon /></IconButton>
         <Avatar src={avatarSrc} sx={{ width: 46, height: 46, bgcolor: '#5E5BF0' }}>{title.slice(0, 1).toUpperCase()}</Avatar>
         <Box sx={{ flex: 1 }}>
-          <Typography sx={{ fontWeight: 700, fontSize: 34 }}>{title}</Typography>
+          <Typography sx={{ fontWeight: 700, fontSize: 18 }} noWrap>{title}</Typography>
           {!!typingUsers[chatId]?.length && <Typography variant="caption" color={isDark ? '#B7C8DD' : 'text.secondary'}>печатает...</Typography>}
         </Box>
         <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><MoreVertIcon /></IconButton>
@@ -116,7 +116,7 @@ export default function ChatPage() {
           chatMessages.map((m) => (
             <Box key={m.id} sx={{ mb: 1, display: 'flex', justifyContent: m.userId === me?.id ? 'flex-end' : 'flex-start' }}>
               <Box sx={{ px: 1.5, py: 0.95, borderRadius: 2.8, maxWidth: '72%', bgcolor: m.userId === me?.id ? (isDark ? '#2F5888' : '#D8F2E4') : (isDark ? '#152741' : '#F2F5F8') }}>
-                <Typography sx={{ fontSize: 18, color: isDark ? '#EAF1FF' : '#1D2A22' }}>{m.text}</Typography>
+                <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.text}</Typography>
                 <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                   {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                 </Typography>
@@ -138,15 +138,12 @@ export default function ChatPage() {
         <TextField
           fullWidth
           size="small"
+          multiline
+          minRows={1}
+          maxRows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Сообщение..."
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
           sx={{ '& .MuiOutlinedInput-root': { borderRadius: 99, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#F3F5F7', color: isDark ? '#fff' : '#1D2A22' } }}
         />
         <IconButton onClick={submit} disabled={!text.trim() && !uploaded.length} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><SendRoundedIcon /></IconButton>

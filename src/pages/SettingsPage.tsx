@@ -1,6 +1,7 @@
 import {
   Avatar,
   Box,
+  Divider,
   IconButton,
   List,
   ListItemButton,
@@ -32,21 +33,6 @@ export default function SettingsPage() {
   const { theme, setTheme } = useSettingsStore();
   const push = useSnackbarStore((s) => s.push);
 
-  const items = [
-    { icon: <ChatBubbleOutlineRoundedIcon />, title: 'Настройки чата', action: () => push({ message: 'Скоро добавим расширенные настройки чата.', timeout: 2200 }) },
-    { icon: <LockOutlinedIcon />, title: 'Конфиденциальность', action: () => navigate('/privacy') },
-    { icon: <NotificationsNoneRoundedIcon />, title: 'Уведомления', action: () => push({ message: 'Панель уведомлений в доработке.', timeout: 2200 }) },
-    { icon: <StorageRoundedIcon />, title: 'Данные и хранилище', action: () => navigate('/data-storage') },
-    { icon: <DevicesRoundedIcon />, title: 'Устройства', action: () => navigate('/devices') },
-    { icon: <AutoAwesomeRoundedIcon />, title: 'Спец. возможности', action: () => navigate('/special-features') },
-    {
-      icon: <PaletteOutlinedIcon />,
-      title: theme === 'dark' ? 'Тема: Тёмная' : 'Тема: Светлая',
-      action: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
-    },
-    { icon: <InfoOutlinedIcon />, title: 'О приложении', action: () => push({ message: 'Alga v1.0.0', timeout: 2200 }) },
-  ];
-
   return (
     <Box sx={{ p: 1.5, height: '100%', overflowY: 'auto' }}>
       <Paper elevation={0} sx={{ p: 1.5, mb: 1.2, borderRadius: 3 }}>
@@ -57,7 +43,7 @@ export default function SettingsPage() {
         </Box>
 
         <Box sx={{ textAlign: 'center', pb: 1 }}>
-          <Avatar src={user?.avatar} sx={{ width: 90, height: 90, mx: 'auto', mb: 1, bgcolor: 'primary.main' }}>
+          <Avatar src={user?.avatar} sx={{ width: 94, height: 94, mx: 'auto', mb: 1, bgcolor: 'primary.main' }}>
             {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
           </Avatar>
           <Typography fontWeight={700}>{user?.fullName || 'Пользователь'}</Typography>
@@ -65,18 +51,55 @@ export default function SettingsPage() {
         </Box>
       </Paper>
 
-      <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+      <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden', mb: 1.2 }}>
+        <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>ОСНОВНЫЕ</Typography>
         <List disablePadding>
-          {items.map((item) => (
-            <ListItemButton key={item.title} onClick={item.action} sx={{ py: 1.25 }}>
-              <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>{item.icon}</ListItemIcon>
-              <ListItemText
-                primary={item.title}
-                primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }}
-              />
-            </ListItemButton>
-          ))}
+          <ListItemButton onClick={() => push({ message: 'Скоро добавим расширенные настройки чата.', timeout: 2200 })} sx={{ py: 1.25 }}>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><ChatBubbleOutlineRoundedIcon /></ListItemIcon>
+            <ListItemText primary="Настройки чата" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
+          </ListItemButton>
+          <ListItemButton onClick={() => navigate('/privacy')} sx={{ py: 1.25 }}>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><LockOutlinedIcon /></ListItemIcon>
+            <ListItemText primary="Конфиденциальность" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
+          </ListItemButton>
+          <ListItemButton onClick={() => push({ message: 'Панель уведомлений в доработке.', timeout: 2200 })} sx={{ py: 1.25 }}>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><NotificationsNoneRoundedIcon /></ListItemIcon>
+            <ListItemText primary="Уведомления" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
+          </ListItemButton>
+          <ListItemButton onClick={() => navigate('/data-storage')} sx={{ py: 1.25 }}>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><StorageRoundedIcon /></ListItemIcon>
+            <ListItemText primary="Данные и хранилище" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
+          </ListItemButton>
+          <ListItemButton onClick={() => navigate('/devices')} sx={{ py: 1.25 }}>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><DevicesRoundedIcon /></ListItemIcon>
+            <ListItemText primary="Устройства" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
+          </ListItemButton>
+          <ListItemButton onClick={() => navigate('/special-features')} sx={{ py: 1.25 }}>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><AutoAwesomeRoundedIcon /></ListItemIcon>
+            <ListItemText primary="Спец. возможности" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
+          </ListItemButton>
+        </List>
+      </Paper>
 
+      <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+        <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>ПРИЛОЖЕНИЕ</Typography>
+        <List disablePadding>
+          <ListItemButton onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} sx={{ py: 1.25 }}>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><PaletteOutlinedIcon /></ListItemIcon>
+            <ListItemText
+              primary={theme === 'dark' ? 'Тема: Тёмная' : 'Тема: Светлая'}
+              primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }}
+            />
+          </ListItemButton>
+          <ListItemButton onClick={() => push({ message: 'Alga v1.0.0', timeout: 2200 })} sx={{ py: 1.25 }}>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><InfoOutlinedIcon /></ListItemIcon>
+            <ListItemText primary="О приложении" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
+          </ListItemButton>
+        </List>
+
+        <Divider />
+
+        <List disablePadding>
           <ListItemButton onClick={logout} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'error.main' }}><LogoutRoundedIcon /></ListItemIcon>
             <ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main', fontSize: 15, fontWeight: 600 }} />
