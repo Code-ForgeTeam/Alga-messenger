@@ -55,6 +55,17 @@ npm run cap:open:android
 ### Альтернатива (если позже понадобится подписанный IPA)
 Можно подключить Codemagic/EAS и добавить Apple-signing.
 
+
+### Если в Actions видите только `Configure` и нет `Run workflow`
+1. Проверьте, что файл `.github/workflows/ios-unsigned-ipa.yml` уже в **default branch** (обычно `main`).
+2. Repo Settings → Actions → General:
+   - включено `Allow all actions and reusable workflows`;
+   - у вас есть права на запуск workflow.
+3. Откройте именно страницу workflow **Build unsigned iOS IPA** (а не шаблоны в `set up a workflow yourself`).
+4. После попадания файла в `main` появится кнопка **Run workflow**.
+
+> Дополнительно: workflow теперь запускается и автоматически при push в `main` (по изменению релевантных файлов), так что артефакт можно получить даже без ручного запуска.
+
 ## 4) Быстрая проверка backend
 
 - `.../index.php/health` → `{"ok":true}`
