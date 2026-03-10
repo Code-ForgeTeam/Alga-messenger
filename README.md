@@ -35,35 +35,25 @@ npm run cap:open:android
 - `Build` → `Build Bundle(s) / APK(s)` → `Build APK(s)`
 - готовый APK обычно в `android/app/build/outputs/apk/...`
 
-## 3) Сборка IPA без macOS (облачный CI)
+## 3) Сборка IPA через GitHub (без Apple Developer и без сертификатов)
 
-Локально без macOS подписанный `.ipa` собрать нельзя — используйте облачный Mac runner.
+Добавлен workflow: `.github/workflows/ios-unsigned-ipa.yml`.
 
-### Вариант A: Codemagic
-1. Подключите репозиторий в Codemagic.
-2. Включите workflow для iOS и укажите Apple Team / сертификаты / provisioning profile.
-3. Перед iOS build запустите шаги:
-   ```bash
-   npm ci
-   npm run build
-   npx cap sync ios
-   ```
-4. Запустите iOS build — на выходе получите `.ipa` в артефактах.
+Он собирает **unsigned** `.ipa` (без подписи) на `macos-14` runner и кладёт файл в GitHub Artifacts.
 
-### Вариант B: EAS Build (Expo services, даже для bare/capacitor проекта)
-1. Установите CLI и авторизуйтесь:
-   ```bash
-   npm i -g eas-cli
-   eas login
-   ```
-2. Настройте `eas.json` для iOS profile.
-3. Запустите удалённую сборку:
-   ```bash
-   eas build -p ios
-   ```
-4. Скачайте готовый `.ipa` из ссылки в логе.
+### Как запустить
+1. Откройте GitHub → `Actions`.
+2. Выберите workflow **Build unsigned iOS IPA**.
+3. Нажмите **Run workflow**.
+4. После завершения скачайте артефакт `AlgaMessenger-unsigned-ipa`.
 
-> Для App Store/TestFlight всё равно нужен действующий Apple Developer аккаунт.
+### Что важно понимать
+- Это именно **unsigned IPA**: Apple Developer, сертификаты и provisioning profile не нужны.
+- Такой IPA обычно подходит для анализа/распаковки/тестов в спец. окружениях.
+- Для установки на обычный iPhone и публикации в TestFlight/App Store всё равно потребуется подпись Apple.
+
+### Альтернатива (если позже понадобится подписанный IPA)
+Можно подключить Codemagic/EAS и добавить Apple-signing.
 
 ## 4) Быстрая проверка backend
 
