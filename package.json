@@ -10,9 +10,12 @@
     "lint": "tsc --noEmit",
     "cap:sync": "npm run build && npx cap sync",
     "cap:add:android": "npx cap add android",
-    "cap:open:android": "npx cap open android",
+    "cap:open:android": "npm run cap:sync:android && npx cap open android",
     "android:build": "npm run cap:sync && npm run cap:open:android",
-    "setup:local": "bash ./scripts/bootstrap-all-local.sh"
+    "setup:local": "bash ./scripts/bootstrap-all-local.sh",
+    "cap:prepare:android": "npx cap add android",
+    "cap:sync:android": "npx cap sync android",
+    "cap:open:android:auto": "bash ./scripts/cap-open-android.sh"
   },
   "dependencies": {
     "@capacitor/app": "^7.0.0",

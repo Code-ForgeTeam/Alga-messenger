@@ -1,64 +1,33 @@
-# Deployment quick commands
+# Deployment quick commands (PHP backend)
 
-## 1) Local full bootstrap (frontend + backend + MySQL)
+## 1) Database bootstrap
 
-```bash
-npm run setup:local
-```
+Execute SQL in your MySQL:
 
-Then run servers in separate terminals:
+- `backend/sql/beget_init.sql`
 
-```bash
-npm run dev
-cd backend && npm run dev
-```
-
-## 2) Backend-only bootstrap
+## 2) Backend deploy (PHP, no Node.js)
 
 ```bash
 cd backend
-npm run setup:local
+cp .env.example .env
+# edit .env with DB credentials
+php -S 0.0.0.0:3001 -t public
 ```
 
-## 3) Hosting MySQL bootstrap
+For production use nginx/apache + php-fpm and point document root to `backend/public`.
 
-1. `cd backend && cp .env.example .env`
-2. Set `DATABASE_URL` to your hosting MySQL DSN.
-3. Run:
-
-```bash
-npm install
-npm run prisma:generate
-npm run prisma:migrate || npm run prisma:push
-npm run prisma:seed
-npm run build
-npm run start
-```
-
-## 4) Point frontend to backend host
-
-Set root `.env`:
+## 3) Frontend env
 
 ```env
-VITE_API_BASE_URL=https://YOUR_BACKEND_HOST/api
-VITE_SOCKET_URL=https://YOUR_BACKEND_HOST
-VITE_APP_HOST=https://YOUR_BACKEND_HOST
+VITE_API_BASE_URL=http://155.212.221.92:3001/api
+VITE_SOCKET_URL=http://155.212.221.92:3001
+VITE_APP_HOST=http://155.212.221.92:3001
 ```
 
-Then:
+Then build frontend:
 
 ```bash
 npm install
 npm run build
 ```
-
-
-## 5) Beget free (SQL-only)
-
-If you only have SQL-console access on Beget, run schema script:
-
-```sql
--- paste contents of backend/sql/beget_init.sql
-```
-
-Then deploy Node backend on another host and connect it to Beget MySQL. Full guide: `backend/BEGET_SQL_ONLY.md`.

@@ -1,105 +1,66 @@
-# Alga Messenger (Restored Frontend)
+# Alga Messenger
 
-React + TypeScript + Vite client prepared for web and Android (Capacitor) packaging.
+Короткая инструкция по сборке фронтенда, APK и IPA (без macOS).
 
-## 1) Setup
+## 1) Подготовка env
 
-```bash
-cp .env.example .env
-npm install
-npm run dev
-```
-
-## 2) Environment configuration
-
-All backend endpoints are configured via `.env`:
-
-- `VITE_API_BASE_URL` — REST API base, e.g. `https://api.example.com/api`
-- `VITE_SOCKET_URL` — Socket.IO server, e.g. `https://api.example.com`
-- `VITE_APP_HOST` — optional host for app-level integrations/version checks
-- `VITE_APP_VERSION_NAME` / `VITE_APP_VERSION_CODE` — version values used by client features
-
-To migrate backend to another host later, just update these values and rebuild.
-
-## 3) Production build
+Создайте `.env.production` в корне:
 
 ```bash
-npm run build
-npm run preview
+cp .env.production.example .env.production
 ```
 
-## 4) Android / APK flow (Capacitor)
+Пример:
 
-```bash
-npm run cap:add:android     # once
-npm run cap:sync            # after every frontend change
-npm run cap:open:android    # opens Android Studio
+```env
+VITE_API_BASE_URL=http://q99916rz.beget.tech/backend/public/index.php/api
+VITE_SOCKET_URL=
+VITE_APP_HOST=http://q99916rz.beget.tech/backend/public/index.php
+VITE_FORCE_HTTPS=0
 ```
 
-Then generate APK/AAB from Android Studio (`Build > Build Bundle(s) / APK(s)`).
+> Если нет SSL — оставляйте `http://`.
 
-## 5) Notes
-
-- Project uses Vite env variables (`import.meta.env`), so build-time `.env` must be present.
-- If backend host changes, no code rewrite is needed; only env values should change.
-
-
-## 6) Build troubleshooting (MUI + Emotion)
-
-If you see an error like:
-`CacheProvider is not exported by __vite-optional-peer-dep:@emotion/react`
-it means Emotion peer dependencies are missing.
-
-Install/update:
-
-```bash
-npm install @emotion/react @emotion/styled
-```
-
-Then reinstall/build again:
+## 2) Сборка APK (обязательная последовательность)
 
 ```bash
 npm install
+npm audit fix --force
 npm run build
-```
-
-
-## 7) Capacitor Android platform error
-
-If `npm run cap:add:android` prints:
-`Could not find the android platform`
-install the platform package first:
-
-```bash
-npm install @capacitor/android
-```
-
-Then run:
-
-```bash
-npm run cap:add:android
-npm run cap:sync
+npm run cap:prepare:android
 npm run cap:open:android
 ```
 
+Дальше в Android Studio:
+- `Build` → `Build Bundle(s) / APK(s)` → `Build APK(s)`
+- готовый APK обычно в `android/app/build/outputs/apk/...`
 
-## 8) Backend bootstrap (MySQL + API)
+## 3) Сборка IPA через GitHub (без Apple Developer и без сертификатов)
 
-Backend scaffold is in `backend/` and can be started with one flow:
+Добавлен workflow: `.github/workflows/ios-unsigned-ipa.yml`.
 
-```bash
-cd backend && cp .env.example .env && npm install && docker compose up -d && npm run db:init && npm run dev
-```
+Он собирает **unsigned** `.ipa` (без подписи) на `macos-14` runner и кладёт файл в GitHub Artifacts.
 
-Then point frontend `.env` to this backend host.
+### Как запустить
+1. Откройте GitHub → `Actions`.
+2. Выберите workflow **Build unsigned iOS IPA**.
+3. Нажмите **Run workflow**.
+4. После завершения скачайте артефакт `AlgaMessenger-unsigned-ipa`.
 
+### Что важно понимать
+- Это именно **unsigned IPA**: Apple Developer, сертификаты и provisioning profile не нужны.
+- Такой IPA обычно подходит для анализа/распаковки/тестов в спец. окружениях.
+- Для установки на обычный iPhone и публикации в TestFlight/App Store всё равно потребуется подпись Apple.
 
-## 9) One-command local setup
+### Альтернатива (если позже понадобится подписанный IPA)
+Можно подключить Codemagic/EAS и добавить Apple-signing.
 
-You can bootstrap frontend + backend + MySQL with one command:
+## 4) Быстрая проверка backend
 
-```bash
-npm run setup:local
-```
+- `.../index.php/health` → `{"ok":true}`
+- `.../index.php/api` → `{"ok":true,...}`
+- регистрация: `POST .../index.php/api/auth/register`
 
-Detailed deployment commands are in `DEPLOYMENT.md`.
+## 5) Backend
+
+PHP backend находится в `backend/`, SQL схема — `backend/sql/beget_init.sql`.

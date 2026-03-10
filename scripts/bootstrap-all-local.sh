@@ -9,18 +9,14 @@ if [ ! -f .env ]; then
   echo "[info] frontend .env created"
 fi
 
+if [ ! -f backend/.env ]; then
+  cp backend/.env.example backend/.env
+  echo "[info] backend .env created"
+fi
+
 echo "[step] install frontend deps"
 npm install
 
-echo "[step] install backend deps"
-(cd backend && npm install)
-
-echo "[step] start MySQL"
-(cd backend && docker compose up -d)
-
-echo "[step] init DB"
-(cd backend && npm run db:init)
-
-echo "[done] start servers in separate terminals:"
-echo "  1) npm run dev"
-echo "  2) cd backend && npm run dev"
+echo "[next] run SQL schema in your MySQL console: backend/sql/beget_init.sql"
+echo "[next] run PHP backend: cd backend && php -S 0.0.0.0:3001 -t public"
+echo "[next] run frontend: npm run dev"

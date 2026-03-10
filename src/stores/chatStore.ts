@@ -22,6 +22,7 @@ interface ChatState {
   setCurrentChat: (chatId: string | null) => void;
   sendMessage: (chatId: string, text: string, attachments?: unknown[], replyToId?: string) => Promise<void>;
   markAsRead: (chatId: string) => Promise<void>;
+  deleteMessage: (chatId: string, messageId: string, deleteForAll?: boolean) => Promise<void>;
 
   createChat: (name: string, type: string, participantIds: string[]) => Promise<Chat>;
   clearChat: (chatId: string) => Promise<void>;
@@ -80,14 +81,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       try {
         const ai = await aiApi.getAIChat();
-        if (!next.some((c) => c.id === ai.id)) next.unshift(ai);
+        if (ai && typeof ai === 'object' && typeof ai.id === 'string' && !next.some((c) => c.id === ai.id)) {
+          next.unshift(ai as Chat);
+        }
       } catch {
         // ignore
       }
 
       try {
         const saved = await savedApi.getSavedChat();
-        if (!next.some((c) => c.id === saved.id)) next.unshift(saved);
+        if (saved && typeof saved === 'object' && typeof saved.id === 'string' && !next.some((c) => c.id === saved.id)) {
+          next.unshift(saved as Chat);
+        }
       } catch {
         // ignore
       }
@@ -110,9 +115,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadMessages: async (chatId) => {
     set({ isLoadingMessages: true });
     try {
-      const messages = (await messageApi.getByChatId(chatId)) as Message[];
+      const response = await messageApi.getByChatId(chatId);
+      const messages = Array.isArray(response)
+        ? (response as Message[])
+        : Array.isArray((response as { items?: Message[] })?.items)
+          ? (response as { items: Message[] }).items
+          : [];
       set((state) => ({
-        messages: { ...state.messages, [chatId]: messages || [] },
+        messages: { ...state.messages, [chatId]: messages },
         isLoadingMessages: false,
       }));
     } catch (e: any) {
@@ -139,6 +149,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setCurrentChat: (chatId) => set({ currentChatId: chatId }),
 
   sendMessage: async (chatId, text, attachments = [], replyToId) => {
+    const normalizedText = text ?? '';
+    if (!normalizedText.trim() && !attachments.length) return;
+
     const userId = useAuthStore.getState().user?.id || '';
     const chat = get().chats.find((c) => c.id === chatId);
 
@@ -148,7 +161,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         id: tempId,
         chatId,
         userId,
-        text,
+        text: normalizedText,
         attachments: attachments as any,
         status: 'sending',
         createdAt: new Date().toISOString(),
@@ -159,7 +172,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
 
       try {
-        const payload = await aiApi.sendMessage(chatId, text);
+        const payload = await aiApi.sendMessage(chatId, normalizedText);
         const userMessage = payload.userMessage as Message;
         const aiMessage = payload.aiMessage as Message;
 
@@ -192,19 +205,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    const socket = getSocket();
-    if (!socket?.connected) {
-      const sent = await messageApi.send(chatId, text, attachments, replyToId);
-      get().handleNewMessage(sent.message ?? sent);
-      return;
-    }
-
     const tempId = `temp-${Date.now()}-${Math.random()}`;
     const optimistic: Message = {
       id: tempId,
       chatId,
       userId,
-      text,
+      text: normalizedText,
       attachments: attachments as any,
       status: 'sending',
       createdAt: new Date().toISOString(),
@@ -215,14 +221,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: { ...state.messages, [chatId]: [...(state.messages[chatId] || []), optimistic] },
       chats: state.chats.map((c) =>
         c.id === chatId
-          ? { ...c, lastMessage: optimistic, lastMessageText: text, lastMessageTime: optimistic.createdAt }
+          ? { ...c, lastMessage: optimistic, lastMessageText: normalizedText, lastMessageTime: optimistic.createdAt }
           : c,
       ),
     }));
 
-    socket.emit('message:send', { chatId, text, attachments, tempId, replyToId }, (res: any) => {
-      if (res?.success && res.message) get().handleNewMessage(res.message);
-    });
+    try {
+      const sent = await messageApi.send(chatId, normalizedText, attachments, replyToId);
+      get().handleNewMessage(sent.message ?? sent);
+    } catch {
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [chatId]: (state.messages[chatId] || []).map((m) =>
+            m.id === tempId ? { ...m, status: 'error' } : m,
+          ),
+        },
+      }));
+    }
   },
 
   markAsRead: async (chatId) => {
@@ -231,6 +247,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       chats: state.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
     }));
+  },
+
+  deleteMessage: async (chatId, messageId, deleteForAll = false) => {
+    const me = useAuthStore.getState().user?.id;
+    const target = (get().messages[chatId] || []).find((m) => m.id === messageId);
+
+    if (!target) return;
+    if (deleteForAll && target.userId !== me) return;
+
+    try {
+      await messageApi.delete(messageId, deleteForAll);
+    } catch {
+      // ignore backend errors for local UX continuity
+    }
+
+    set((state) => {
+      const nextMessages = (state.messages[chatId] || []).filter((m) => m.id !== messageId);
+      const last = nextMessages[nextMessages.length - 1];
+
+      return {
+        messages: { ...state.messages, [chatId]: nextMessages },
+        chats: state.chats.map((c) =>
+          c.id === chatId
+            ? {
+                ...c,
+                lastMessage: last,
+                lastMessageText: last?.text || '',
+                lastMessageTime: last?.createdAt,
+              }
+            : c,
+        ),
+      };
+    });
   },
 
   createChat: async (name, type, participantIds) => {
@@ -297,12 +346,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => {
       const list = state.messages[message.chatId] || [];
       const tempIdx = list.findIndex((m) => m.id === message.tempId);
+      const closePendingIdx =
+        tempIdx < 0
+          ? list.findIndex((m) =>
+              String(m.id).startsWith('temp-') &&
+              m.userId === message.userId &&
+              (m.text || '').trim() === (message.text || '').trim() &&
+              Math.abs(new Date(m.createdAt).getTime() - new Date(message.createdAt).getTime()) < 20000,
+            )
+          : -1;
       let next = list;
       let own = false;
 
-      if (tempIdx >= 0) {
+      if (tempIdx >= 0 || closePendingIdx >= 0) {
+        const idx = tempIdx >= 0 ? tempIdx : closePendingIdx;
         next = [...list];
-        next[tempIdx] = { ...message, status: 'delivered' };
+        next[idx] = { ...message, status: 'delivered' };
         own = true;
       } else if (!list.some((m) => m.id === message.id)) {
         own = message.userId === me;

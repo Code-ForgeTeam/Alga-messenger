@@ -14,13 +14,27 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const requestConfig = error.config ?? {};
+    const originalBaseUrl = String(requestConfig.baseURL || API_BASE_URL || '');
+    const isNetworkError = !error.response;
+    const canRetryWithHttps =
+      isNetworkError &&
+      originalBaseUrl.startsWith('http://') &&
+      !requestConfig.__httpsFallbackRetried;
+
+    if (canRetryWithHttps) {
+      requestConfig.__httpsFallbackRetried = true;
+      requestConfig.baseURL = originalBaseUrl.replace(/^http:\/\//, 'https://');
+      return api.request(requestConfig);
+    }
+
     if (!error.response) {
       error.response = {
         data: {
           error:
             error.code === 'ECONNREFUSED' || String(error.message).includes('Network Error')
-              ? `Сервер недоступен (${API_BASE_URL}). Проверьте адрес backend в .env.`
+              ? `Сервер недоступен (${originalBaseUrl || API_BASE_URL}). Проверьте адрес backend в .env/.env.production.`
               : 'Ошибка подключения к серверу. Проверьте интернет-соединение.',
         },
       };
@@ -53,6 +67,15 @@ export const userApi = {
   getByUsername: async (username: string) =>
     (await api.get(`/users/by-username/${encodeURIComponent(username)}`)).data,
   search: async (q: string) => (await api.get('/users/search', { params: { q } })).data,
+};
+
+
+export const profileApi = {
+  uploadAvatar: async (file: File) => {
+    const form = new FormData();
+    form.append('avatar', file);
+    return (await api.post('/upload/avatar', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+  },
 };
 
 export const aiApi = {
@@ -89,6 +112,8 @@ export const messageApi = {
   send: async (chatId: string, text: string, attachments: unknown[] = [], replyToId?: string) =>
     (await api.post('/messages', { chatId, text, attachments, replyToId })).data,
   markAsRead: async (chatId: string) => (await api.post('/messages/read', { chatId })).data,
+  delete: async (messageId: string, deleteForAll = false) =>
+    (await api.delete(`/messages/${messageId}`, { data: { deleteForAll } })).data,
 };
 
 export const notificationsApi = {

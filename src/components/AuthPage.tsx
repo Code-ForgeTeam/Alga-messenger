@@ -18,12 +18,27 @@ export function AuthPage() {
   return (
     <Box sx={{ height: '100%', display: 'grid', placeItems: 'center', p: 2 }}>
       <Box component="form" onSubmit={submit} sx={{ width: '100%', maxWidth: 360 }}>
-        <Typography variant="h5" sx={{ mb: 2 }}>Leet</Typography>
-        <TextField fullWidth label="Username" value={username} onChange={(e) => setUsername(e.target.value)} sx={{ mb: 2 }} />
+        <Typography variant="h5" sx={{ mb: 2 }}>Alga</Typography>
+        <TextField
+          fullWidth
+          label="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+          sx={{ mb: 2 }}
+        />
         {isRegister && (
           <TextField fullWidth label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} sx={{ mb: 2 }} />
         )}
-        <TextField fullWidth type="password" label="Password" value={password} onChange={(e) => setPassword(e.target.value)} sx={{ mb: 2 }} />
+        <TextField
+          fullWidth
+          type="password"
+          label="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete={isRegister ? 'new-password' : 'current-password'}
+          sx={{ mb: 2 }}
+        />
         {error && <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>}
         <Button fullWidth type="submit" variant="contained" disabled={isLoading}>
           {isLoading ? <CircularProgress size={18} /> : isRegister ? 'Register' : 'Login'}

@@ -16,9 +16,10 @@ export const darkTheme = createTheme({
 export const lightTheme = createTheme({
   palette: {
     mode: 'light',
-    primary: { main: '#8774E1', light: '#A89BEC', dark: '#6C5CE7' },
-    background: { default: '#F0F0F0', paper: '#FFFFFF' },
-    text: { primary: '#1A1A1A', secondary: '#6B7C8A' },
+    primary: { main: '#1FA35B', light: '#54C883', dark: '#168748' },
+    secondary: { main: '#1FA35B' },
+    background: { default: '#EEF5F1', paper: '#FFFFFF' },
+    text: { primary: '#1D2A22', secondary: '#5E7467' },
   },
   shape: { borderRadius: 12 },
   components: {

@@ -15,8 +15,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   loadBanners: async (versionCode) => {
     try {
-      const banners = await notificationsApi.getActive(versionCode);
-      set({ banners: banners || [] });
+      const response = await notificationsApi.getActive(versionCode);
+      const banners = Array.isArray(response)
+        ? response
+        : Array.isArray((response as { items?: NotificationBanner[] })?.items)
+          ? (response as { items: NotificationBanner[] }).items
+          : [];
+      set({ banners });
     } catch {
       // silent
     }

@@ -59,11 +59,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (username, password) => {
     set({ isLoading: true, error: null, banned: false, banReason: '' });
     try {
-      const { token, user } = await authApi.login(username, password);
+      const { token, user: responseUser } = await authApi.login(username, password);
       localStorage.setItem('token', token);
+      const user = responseUser ?? (await authApi.verify()).user;
       connectSocket(token);
       set({ user, token, isAuthenticated: true, isLoading: false });
     } catch (e: any) {
+      localStorage.removeItem('token');
       if (e.response?.status === 403 && e.response?.data?.error === 'banned') {
         set({
           isLoading: false,
@@ -81,11 +83,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   register: async (username, fullName, password) => {
     set({ isLoading: true, error: null });
     try {
-      const { token, user } = await authApi.register(username, fullName, password);
+      const { token, user: responseUser } = await authApi.register(username, fullName, password);
       localStorage.setItem('token', token);
+      const user = responseUser ?? (await authApi.verify()).user;
       connectSocket(token);
       set({ user, token, isAuthenticated: true, isLoading: false });
     } catch (e: any) {
+      localStorage.removeItem('token');
       set({ isLoading: false, error: e.response?.data?.error ?? 'Ошибка при регистрации' });
       throw e;
     }

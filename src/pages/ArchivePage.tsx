@@ -1,6 +1,7 @@
 import { Box, List, ListItemButton, ListItemText, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../stores/chatStore';
+import { AppHeader } from '../components/AppHeader';
 
 export default function ArchivePage() {
   const navigate = useNavigate();
@@ -8,7 +9,7 @@ export default function ArchivePage() {
 
   return (
     <Box sx={{ p: 2 }}>
-      <Typography variant="h6" sx={{ mb: 1 }}>Архив</Typography>
+      <AppHeader title="Архив" />
       {chats.length === 0 ? (
         <Typography color="text.secondary">Архив пуст</Typography>
       ) : (

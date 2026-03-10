@@ -24,14 +24,20 @@ interface SettingsState {
     paper: string;
   };
   privacySettings: PrivacySettings;
-  bgEffect: 'none' | 'snow';
+  bgEffect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain';
+  effectIntensity: number;
   glowMode: boolean;
+  aiProvider: 'g4f' | 'custom';
+  aiApiKey: string;
   setTheme: (theme: ThemeMode) => void;
   setFontSize: (fontSize: FontSize) => void;
   setLanguage: (lang: 'ru' | 'en' | 'zh') => void;
   setCustomColors: (colors: SettingsState['customColors']) => void;
-  setBgEffect: (effect: 'none' | 'snow') => void;
+  setBgEffect: (effect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain') => void;
+  setEffectIntensity: (value: number) => void;
   setGlowMode: (value: boolean) => void;
+  setAiProvider: (value: 'g4f' | 'custom') => void;
+  setAiApiKey: (value: string) => void;
   updatePrivacyRule: (key: keyof Omit<PrivacySettings, 'hideReadTime'>, patch: Partial<PrivacyRule>) => Promise<void>;
   setHideReadTime: (value: boolean) => void;
   loadPrivacyFromServer: () => Promise<void>;
@@ -44,7 +50,7 @@ const defaultRule: PrivacyRule = {
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  theme: 'dark',
+  theme: 'light',
   fontSize: 'medium',
   language: 'ru',
   customColors: {
@@ -61,14 +67,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     hideReadTime: false,
   },
   bgEffect: 'snow',
+  effectIntensity: 100,
   glowMode: false,
+  aiProvider: 'g4f',
+  aiApiKey: '',
 
   setTheme: (theme) => set({ theme }),
   setFontSize: (fontSize) => set({ fontSize }),
   setLanguage: (language) => set({ language }),
   setCustomColors: (customColors) => set({ customColors }),
   setBgEffect: (bgEffect) => set({ bgEffect }),
+  setEffectIntensity: (effectIntensity) => set({ effectIntensity }),
   setGlowMode: (glowMode) => set({ glowMode }),
+  setAiProvider: (aiProvider) => set({ aiProvider }),
+  setAiApiKey: (aiApiKey) => set({ aiApiKey }),
 
   updatePrivacyRule: async (key, patch) => {
     set((state) => ({

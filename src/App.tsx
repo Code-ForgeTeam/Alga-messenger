@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useChatStore } from './stores/chatStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -23,11 +23,71 @@ const PrivacySettingPage = lazy(() => import('./pages/PrivacySettingPage'));
 const UserPickerPage = lazy(() => import('./pages/UserPickerPage'));
 const DataStoragePage = lazy(() => import('./pages/DataStoragePage'));
 const DevicesPage = lazy(() => import('./pages/DevicesPage'));
+const SpecialFeaturesPage = lazy(() => import('./pages/SpecialFeaturesPage'));
 const ArchivePage = lazy(() => import('./pages/ArchivePage'));
 const AddContactPage = lazy(() => import('./pages/AddContactPage'));
+const FavoritesPage = lazy(() => import('./pages/FavoritesPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
+
+
+function BackgroundEffects({
+  effect,
+  intensity = 100,
+}: {
+  effect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain';
+  intensity?: number;
+}) {
+  if (effect === 'none') return null;
+
+  const config =
+    effect === 'snow'
+      ? { symbol: '❄', count: 28, color: 'primary.main', sizeBase: 10 }
+      : effect === 'leaves'
+        ? { symbol: '🍃', count: 20, color: 'primary.light', sizeBase: 13 }
+        : effect === 'flowers'
+          ? { symbol: '🌸', count: 18, color: 'primary.light', sizeBase: 14 }
+          : { symbol: '💧', count: 34, color: '#7EB6E8', sizeBase: 12 };
+
+  const count = Math.max(8, Math.round((config.count * intensity) / 100));
+
+  return (
+    <Box
+      sx={{
+        position: 'fixed',
+        inset: 0,
+        pointerEvents: 'none',
+        zIndex: 0,
+        overflow: 'hidden',
+        '@keyframes fall': {
+          '0%': { transform: 'translateY(-12vh) translateX(0)', opacity: 0 },
+          '20%': { opacity: 0.65 },
+          '100%': { transform: 'translateY(110vh) translateX(8px)', opacity: 0 },
+        },
+      }}
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <Box
+          key={`${effect}-${i}`}
+          sx={{
+            position: 'absolute',
+            top: '-12vh',
+            left: `${(i * 11) % 100}%`,
+            fontSize: `${config.sizeBase + (i % 4) * 4}px`,
+            color: config.color,
+            opacity: 0.55,
+            animation: `fall ${6 + (i % 7)}s linear infinite`,
+            animationDelay: `${(i % 10) * 0.5}s`,
+            filter: effect === 'rain' ? 'blur(0.2px)' : 'none',
+          }}
+        >
+          {config.symbol}
+        </Box>
+      ))}
+    </Box>
+  );
+}
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -38,7 +98,9 @@ export default function App() {
   const auth = useAuthStore();
   const chatStore = useChatStore();
   const loadBanners = useNotificationStore((s) => s.loadBanners);
-  const { bgEffect, glowMode } = useSettingsStore();
+  const { bgEffect, effectIntensity, glowMode } = useSettingsStore();
+  const { pathname } = useLocation();
+  const isChatRoute = pathname.startsWith('/chat/');
 
   useEffect(() => {
     auth.checkAuth();
@@ -68,18 +130,14 @@ export default function App() {
       className={glowMode ? 'glow-mode' : ''}
       sx={{
         height: '100dvh',
-        pb: 10,
+        pb: isChatRoute ? 0 : 10,
         overflow: 'hidden',
         backgroundColor: 'background.default',
       }}
     >
-      {bgEffect === 'snow' ? (
-        <Box sx={{ position: 'fixed', inset: 0, pointerEvents: 'none', opacity: 0.08, zIndex: 0 }}>
-          <Typography sx={{ p: 2 }}>❄️</Typography>
-        </Box>
-      ) : null}
+      <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
 
-      <Suspense fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>}>
+      <Suspense fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}>
         <Routes>
           <Route path="/auth" element={auth.isAuthenticated ? <Navigate to="/chats" replace /> : <AuthPage />} />
 
@@ -95,8 +153,10 @@ export default function App() {
           <Route path="/privacy/:settingKey/:exceptionType" element={<Guard><UserPickerPage /></Guard>} />
           <Route path="/data-storage" element={<Guard><DataStoragePage /></Guard>} />
           <Route path="/devices" element={<Guard><DevicesPage /></Guard>} />
+          <Route path="/special-features" element={<Guard><SpecialFeaturesPage /></Guard>} />
           <Route path="/archive" element={<Guard><ArchivePage /></Guard>} />
           <Route path="/add-contact" element={<Guard><AddContactPage /></Guard>} />
+          <Route path="/favorites" element={<Guard><FavoritesPage /></Guard>} />
           <Route path="/admin" element={<Guard><AdminPage /></Guard>} />
           <Route path="/support" element={<Guard><SupportPage /></Guard>} />
           <Route path="/support-agent" element={<Guard><SupportAgentPage /></Guard>} />
