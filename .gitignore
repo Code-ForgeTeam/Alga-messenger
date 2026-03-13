@@ -1,0 +1,16 @@
+node_modules/
+dist/
+android/
+ios/
+coverage/
+.DS_Store
+*.log
+*.tsbuildinfo
+
+.env
+.env.local
+.env.production
+!.env.production.example
+
+backend/.env
+backend/public/uploads/
