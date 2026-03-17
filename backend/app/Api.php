@@ -632,7 +632,10 @@ final class Api
             ]);
         }
 
-        $updateDir = dirname(__DIR__) . '/public/update';
+        $updateDirs = [
+            dirname(__DIR__) . '/update',
+            dirname(__DIR__) . '/public/update',
+        ];
         $metaPath = dirname(__DIR__) . '/update/update.json';
         $meta = [];
         if (is_file($metaPath)) {
@@ -647,8 +650,16 @@ final class Api
             $apkName = 'update.apk';
         }
 
-        $apkPath = $updateDir . '/' . $apkName;
-        $hasFile = is_file($apkPath);
+        $apkPath = null;
+        foreach ($updateDirs as $dir) {
+            $candidate = $dir . '/' . $apkName;
+            if (is_file($candidate)) {
+                $apkPath = $candidate;
+                break;
+            }
+        }
+
+        $hasFile = $apkPath !== null;
         if (!$hasFile) {
             $this->json([
                 'hasUpdate' => false,
@@ -663,10 +674,8 @@ final class Api
         $hasUpdate = $latestVersionCode === null ? true : $latestVersionCode > $versionCode;
         $isMandatory = $forceUpdate || ($minSupportedVersionCode !== null && $versionCode > 0 && $versionCode < $minSupportedVersionCode);
 
-        $scheme = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http';
-        $host = (string)($_SERVER['HTTP_HOST'] ?? '');
-        $downloadPath = '/update/' . rawurlencode($apkName);
-        $downloadUrl = $host !== '' ? ($scheme . '://' . $host . $downloadPath) : $downloadPath;
+        $downloadPath = $this->buildUpdateDownloadPath($apkName);
+        $downloadUrl = $this->absoluteUrl($downloadPath);
 
         $this->json([
             'hasUpdate' => $hasUpdate,
@@ -677,10 +686,32 @@ final class Api
             'minSupportedVersionCode' => $minSupportedVersionCode,
             'downloadUrl' => $downloadUrl,
             'fileName' => $apkName,
-            'fileSize' => filesize($apkPath) ?: null,
+            'fileSize' => $apkPath !== null ? (filesize($apkPath) ?: null) : null,
             'changelog' => isset($meta['changelog']) && is_array($meta['changelog']) ? $meta['changelog'] : [],
             'publishedAt' => isset($meta['publishedAt']) ? (string)$meta['publishedAt'] : null,
         ]);
+    }
+
+    private function buildUpdateDownloadPath(string $apkName): string
+    {
+        $scriptName = (string)($_SERVER['SCRIPT_NAME'] ?? '');
+        $basePath = '';
+
+        if ($scriptName !== '' && substr($scriptName, -16) === '/public/index.php') {
+            $basePath = substr($scriptName, 0, -16);
+        } elseif ($scriptName !== '' && substr($scriptName, -10) === '/index.php') {
+            $basePath = substr($scriptName, 0, -10);
+        }
+
+        $basePath = rtrim($basePath, '/');
+        return ($basePath !== '' ? $basePath : '') . '/update/' . rawurlencode($apkName);
+    }
+
+    private function absoluteUrl(string $path): string
+    {
+        $scheme = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http';
+        $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+        return $host !== '' ? ($scheme . '://' . $host . $path) : $path;
     }
 
     private function authUserId(): string

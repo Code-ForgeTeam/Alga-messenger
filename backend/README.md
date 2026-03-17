@@ -46,11 +46,13 @@ Backend now supports app update checks via `GET /api/app/update?vc=<versionCode>
 
 How to publish update:
 
-1. Put APK file in `backend/public/update/update.apk` (or custom file name from metadata).
+1. Put APK file in `backend/update/update.apk` (or custom file name from metadata).
 2. Copy `backend/update/update.example.json` to `backend/update/update.json` and fill version metadata.
 3. Client receives `hasUpdate`, `mandatory`, `downloadUrl`, changelog and version info.
 
 If APK file is missing, endpoint returns `hasUpdate: false`.
+
+> Compatibility: backend also checks `backend/public/update/` for older deployments.
 
 
 ## Troubleshooting: 500 on `/backend/public/index.php/health`
