@@ -1,0 +1,13 @@
+{
+  "latestVersionCode": 2,
+  "latestVersionName": "1.0.1",
+  "minSupportedVersionCode": 1,
+  "forceUpdate": false,
+  "apkFileName": "update.apk",
+  "publishedAt": "2026-03-17T10:00:00Z",
+  "changelog": [
+    "Улучшена стабильность отправки сообщений",
+    "Оптимизирована скорость открытия чатов",
+    "Исправлены уведомления в фоне"
+  ]
+}

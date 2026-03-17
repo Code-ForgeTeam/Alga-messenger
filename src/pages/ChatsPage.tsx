@@ -57,6 +57,16 @@ function getChatAvatar(chat: Chat, myId?: string) {
   return { initial: title.slice(0, 1).toUpperCase(), src: chat.avatar || peer?.avatar };
 }
 
+function getPeer(chat: Chat, myId?: string) {
+  return chat.participants?.find((p) => p.id !== myId) || chat.participants?.[0];
+}
+
+function getPeerStatusLabel(chat: Chat, myId?: string) {
+  if (chat.type !== 'private') return null;
+  const peer = getPeer(chat, myId);
+  return peer?.status === 'online' ? 'В сети' : 'Не в сети';
+}
+
 export default function ChatsPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -122,7 +132,11 @@ export default function ChatsPage() {
       <List sx={{ mt: 1 }}>
         {visible.map((chat) => {
           const name = getChatName(chat, user?.id);
-          const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'сообщения самому себе' : '');
+          const statusLabel = getPeerStatusLabel(chat, user?.id);
+          const subtitle =
+            (statusLabel ? `${statusLabel}${chat.lastMessageText ? ` • ${chat.lastMessageText}` : ''}` : '') ||
+            chat.lastMessageText ||
+            (chat.type === 'saved' ? 'сообщения самому себе' : '');
           const date = formatChatDate(chat.lastMessageTime || chat.updatedAt);
           const avatarData = getChatAvatar(chat, user?.id);
 
@@ -132,7 +146,22 @@ export default function ChatsPage() {
                 {avatarData.initial}
               </Avatar>
               <ListItemText
-                primary={<Typography fontWeight={700}>{name}</Typography>}
+                primary={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                    <Typography fontWeight={700}>{name}</Typography>
+                    {statusLabel && (
+                      <Typography
+                        component="span"
+                        sx={{
+                          fontSize: 12,
+                          color: statusLabel === 'В сети' ? 'success.main' : 'text.secondary',
+                        }}
+                      >
+                        {statusLabel}
+                      </Typography>
+                    )}
+                  </Box>
+                }
                 secondary={<Typography color="text.secondary" noWrap>{subtitle}</Typography>}
               />
               <Box sx={{ textAlign: 'right' }}>
