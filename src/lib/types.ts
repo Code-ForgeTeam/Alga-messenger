@@ -82,3 +82,17 @@ export interface PrivacyRule {
   alwaysShareWith: string[];
   neverShareWith: string[];
 }
+
+export interface AppUpdateInfo {
+  hasUpdate: boolean;
+  mandatory?: boolean;
+  platform?: string;
+  latestVersionCode?: number | null;
+  latestVersionName?: string | null;
+  minSupportedVersionCode?: number | null;
+  downloadUrl?: string;
+  fileName?: string;
+  fileSize?: number | null;
+  changelog?: string[];
+  publishedAt?: string | null;
+}

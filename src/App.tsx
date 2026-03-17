@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { useAuthStore } from './stores/authStore';
 import { useChatStore } from './stores/chatStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -9,7 +10,10 @@ import { AuthPage } from './components/AuthPage';
 import { BottomNav } from './components/BottomNav';
 import { NotificationBanners } from './components/NotificationBanners';
 import { AppSnackbar } from './components/AppSnackbar';
+import { AppUpdateDialog } from './components/AppUpdateDialog';
+import type { AppUpdateInfo } from './lib/types';
 import { APP_VERSION_CODE } from './lib/config';
+import { appUpdateApi } from './lib/api';
 
 const ChatsPage = lazy(() => import('./pages/ChatsPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
@@ -100,10 +104,50 @@ export default function App() {
   const loadBanners = useNotificationStore((s) => s.loadBanners);
   const { bgEffect, effectIntensity, glowMode } = useSettingsStore();
   const { pathname } = useLocation();
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const isChatRoute = pathname.startsWith('/chat/');
 
   useEffect(() => {
     auth.checkAuth();
+  }, []);
+
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      const platform = Capacitor.getPlatform();
+      const forcePreview = localStorage.getItem('forceUpdateDialog') === '1';
+      if (platform !== 'android' && !forcePreview) return;
+
+      if (forcePreview) {
+        setUpdateInfo({
+          hasUpdate: true,
+          mandatory: false,
+          latestVersionName: '1.0.1',
+          latestVersionCode: APP_VERSION_CODE + 1,
+          changelog: ['Улучшена работа уведомлений', 'Ускорена загрузка диалогов'],
+          downloadUrl: '/update/update.apk',
+        });
+        setUpdateDialogOpen(true);
+        return;
+      }
+
+      try {
+        const update = (await appUpdateApi.check(APP_VERSION_CODE, 'android')) as AppUpdateInfo;
+        if (!update?.hasUpdate) return;
+
+        const latestCode = update.latestVersionCode ?? null;
+        const dismissedCode = Number(localStorage.getItem('dismissedUpdateVersionCode') || 0);
+        const shouldShow = update.mandatory || latestCode === null || latestCode > dismissedCode;
+        if (!shouldShow) return;
+
+        setUpdateInfo(update);
+        setUpdateDialogOpen(true);
+      } catch (error) {
+        console.warn('[update] update check failed', error);
+      }
+    };
+
+    checkForUpdates();
   }, []);
 
   useEffect(() => {
@@ -113,6 +157,14 @@ export default function App() {
     useSettingsStore.getState().loadPrivacyFromServer();
     loadBanners(APP_VERSION_CODE);
   }, [auth.isAuthenticated]);
+
+  const handleCloseUpdateDialog = () => {
+    if (updateInfo?.mandatory) return;
+    if (updateInfo?.latestVersionCode) {
+      localStorage.setItem('dismissedUpdateVersionCode', String(updateInfo.latestVersionCode));
+    }
+    setUpdateDialogOpen(false);
+  };
 
   if (auth.banned) {
     return (
@@ -168,6 +220,7 @@ export default function App() {
       {auth.isAuthenticated && <BottomNav />}
       {auth.isAuthenticated && <NotificationBanners />}
       <AppSnackbar />
+      <AppUpdateDialog open={updateDialogOpen} updateInfo={updateInfo} onClose={handleCloseUpdateDialog} />
     </Box>
   );
 }

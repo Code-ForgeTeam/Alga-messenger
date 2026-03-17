@@ -173,3 +173,8 @@ export const uploadApi = {
   getFileInfo: async (id: string) => (await api.get(`/upload/info/${id}`)).data,
   deleteFile: async (id: string) => (await api.delete(`/upload/${id}`)).data,
 };
+
+export const appUpdateApi = {
+  check: async (versionCode: number, platform: 'android' | 'ios' | 'web' = 'android') =>
+    (await api.get('/app/update', { params: { vc: versionCode, platform } })).data,
+};

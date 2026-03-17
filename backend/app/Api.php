@@ -28,6 +28,7 @@ final class Api
 
         if ($path === '/health') { $this->json(['ok' => true]); }
         if ($path === '/api') { $this->json(['ok' => true, 'message' => 'API root']); }
+        if ($path === '/api/app/update' && $method === 'GET') { $this->appUpdate(); }
 
         if ($path === '/api/auth/register' && $method === 'POST') { $this->register($body); }
         if ($path === '/api/auth/login' && $method === 'POST') { $this->login($body); }
@@ -616,6 +617,70 @@ final class Api
         $url = $base !== '' ? ($base . $relative) : $relative;
 
         $this->json(['url' => $url], 201);
+    }
+
+    private function appUpdate(): void
+    {
+        $versionCode = isset($_GET['vc']) ? (int)$_GET['vc'] : 0;
+        $platform = strtolower(trim((string)($_GET['platform'] ?? 'android')));
+
+        if ($platform !== 'android') {
+            $this->json([
+                'hasUpdate' => false,
+                'platform' => $platform,
+                'reason' => 'unsupported_platform',
+            ]);
+        }
+
+        $updateDir = dirname(__DIR__) . '/public/update';
+        $metaPath = dirname(__DIR__) . '/update/update.json';
+        $meta = [];
+        if (is_file($metaPath)) {
+            $decoded = json_decode((string)file_get_contents($metaPath), true);
+            if (is_array($decoded)) {
+                $meta = $decoded;
+            }
+        }
+
+        $apkName = trim((string)($meta['apkFileName'] ?? 'update.apk'));
+        if ($apkName === '') {
+            $apkName = 'update.apk';
+        }
+
+        $apkPath = $updateDir . '/' . $apkName;
+        $hasFile = is_file($apkPath);
+        if (!$hasFile) {
+            $this->json([
+                'hasUpdate' => false,
+                'platform' => 'android',
+            ]);
+        }
+
+        $latestVersionCode = isset($meta['latestVersionCode']) ? (int)$meta['latestVersionCode'] : null;
+        $minSupportedVersionCode = isset($meta['minSupportedVersionCode']) ? (int)$meta['minSupportedVersionCode'] : null;
+        $forceUpdate = (bool)($meta['forceUpdate'] ?? false);
+
+        $hasUpdate = $latestVersionCode === null ? true : $latestVersionCode > $versionCode;
+        $isMandatory = $forceUpdate || ($minSupportedVersionCode !== null && $versionCode > 0 && $versionCode < $minSupportedVersionCode);
+
+        $scheme = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http';
+        $host = (string)($_SERVER['HTTP_HOST'] ?? '');
+        $downloadPath = '/update/' . rawurlencode($apkName);
+        $downloadUrl = $host !== '' ? ($scheme . '://' . $host . $downloadPath) : $downloadPath;
+
+        $this->json([
+            'hasUpdate' => $hasUpdate,
+            'mandatory' => $isMandatory,
+            'platform' => 'android',
+            'latestVersionCode' => $latestVersionCode,
+            'latestVersionName' => isset($meta['latestVersionName']) ? (string)$meta['latestVersionName'] : null,
+            'minSupportedVersionCode' => $minSupportedVersionCode,
+            'downloadUrl' => $downloadUrl,
+            'fileName' => $apkName,
+            'fileSize' => filesize($apkPath) ?: null,
+            'changelog' => isset($meta['changelog']) && is_array($meta['changelog']) ? $meta['changelog'] : [],
+            'publishedAt' => isset($meta['publishedAt']) ? (string)$meta['publishedAt'] : null,
+        ]);
     }
 
     private function authUserId(): string
