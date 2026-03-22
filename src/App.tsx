@@ -1,15 +1,30 @@
-import { lazy, Suspense, useEffect } from 'react';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Typography,
+} from '@mui/material';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { useAuthStore } from './stores/authStore';
-import { useChatStore } from './stores/chatStore';
-import { useSettingsStore } from './stores/settingsStore';
-import { useNotificationStore } from './stores/notificationStore';
 import { AuthPage } from './components/AuthPage';
+import { AppSnackbar } from './components/AppSnackbar';
 import { BottomNav } from './components/BottomNav';
 import { NotificationBanners } from './components/NotificationBanners';
-import { AppSnackbar } from './components/AppSnackbar';
 import { APP_VERSION_CODE } from './lib/config';
+import {
+  checkGithubApkUpdate,
+  markUpdatePromptDismissed,
+  shouldShowUpdatePrompt,
+  type ApkUpdateInfo,
+} from './lib/updateChecker';
+import { useAuthStore } from './stores/authStore';
+import { useChatStore } from './stores/chatStore';
+import { useNotificationStore } from './stores/notificationStore';
+import { useSettingsStore } from './stores/settingsStore';
 
 const ChatsPage = lazy(() => import('./pages/ChatsPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
@@ -31,7 +46,6 @@ const AdminPage = lazy(() => import('./pages/AdminPage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
 
-
 function BackgroundEffects({
   effect,
   intensity = 100,
@@ -43,12 +57,12 @@ function BackgroundEffects({
 
   const config =
     effect === 'snow'
-      ? { symbol: '❄', count: 28, color: 'primary.main', sizeBase: 10 }
+      ? { symbol: '\u2744', count: 28, color: 'primary.main', sizeBase: 10 }
       : effect === 'leaves'
-        ? { symbol: '🍃', count: 20, color: 'primary.light', sizeBase: 13 }
+        ? { symbol: '\u273F', count: 20, color: 'primary.light', sizeBase: 13 }
         : effect === 'flowers'
-          ? { symbol: '🌸', count: 18, color: 'primary.light', sizeBase: 14 }
-          : { symbol: '💧', count: 34, color: '#7EB6E8', sizeBase: 12 };
+          ? { symbol: '\u273E', count: 18, color: 'primary.light', sizeBase: 14 }
+          : { symbol: '\u2022', count: 34, color: '#7EB6E8', sizeBase: 12 };
 
   const count = Math.max(8, Math.round((config.count * intensity) / 100));
 
@@ -102,8 +116,26 @@ export default function App() {
   const { pathname } = useLocation();
   const isChatRoute = pathname.startsWith('/chat/');
 
+  const [apkUpdate, setApkUpdate] = useState<ApkUpdateInfo | null>(null);
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+
   useEffect(() => {
     auth.checkAuth();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    checkGithubApkUpdate().then((info) => {
+      if (!active || !info) return;
+      if (!shouldShowUpdatePrompt(info)) return;
+      setApkUpdate(info);
+      setShowUpdateDialog(true);
+    });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -113,6 +145,21 @@ export default function App() {
     useSettingsStore.getState().loadPrivacyFromServer();
     loadBanners(APP_VERSION_CODE);
   }, [auth.isAuthenticated]);
+
+  const dismissUpdateDialog = () => {
+    if (apkUpdate) {
+      markUpdatePromptDismissed(apkUpdate);
+    }
+    setShowUpdateDialog(false);
+  };
+
+  const downloadUpdate = () => {
+    if (apkUpdate) {
+      markUpdatePromptDismissed(apkUpdate);
+      window.open(apkUpdate.downloadUrl || apkUpdate.htmlUrl, '_blank', 'noopener,noreferrer');
+    }
+    setShowUpdateDialog(false);
+  };
 
   if (auth.banned) {
     return (
@@ -137,7 +184,9 @@ export default function App() {
     >
       <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
 
-      <Suspense fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}>
+      <Suspense
+        fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}
+      >
         <Routes>
           <Route path="/auth" element={auth.isAuthenticated ? <Navigate to="/chats" replace /> : <AuthPage />} />
 
@@ -168,6 +217,19 @@ export default function App() {
       {auth.isAuthenticated && <BottomNav />}
       {auth.isAuthenticated && <NotificationBanners />}
       <AppSnackbar />
+
+      <Dialog open={showUpdateDialog} onClose={dismissUpdateDialog} fullWidth maxWidth="xs">
+        <DialogTitle>Доступно обновление</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            В репозитории найден файл APK ({apkUpdate?.name || 'Alga.apk'}). Обновить приложение сейчас?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={dismissUpdateDialog}>Позже</Button>
+          <Button onClick={downloadUpdate} variant="contained">Скачать</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

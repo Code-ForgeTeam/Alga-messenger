@@ -25,7 +25,7 @@ export function AppSnackbar() {
         py: 1,
       }}>
         <Typography sx={{ color: '#fff', fontSize: 14, mr: 1 }}>{current?.message}</Typography>
-        {current?.onUndo && <Button onClick={undo}>Undo</Button>}
+        {current?.onUndo && <Button onClick={undo}>Отменить</Button>}
       </Box>
     </Snackbar>
   );

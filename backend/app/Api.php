@@ -8,6 +8,7 @@ use PDO;
 final class Api
 {
     private ?PDO $db = null;
+    private ?array $chatParticipantColumns = null;
 
     public function __construct()
     {
@@ -47,6 +48,15 @@ final class Api
 
         if ($path === '/api/chats' && $method === 'GET') { $this->chats(); }
         if ($path === '/api/chats' && $method === 'POST') { $this->createChat($body); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatById($m[1]); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteChat($m[1], $body); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/messages$#', $path, $m) && $method === 'DELETE') { $this->clearChatMessages($m[1]); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/archive$#', $path, $m) && $method === 'POST') { $this->setChatArchive($m[1], true); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/archive$#', $path, $m) && $method === 'DELETE') { $this->setChatArchive($m[1], false); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/mute$#', $path, $m) && $method === 'POST') { $this->toggleChatMute($m[1]); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/pin$#', $path, $m) && $method === 'POST') { $this->toggleChatPin($m[1]); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/block$#', $path, $m) && $method === 'POST') { $this->blockInChat($m[1], $body); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/block$#', $path, $m) && $method === 'DELETE') { $this->unblockInChat($m[1]); }
         if ($path === '/api/saved/chat' && $method === 'GET') { $this->savedChat(); }
         if ($path === '/api/messages' && $method === 'POST') { $this->sendMessage($body); }
         if ($path === '/api/messages/read' && $method === 'POST') { $this->json(['ok' => true]); }
@@ -72,10 +82,16 @@ final class Api
         $stmt = $this->db()->prepare('INSERT INTO users (id, username, full_name, password_hash) VALUES (?, ?, ?, ?)');
         try {
             $stmt->execute([$id, $u, $n, $hash]);
+        } catch (\PDOException $e) {
+            if ((string)$e->getCode() === '23000') {
+                $this->json(['error' => 'Username already exists'], 409);
+            }
+            $this->json(['error' => 'Registration failed'], 500);
         } catch (\Throwable) {
-            $this->json(['error' => 'Username already exists'], 409);
+            $this->json(['error' => 'Registration failed'], 500);
         }
 
+        $this->touchUserPresence($id);
         $token = Jwt::issue(['userId' => $id]);
         $this->json(['token' => $token, 'user' => ['id' => $id, 'username' => $u, 'fullName' => $n, 'avatar' => null]]);
     }
@@ -84,11 +100,18 @@ final class Api
     {
         $u = trim((string)($body['username'] ?? ''));
         $p = (string)($body['password'] ?? '');
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, avatar, password_hash FROM users WHERE username = ? LIMIT 1');
-        $stmt->execute([$u]);
-        $user = $stmt->fetch();
+
+        try {
+            $stmt = $this->db()->prepare('SELECT id, username, full_name, avatar, password_hash FROM users WHERE username = ? LIMIT 1');
+            $stmt->execute([$u]);
+            $user = $stmt->fetch();
+        } catch (\Throwable) {
+            $this->json(['error' => 'Login failed'], 500);
+        }
+
         if (!$user || !password_verify($p, $user['password_hash'])) $this->json(['error' => 'Invalid credentials'], 401);
 
+        $this->touchUserPresence((string)$user['id']);
         $token = Jwt::issue(['userId' => $user['id']]);
         $this->json(['token' => $token, 'user' => ['id' => $user['id'], 'username' => $user['username'], 'fullName' => $user['full_name'], 'avatar' => $user['avatar'] ?? null]]);
     }
@@ -96,23 +119,41 @@ final class Api
     private function verify(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, avatar FROM users WHERE id = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, avatar, status, last_seen FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$userId]);
         $u = $stmt->fetch();
         if (!$u) $this->json(['error' => 'Unauthorized'], 401);
-        $this->json(['user' => ['id' => $u['id'], 'username' => $u['username'], 'fullName' => $u['full_name'], 'avatar' => $u['avatar'] ?? null]]);
+
+        $presence = $this->normalizePresence((string)($u['status'] ?? 'offline'), $u['last_seen'] ?? null);
+
+        $this->json(['user' => [
+            'id' => $u['id'],
+            'username' => $u['username'],
+            'fullName' => $u['full_name'],
+            'avatar' => $u['avatar'] ?? null,
+            'status' => $presence['status'],
+            'lastSeen' => $presence['lastSeen'],
+        ]]);
     }
 
     private function chats(): void
     {
         $userId = $this->authUserId();
+        $metaSelect = $this->chatParticipantMetaSelectSql();
+        $orderBy = $this->chatParticipantOrderBySql();
+
         $stmt = $this->db()->prepare(
-            'SELECT c.id, c.name, c.type, c.avatar, c.updated_at,
-                    cp.archived, cp.pinned, cp.muted, cp.blocked, cp.unread_count
-             FROM chats c
-             JOIN chat_participants cp ON cp.chat_id = c.id
-             WHERE cp.user_id = ?
-             ORDER BY cp.pinned DESC, c.updated_at DESC'
+            "SELECT c.id, c.name, c.type, c.avatar, c.updated_at,
+"
+            . "                    {$metaSelect}
+"
+            . "             FROM chats c
+"
+            . "             JOIN chat_participants cp ON cp.chat_id = c.id
+"
+            . "             WHERE cp.user_id = ?
+"
+            . "             ORDER BY {$orderBy}"
         );
         $stmt->execute([$userId]);
         $rows = $stmt->fetchAll();
@@ -170,6 +211,152 @@ final class Api
         ], 201);
     }
 
+    private function chatById(string $chatId): void
+    {
+        $userId = $this->authUserId();
+        $chat = $this->chatByIdForUser($chatId, $userId);
+        if (!$chat) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $this->json($chat);
+    }
+
+    private function clearChatMessages(string $chatId): void
+    {
+        $userId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $userId);
+
+        $stmt = $this->db()->prepare('DELETE FROM messages WHERE chat_id = ?');
+        $stmt->execute([$chatId]);
+
+        $touch = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $touch->execute([$chatId]);
+
+        $this->json(['ok' => true]);
+    }
+
+    private function deleteChat(string $chatId, array $body): void
+    {
+        $userId = $this->authUserId();
+        $deleteForAll = (bool)($body['deleteForAll'] ?? false);
+
+        $this->assertChatParticipant($chatId, $userId);
+
+        if ($deleteForAll) {
+            $stmt = $this->db()->prepare('DELETE FROM chats WHERE id = ?');
+            $stmt->execute([$chatId]);
+            $this->json(['ok' => true, 'deletedForAll' => true]);
+        }
+
+        $removeMe = $this->db()->prepare('DELETE FROM chat_participants WHERE chat_id = ? AND user_id = ?');
+        $removeMe->execute([$chatId, $userId]);
+
+        $countStmt = $this->db()->prepare('SELECT COUNT(*) FROM chat_participants WHERE chat_id = ?');
+        $countStmt->execute([$chatId]);
+        $participantsCount = (int)$countStmt->fetchColumn();
+
+        if ($participantsCount <= 0) {
+            $cleanup = $this->db()->prepare('DELETE FROM chats WHERE id = ?');
+            $cleanup->execute([$chatId]);
+        } else {
+            $touch = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+            $touch->execute([$chatId]);
+        }
+
+        $this->json(['ok' => true, 'deletedForAll' => false]);
+    }
+
+    private function setChatArchive(string $chatId, bool $archived): void
+    {
+        $userId = $this->authUserId();
+        $this->updateParticipantFlag($chatId, $userId, 'archived', $archived ? 1 : 0);
+        $this->json(['ok' => true, 'archived' => $archived]);
+    }
+
+    private function toggleChatMute(string $chatId): void
+    {
+        $userId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $userId);
+
+        if (!$this->hasChatParticipantColumn('muted')) {
+            $this->json(['ok' => true, 'muted' => false]);
+        }
+
+        $stmt = $this->db()->prepare('SELECT muted FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1');
+        $stmt->execute([$chatId, $userId]);
+        $current = (int)$stmt->fetchColumn();
+        $next = $current ? 0 : 1;
+
+        $this->updateParticipantFlag($chatId, $userId, 'muted', $next);
+        $this->json(['ok' => true, 'muted' => (bool)$next]);
+    }
+
+    private function toggleChatPin(string $chatId): void
+    {
+        $userId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $userId);
+
+        if (!$this->hasChatParticipantColumn('pinned')) {
+            $this->json(['ok' => true, 'pinned' => false]);
+        }
+
+        $stmt = $this->db()->prepare('SELECT pinned FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1');
+        $stmt->execute([$chatId, $userId]);
+        $current = (int)$stmt->fetchColumn();
+        $next = $current ? 0 : 1;
+
+        $this->updateParticipantFlag($chatId, $userId, 'pinned', $next);
+        $this->json(['ok' => true, 'pinned' => (bool)$next]);
+    }
+
+    private function blockInChat(string $chatId, array $body): void
+    {
+        $userId = $this->authUserId();
+        $targetUserId = trim((string)($body['userId'] ?? ''));
+        if ($targetUserId === '') {
+            $this->json(['error' => 'userId is required'], 400);
+        }
+
+        $this->updateParticipantFlag($chatId, $userId, 'blocked', 1);
+        $this->json(['ok' => true, 'blocked' => true, 'userId' => $targetUserId]);
+    }
+
+    private function unblockInChat(string $chatId): void
+    {
+        $userId = $this->authUserId();
+        $this->updateParticipantFlag($chatId, $userId, 'blocked', 0);
+        $this->json(['ok' => true, 'blocked' => false]);
+    }
+
+    private function updateParticipantFlag(string $chatId, string $userId, string $field, int $value): void
+    {
+        if (!in_array($field, ['archived', 'pinned', 'muted', 'blocked'], true)) {
+            $this->json(['error' => 'Invalid field'], 400);
+        }
+
+        $this->assertChatParticipant($chatId, $userId);
+
+        if (!$this->hasChatParticipantColumn($field)) {
+            return;
+        }
+
+        $stmt = $this->db()->prepare("UPDATE chat_participants SET {$field} = ? WHERE chat_id = ? AND user_id = ?");
+        $stmt->execute([$value, $chatId, $userId]);
+
+        $touch = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $touch->execute([$chatId]);
+    }
+
+    private function assertChatParticipant(string $chatId, string $userId): void
+    {
+        $stmt = $this->db()->prepare('SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1');
+        $stmt->execute([$chatId, $userId]);
+        if (!$stmt->fetchColumn()) {
+            $this->json(['error' => 'Forbidden'], 403);
+        }
+    }
+
     private function savedChat(): void
     {
         $userId = $this->authUserId();
@@ -187,10 +374,15 @@ final class Api
         if (!$existing) {
             $chatId = $this->uuid();
             $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, "saved")');
-            $insertChat->execute([$chatId, 'Избранное']);
+            $insertChat->execute([$chatId, 'Saved']);
 
-            $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, pinned) VALUES (?, ?, 1)');
-            $insertParticipant->execute([$chatId, $userId]);
+            if ($this->hasChatParticipantColumn('pinned')) {
+                $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, pinned) VALUES (?, ?, 1)');
+                $insertParticipant->execute([$chatId, $userId]);
+            } else {
+                $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
+                $insertParticipant->execute([$chatId, $userId]);
+            }
             $existing = $chatId;
         }
 
@@ -318,14 +510,14 @@ final class Api
 
     private function composeAiReply(string $text): string
     {
-        if (preg_match('/(hello|привет|здрав)/iu', $text)) {
-            return 'Привет! Чем могу помочь?';
+        if (preg_match('/\\b(hello|hi|РїСЂРёРІРµС‚)\\b/ui', $text)) {
+            return 'РџСЂРёРІРµС‚! Р§РµРј РјРѕРіСѓ РїРѕРјРѕС‡СЊ?';
         }
-        if (preg_match('/(ошибка|error|bug)/iu', $text)) {
-            return 'Понял. Опиши шаги воспроизведения и текст ошибки — помогу точечно.';
+        if (preg_match('/\\b(help|РїРѕРјРѕРіРё|С‡С‚Рѕ СѓРјРµРµС€СЊ)\\b/ui', $text)) {
+            return 'РЇ Alga AI. РњРѕРіСѓ РїРѕРґСЃРєР°Р·Р°С‚СЊ, РѕР±СЉСЏСЃРЅРёС‚СЊ Рё РїРѕРјРѕС‡СЊ СЃ РёРґРµСЏРјРё.';
         }
 
-        return 'Получил: ' . substr($text, 0, 300);
+        return 'РЇ РїРѕР»СѓС‡РёР» СЃРѕРѕР±С‰РµРЅРёРµ. Р Р°СЃСЃРєР°Р¶Рё РїРѕРґСЂРѕР±РЅРµРµ, Рё СЏ РїРѕСЃС‚Р°СЂР°СЋСЃСЊ РїРѕРјРѕС‡СЊ.';
     }
 
     private function deleteMessage(string $messageId, array $body): void
@@ -350,7 +542,7 @@ final class Api
             $this->json(['error' => 'Delete for all is allowed only for own messages'], 403);
         }
 
-        // Пока без таблицы персональных удалений: удаляем физически.
+        // Delete message and refresh chat activity timestamp.
         $del = $this->db()->prepare('DELETE FROM messages WHERE id = ?');
         $del->execute([$messageId]);
 
@@ -363,12 +555,14 @@ final class Api
     private function me(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar FROM users WHERE id = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar, status, last_seen FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$userId]);
         $u = $stmt->fetch();
         if (!$u) {
             $this->json(['error' => 'Not found'], 404);
         }
+
+        $presence = $this->normalizePresence((string)($u['status'] ?? 'offline'), $u['last_seen'] ?? null);
 
         $this->json([
             'id' => $u['id'],
@@ -376,6 +570,8 @@ final class Api
             'fullName' => $u['full_name'],
             'bio' => $u['bio'] ?? null,
             'avatar' => $u['avatar'] ?? null,
+            'status' => $presence['status'],
+            'lastSeen' => $presence['lastSeen'],
         ]);
     }
 
@@ -407,16 +603,22 @@ final class Api
         }
 
         $like = '%' . $q . '%';
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar FROM users WHERE username LIKE ? OR full_name LIKE ? ORDER BY updated_at DESC LIMIT 30');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar, status, last_seen FROM users WHERE username LIKE ? OR full_name LIKE ? ORDER BY updated_at DESC LIMIT 30');
         $stmt->execute([$like, $like]);
         $rows = $stmt->fetchAll();
-        $result = array_map(fn ($u) => [
-            'id' => $u['id'],
-            'username' => $u['username'],
-            'fullName' => $u['full_name'],
-            'bio' => $u['bio'] ?? null,
-            'avatar' => $u['avatar'] ?? null,
-        ], $rows ?: []);
+        $result = array_map(function ($u) {
+            $presence = $this->normalizePresence((string)($u['status'] ?? 'offline'), $u['last_seen'] ?? null);
+
+            return [
+                'id' => $u['id'],
+                'username' => $u['username'],
+                'fullName' => $u['full_name'],
+                'bio' => $u['bio'] ?? null,
+                'avatar' => $u['avatar'] ?? null,
+                'status' => $presence['status'],
+                'lastSeen' => $presence['lastSeen'],
+            ];
+        }, $rows ?: []);
 
         $this->json($result);
     }
@@ -429,31 +631,37 @@ final class Api
             $this->json(['error' => 'Not found'], 404);
         }
 
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar FROM users WHERE username = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar, status, last_seen FROM users WHERE username = ? LIMIT 1');
         $stmt->execute([$u]);
         $row = $stmt->fetch();
         if (!$row) {
             $this->json(['error' => 'Not found'], 404);
         }
 
+        $presence = $this->normalizePresence((string)($row['status'] ?? 'offline'), $row['last_seen'] ?? null);
+
         $this->json([
             'id' => $row['id'],
             'username' => $row['username'],
             'fullName' => $row['full_name'],
             'bio' => $row['bio'] ?? null,
             'avatar' => $row['avatar'] ?? null,
+            'status' => $presence['status'],
+            'lastSeen' => $presence['lastSeen'],
         ]);
     }
 
     private function userById(string $id): void
     {
         $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar FROM users WHERE id = ? LIMIT 1');
+        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar, status, last_seen FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$id]);
         $row = $stmt->fetch();
         if (!$row) {
             $this->json(['error' => 'Not found'], 404);
         }
+
+        $presence = $this->normalizePresence((string)($row['status'] ?? 'offline'), $row['last_seen'] ?? null);
 
         $this->json([
             'id' => $row['id'],
@@ -461,12 +669,16 @@ final class Api
             'fullName' => $row['full_name'],
             'bio' => $row['bio'] ?? null,
             'avatar' => $row['avatar'] ?? null,
+            'status' => $presence['status'],
+            'lastSeen' => $presence['lastSeen'],
         ]);
     }
 
     private function chatMessages(string $chatId): void
     {
-        $this->authUserId();
+        $userId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $userId);
+
         $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
         $stmt->execute([$chatId]);
         $this->json($stmt->fetchAll());
@@ -474,13 +686,20 @@ final class Api
 
     private function chatByIdForUser(string $chatId, string $userId): ?array
     {
+        $metaSelect = $this->chatParticipantMetaSelectSql();
+
         $stmt = $this->db()->prepare(
-            'SELECT c.id, c.name, c.type, c.avatar, c.updated_at,
-                    cp.archived, cp.pinned, cp.muted, cp.blocked, cp.unread_count
-             FROM chats c
-             JOIN chat_participants cp ON cp.chat_id = c.id
-             WHERE c.id = ? AND cp.user_id = ?
-             LIMIT 1'
+            "SELECT c.id, c.name, c.type, c.avatar, c.updated_at,
+"
+            . "                    {$metaSelect}
+"
+            . "             FROM chats c
+"
+            . "             JOIN chat_participants cp ON cp.chat_id = c.id
+"
+            . "             WHERE c.id = ? AND cp.user_id = ?
+"
+            . "             LIMIT 1"
         );
         $stmt->execute([$chatId, $userId]);
         $row = $stmt->fetch();
@@ -528,16 +747,20 @@ final class Api
         $stmt->execute([$chatId, $viewerId]);
 
         $rows = $stmt->fetchAll();
-        return array_map(static fn ($u) => [
-            'id' => $u['id'],
-            'username' => $u['username'],
-            'fullName' => $u['full_name'],
-            'avatar' => $u['avatar'] ?? null,
-            'bio' => $u['bio'] ?? null,
-            'status' => $u['status'] ?? 'offline',
-            'lastSeen' => $u['last_seen'] ? date('c', strtotime((string)$u['last_seen'])) : null,
-            'badge' => $u['badge'] ?? null,
-        ], $rows ?: []);
+        return array_map(function ($u) {
+            $presence = $this->normalizePresence((string)($u['status'] ?? 'offline'), $u['last_seen'] ?? null);
+
+            return [
+                'id' => $u['id'],
+                'username' => $u['username'],
+                'fullName' => $u['full_name'],
+                'avatar' => $u['avatar'] ?? null,
+                'bio' => $u['bio'] ?? null,
+                'status' => $presence['status'],
+                'lastSeen' => $presence['lastSeen'],
+                'badge' => $u['badge'] ?? null,
+            ];
+        }, $rows ?: []);
     }
 
     private function chatLastMessage(string $chatId): ?array
@@ -627,7 +850,11 @@ final class Api
 
         $payload = Jwt::verify(trim(substr($auth, 7)));
         if (!$payload || empty($payload['userId'])) $this->json(['error' => 'Unauthorized'], 401);
-        return (string)$payload['userId'];
+
+        $userId = (string)$payload['userId'];
+        $this->touchUserPresence($userId);
+
+        return $userId;
     }
 
     private function getAuthorizationHeader(): string
@@ -659,6 +886,85 @@ final class Api
     }
 
 
+
+    private function normalizePresence(string $status, $lastSeen): array
+    {
+        $normalizedStatus = $status !== '' ? $status : 'offline';
+        $lastSeenIso = null;
+
+        if ($lastSeen) {
+            $lastSeenTs = strtotime((string)$lastSeen);
+            if ($lastSeenTs !== false) {
+                $lastSeenIso = date('c', $lastSeenTs);
+                if ($normalizedStatus === 'online' && $lastSeenTs < (time() - 300)) {
+                    $normalizedStatus = 'offline';
+                }
+            }
+        }
+
+        return [
+            'status' => $normalizedStatus,
+            'lastSeen' => $lastSeenIso,
+        ];
+    }
+
+    private function touchUserPresence(string $userId): void
+    {
+        try {
+            $stmt = $this->db()->prepare('UPDATE users SET status = "online", last_seen = CURRENT_TIMESTAMP WHERE id = ?');
+            $stmt->execute([$userId]);
+        } catch (\Throwable) {
+            // ignore presence update failures
+        }
+    }
+
+    private function chatParticipantMetaSelectSql(): string
+    {
+        $parts = [];
+        $parts[] = $this->hasChatParticipantColumn('archived') ? 'cp.archived AS archived' : '0 AS archived';
+        $parts[] = $this->hasChatParticipantColumn('pinned') ? 'cp.pinned AS pinned' : '0 AS pinned';
+        $parts[] = $this->hasChatParticipantColumn('muted') ? 'cp.muted AS muted' : '0 AS muted';
+        $parts[] = $this->hasChatParticipantColumn('blocked') ? 'cp.blocked AS blocked' : '0 AS blocked';
+        $parts[] = $this->hasChatParticipantColumn('unread_count') ? 'cp.unread_count AS unread_count' : '0 AS unread_count';
+
+        return implode(', ', $parts);
+    }
+
+    private function chatParticipantOrderBySql(): string
+    {
+        return $this->hasChatParticipantColumn('pinned')
+            ? 'cp.pinned DESC, c.updated_at DESC'
+            : 'c.updated_at DESC';
+    }
+
+    private function hasChatParticipantColumn(string $column): bool
+    {
+        $columns = $this->chatParticipantColumns();
+        return isset($columns[strtolower($column)]);
+    }
+
+    private function chatParticipantColumns(): array
+    {
+        if ($this->chatParticipantColumns !== null) {
+            return $this->chatParticipantColumns;
+        }
+
+        $columns = [];
+        try {
+            $stmt = $this->db()->query('SHOW COLUMNS FROM chat_participants');
+            foreach ($stmt->fetchAll() as $row) {
+                $name = strtolower((string)($row['Field'] ?? ''));
+                if ($name !== '') {
+                    $columns[$name] = true;
+                }
+            }
+        } catch (\Throwable) {
+            $columns = ['chat_id' => true, 'user_id' => true];
+        }
+
+        $this->chatParticipantColumns = $columns;
+        return $columns;
+    }
 
     private function db(): PDO
     {
@@ -724,3 +1030,6 @@ final class Api
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
 }
+
+
+

@@ -35,7 +35,7 @@ api.interceptors.response.use(
           error:
             error.code === 'ECONNREFUSED' || String(error.message).includes('Network Error')
               ? `Сервер недоступен (${originalBaseUrl || API_BASE_URL}). Проверьте адрес backend в .env/.env.production.`
-              : 'Ошибка подключения к серверу. Проверьте интернет-соединение.',
+              : 'Ошибка подключения к серверу. Проверьте интернет и настройки backend URL.',
         },
       };
     }
@@ -173,3 +173,5 @@ export const uploadApi = {
   getFileInfo: async (id: string) => (await api.get(`/upload/info/${id}`)).data,
   deleteFile: async (id: string) => (await api.delete(`/upload/${id}`)).data,
 };
+
+

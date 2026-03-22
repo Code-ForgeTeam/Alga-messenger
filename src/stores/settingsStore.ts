@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { privacyApi } from '../lib/api';
 import type { PrivacyRule } from '../lib/types';
 
@@ -66,7 +66,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     searchByUsername: { ...defaultRule },
     hideReadTime: false,
   },
-  bgEffect: 'snow',
+  bgEffect: 'none',
   effectIntensity: 100,
   glowMode: false,
   aiProvider: 'g4f',

@@ -11,8 +11,19 @@ export function AuthPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRegister) await register(username, fullName, password);
-    else await login(username, password);
+
+    const normalizedUsername = username.trim();
+    const normalizedFullName = fullName.trim();
+
+    try {
+      if (isRegister) {
+        await register(normalizedUsername, normalizedFullName, password);
+      } else {
+        await login(normalizedUsername, password);
+      }
+    } catch {
+      // Error text is stored in authStore and rendered below.
+    }
   };
 
   return (
@@ -21,19 +32,25 @@ export function AuthPage() {
         <Typography variant="h5" sx={{ mb: 2 }}>Alga</Typography>
         <TextField
           fullWidth
-          label="Username"
+          label="Имя пользователя"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="username"
           sx={{ mb: 2 }}
         />
         {isRegister && (
-          <TextField fullWidth label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} sx={{ mb: 2 }} />
+          <TextField
+            fullWidth
+            label="Имя и фамилия"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            sx={{ mb: 2 }}
+          />
         )}
         <TextField
           fullWidth
           type="password"
-          label="Password"
+          label="Пароль"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete={isRegister ? 'new-password' : 'current-password'}
@@ -41,10 +58,10 @@ export function AuthPage() {
         />
         {error && <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>}
         <Button fullWidth type="submit" variant="contained" disabled={isLoading}>
-          {isLoading ? <CircularProgress size={18} /> : isRegister ? 'Register' : 'Login'}
+          {isLoading ? <CircularProgress size={18} /> : isRegister ? 'Зарегистрироваться' : 'Войти'}
         </Button>
         <Button fullWidth sx={{ mt: 1 }} onClick={() => setIsRegister((v) => !v)}>
-          {isRegister ? 'Have account? Login' : 'No account? Register'}
+          {isRegister ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться'}
         </Button>
       </Box>
     </Box>

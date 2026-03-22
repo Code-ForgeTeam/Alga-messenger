@@ -3,6 +3,7 @@ import {
   Avatar,
   Box,
   Button,
+  ButtonBase,
   CircularProgress,
   IconButton,
   Menu,
@@ -19,7 +20,24 @@ import { useTheme } from '@mui/material/styles';
 import { uploadApi } from '../lib/api';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
-import type { Message } from '../lib/types';
+import type { Message, User } from '../lib/types';
+
+const formatPresence = (status?: User['status'], lastSeen?: string): string => {
+  if (status === 'online') return 'в сети';
+  if (status === 'away') return 'отошел(ла)';
+  if (status === 'hidden') return 'был(а) недавно';
+  if (!lastSeen) return 'не в сети';
+
+  const date = new Date(lastSeen);
+  if (Number.isNaN(date.getTime())) return 'не в сети';
+
+  return `был(а) ${date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`;
+};
 
 export default function ChatPage() {
   const { chatId = '' } = useParams();
@@ -85,18 +103,28 @@ export default function ChatPage() {
     return result;
   }, [chatMessages]);
 
+  const peerUser = useMemo(() => {
+    if (!chat || chat.type === 'saved' || chat.type === 'ai') return null;
+    return chat.participants?.find((p) => p.id !== me?.id) || chat.participants?.[0] || null;
+  }, [chat, me?.id]);
+
   const title = useMemo(() => {
     if (!chat) return 'Чат';
     if (chat.type === 'saved') return 'Избранное';
     if (chat.name?.trim()) return chat.name.trim();
-    const peer = chat.participants?.find((p) => p.id !== me?.id) || chat.participants?.[0];
-    return peer?.fullName || (peer?.username ? `@${peer.username}` : 'Чат');
-  }, [chat, me?.id]);
+    return peerUser?.fullName || (peerUser?.username ? `@${peerUser.username}` : 'Чат');
+  }, [chat, peerUser]);
 
   const avatarSrc = useMemo(() => {
-    const peer = chat?.participants?.find((p) => p.id !== me?.id) || chat?.participants?.[0];
-    return chat?.avatar || peer?.avatar;
-  }, [chat, me?.id]);
+    return chat?.avatar || peerUser?.avatar;
+  }, [chat, peerUser]);
+
+  const subtitle = useMemo(() => {
+    if (typingUsers[chatId]?.length) return 'печатает...';
+    if (chat?.type === 'saved') return 'сообщения самому себе';
+    if (chat?.type === 'ai') return 'AI-помощник';
+    return formatPresence(peerUser?.status, peerUser?.lastSeen);
+  }, [typingUsers, chatId, chat?.type, peerUser?.status, peerUser?.lastSeen]);
 
   const onPickFiles = async (list: FileList | null) => {
     if (!list?.length) return;
@@ -114,6 +142,11 @@ export default function ChatPage() {
     setUploaded([]);
   };
 
+  const openProfileFromHeader = () => {
+    if (!peerUser) return;
+    navigate(`/user/${peerUser.id}?chatId=${encodeURIComponent(chatId)}`);
+  };
+
   if (!chat) {
     return (
       <Box sx={{ p: 3 }}>
@@ -127,11 +160,36 @@ export default function ChatPage() {
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: isDark ? '#0A1A32' : '#FFFFFF', color: isDark ? '#EAF1FF' : 'text.primary' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, pt: 'max(env(safe-area-inset-top), 8px)', pb: 1, borderBottom: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider', bgcolor: isDark ? 'rgba(20,33,52,0.88)' : '#FFFFFF' }}>
         <IconButton onClick={() => navigate(-1)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><ArrowBackIcon /></IconButton>
-        <Avatar src={avatarSrc} sx={{ width: 46, height: 46, bgcolor: '#5E5BF0' }}>{title.slice(0, 1).toUpperCase()}</Avatar>
-        <Box sx={{ flex: 1 }}>
-          <Typography sx={{ fontWeight: 700, fontSize: 18 }} noWrap>{title}</Typography>
-          {!!typingUsers[chatId]?.length && <Typography variant="caption" color={isDark ? '#B7C8DD' : 'text.secondary'}>печатает...</Typography>}
-        </Box>
+
+        <ButtonBase
+          onClick={openProfileFromHeader}
+          disabled={!peerUser}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            borderRadius: 2,
+            px: 0.5,
+            py: 0.25,
+            flex: 1,
+            justifyContent: 'flex-start',
+            textAlign: 'left',
+          }}
+        >
+          <Avatar src={avatarSrc} sx={{ width: 46, height: 46, bgcolor: '#5E5BF0' }}>{title.slice(0, 1).toUpperCase()}</Avatar>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 700, fontSize: 18 }} noWrap>{title}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              {peerUser?.status === 'online' && !typingUsers[chatId]?.length && (
+                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#32C26A', flexShrink: 0 }} />
+              )}
+              <Typography variant="caption" color={isDark ? '#B7C8DD' : 'text.secondary'} noWrap>
+                {subtitle}
+              </Typography>
+            </Box>
+          </Box>
+        </ButtonBase>
+
         <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><MoreVertIcon /></IconButton>
       </Box>
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { authApi } from '../lib/api';
+import { authApi, userApi } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import type { User } from '../lib/types';
 import { useChatStore } from './chatStore';
@@ -22,6 +22,74 @@ interface AuthState {
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
+const isRecord = (value: unknown): value is Record<string, any> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+const extractUserPayload = (payload: unknown): unknown => {
+  if (!isRecord(payload)) return payload;
+  if (isRecord(payload.user)) return payload.user;
+  if (isRecord(payload.data) && isRecord(payload.data.user)) return payload.data.user;
+  return payload;
+};
+
+const extractToken = (payload: unknown): string => {
+  if (!isRecord(payload)) return '';
+
+  const direct = payload.token ?? payload.accessToken;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+
+  if (isRecord(payload.data)) {
+    const nested = payload.data.token ?? payload.data.accessToken;
+    if (typeof nested === 'string' && nested.trim()) return nested.trim();
+  }
+
+  return '';
+};
+
+const normalizeUser = (payload: any): User | null => {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const id = String(payload.id ?? '').trim();
+  if (!id) return null;
+
+  const username = String(payload.username ?? payload.user_name ?? '').trim();
+  const fullName = String(payload.fullName ?? payload.full_name ?? payload.name ?? '').trim();
+
+  return {
+    id,
+    username,
+    fullName,
+    avatar: payload.avatar ?? undefined,
+    bio: payload.bio ?? undefined,
+    status: payload.status ?? undefined,
+    lastSeen: payload.lastSeen ?? payload.last_seen ?? undefined,
+    badge: payload.badge ?? undefined,
+  };
+};
+
+const fetchMyProfileSafe = async (): Promise<User | null> => {
+  try {
+    const me = await userApi.getMe();
+    return normalizeUser(extractUserPayload(me));
+  } catch {
+    return null;
+  }
+};
+
+const ensureProfile = async (candidate: unknown): Promise<User | null> => {
+  const normalized = normalizeUser(extractUserPayload(candidate));
+  if (normalized && normalized.username && normalized.fullName) {
+    return normalized;
+  }
+
+  const fromMe = await fetchMyProfileSafe();
+  if (fromMe) {
+    return fromMe;
+  }
+
+  return normalized;
+};
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
@@ -36,9 +104,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (!token) return set({ isAuthenticated: false, user: null, token: null });
 
     try {
-      const { user } = await authApi.verify();
+      const verifyResponse = await authApi.verify();
+      const normalizedUser = await ensureProfile(verifyResponse);
+      if (!normalizedUser) {
+        throw new Error('Invalid user payload');
+      }
+
       connectSocket(token);
-      set({ user, token, isAuthenticated: true, banned: false, banReason: '', error: null });
+      set({ user: normalizedUser, token, isAuthenticated: true, banned: false, banReason: '', error: null });
     } catch (e: any) {
       if (e.response?.status === 403 && e.response?.data?.error === 'banned') {
         localStorage.removeItem('token');
@@ -59,11 +132,21 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (username, password) => {
     set({ isLoading: true, error: null, banned: false, banReason: '' });
     try {
-      const { token, user: responseUser } = await authApi.login(username, password);
+      const response = await authApi.login(username, password);
+      const token = extractToken(response);
+      if (!token) {
+        throw new Error('Missing token in login response');
+      }
+
       localStorage.setItem('token', token);
-      const user = responseUser ?? (await authApi.verify()).user;
+
+      const user = await ensureProfile(response);
+      if (!user) {
+        throw new Error('Invalid user payload');
+      }
+
       connectSocket(token);
-      set({ user, token, isAuthenticated: true, isLoading: false });
+      set({ user, token, isAuthenticated: true, isLoading: false, error: null });
     } catch (e: any) {
       localStorage.removeItem('token');
       if (e.response?.status === 403 && e.response?.data?.error === 'banned') {
@@ -74,23 +157,33 @@ export const useAuthStore = create<AuthState>((set) => ({
           error: null,
         });
       } else {
-        set({ isLoading: false, error: e.response?.data?.error ?? 'Ошибка при входе' });
+        set({ isLoading: false, error: e.response?.data?.error ?? 'Login failed' });
       }
       throw e;
     }
   },
 
   register: async (username, fullName, password) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, banned: false, banReason: '' });
     try {
-      const { token, user: responseUser } = await authApi.register(username, fullName, password);
+      const response = await authApi.register(username, fullName, password);
+      const token = extractToken(response);
+      if (!token) {
+        throw new Error('Missing token in register response');
+      }
+
       localStorage.setItem('token', token);
-      const user = responseUser ?? (await authApi.verify()).user;
+
+      const user = await ensureProfile(response);
+      if (!user) {
+        throw new Error('Invalid user payload');
+      }
+
       connectSocket(token);
-      set({ user, token, isAuthenticated: true, isLoading: false });
+      set({ user, token, isAuthenticated: true, isLoading: false, error: null });
     } catch (e: any) {
       localStorage.removeItem('token');
-      set({ isLoading: false, error: e.response?.data?.error ?? 'Ошибка при регистрации' });
+      set({ isLoading: false, error: e.response?.data?.error ?? 'Registration failed' });
       throw e;
     }
   },
@@ -108,10 +201,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   updateProfile: async (payload) => {
     set({ isLoading: true, error: null });
     try {
-      const user = await authApi.updateProfile(payload);
-      set({ user, isLoading: false });
+      const response = await authApi.updateProfile(payload);
+      const user = await ensureProfile(response);
+      if (!user) {
+        throw new Error('Invalid user payload');
+      }
+
+      set({ user, isLoading: false, error: null });
     } catch (e: any) {
-      set({ isLoading: false, error: e.response?.data?.error ?? 'Ошибка при обновлении профиля' });
+      set({ isLoading: false, error: e.response?.data?.error ?? 'Profile update failed' });
       throw e;
     }
   },
@@ -122,7 +220,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       await authApi.changePassword(currentPassword, newPassword);
       set({ isLoading: false });
     } catch (e: any) {
-      set({ isLoading: false, error: e.response?.data?.error ?? 'Ошибка при смене пароля' });
+      set({ isLoading: false, error: e.response?.data?.error ?? 'Password change failed' });
       throw e;
     }
   },

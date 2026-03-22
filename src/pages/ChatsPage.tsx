@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import {
   Avatar,
   Box,
@@ -34,6 +34,7 @@ import { AppHeader } from '../components/AppHeader';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { useTheme } from '@mui/material/styles';
 import { useSettingsStore } from '../stores/settingsStore';
+import { userApi } from '../lib/api';
 import type { Chat } from '../lib/types';
 
 const formatChatDate = (value?: string) => {
@@ -65,6 +66,7 @@ export default function ChatsPage() {
   const { chats, isLoading, loadChats } = useChatStore();
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
   const user = useAuthStore((s) => s.user);
+  const updateUser = useAuthStore((s) => s.updateUser);
   const logout = useAuthStore((s) => s.logout);
   const pushSnackbar = useSnackbarStore((s) => s.push);
   const [q, setQ] = useState('');
@@ -72,8 +74,38 @@ export default function ChatsPage() {
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
 
   useEffect(() => {
+    if (!user?.id) return;
     loadChats();
-  }, [loadChats]);
+  }, [loadChats, user?.id]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user?.id) return;
+    if (user.username && user.fullName) return;
+
+    userApi
+      .getMe()
+      .then((profile) => {
+        if (!active) return;
+        const username = profile?.username ?? profile?.user_name ?? user.username;
+        const fullName = profile?.fullName ?? profile?.full_name ?? profile?.name ?? user.fullName;
+        const lastSeen = profile?.lastSeen ?? profile?.last_seen ?? user.lastSeen;
+
+        updateUser({
+          username,
+          fullName,
+          avatar: profile?.avatar ?? user.avatar,
+          bio: profile?.bio ?? user.bio,
+          status: profile?.status ?? user.status,
+          lastSeen,
+        });
+      })
+      .catch(() => null);
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id, user?.username, user?.fullName, user?.avatar, user?.bio, user?.status, user?.lastSeen, updateUser]);
 
   const visible = useMemo(() => {
     const needle = q.toLowerCase().trim();
@@ -112,7 +144,7 @@ export default function ChatsPage() {
       <TextField
         fullWidth
         size="small"
-        placeholder="Поиск чата"
+        placeholder="Поиск по чатам"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         InputProps={{ startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
@@ -122,7 +154,7 @@ export default function ChatsPage() {
       <List sx={{ mt: 1 }}>
         {visible.map((chat) => {
           const name = getChatName(chat, user?.id);
-          const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'сообщения самому себе' : '');
+          const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'Сообщения самому себе' : '');
           const date = formatChatDate(chat.lastMessageTime || chat.updatedAt);
           const avatarData = getChatAvatar(chat, user?.id);
 
@@ -144,7 +176,7 @@ export default function ChatsPage() {
         })}
       </List>
 
-      {!visible.length && <Typography sx={{ p: 2, textAlign: 'center' }} color="text.secondary">Пока нет чатов</Typography>}
+      {!visible.length && <Typography sx={{ p: 2, textAlign: 'center' }} color="text.secondary">Чаты не найдены</Typography>}
 
       <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110, boxShadow: isDark ? '0 10px 24px rgba(125,106,227,0.45)' : '0 10px 24px rgba(31,163,91,0.35)' }} onClick={() => navigate('/add-contact')}>
         <EditIcon />
@@ -163,7 +195,7 @@ export default function ChatsPage() {
             }}
           >
             <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'center' }}>
-              <Avatar src={user?.avatar} sx={{ width: 58, height: 58, bgcolor: 'primary.main', flexShrink: 0 }}>
+              <Avatar src={user?.avatar} onClick={() => { if (user?.id) { navigate(`/user/${user.id}`); setDrawerOpen(false); } }} sx={{ width: 58, height: 58, bgcolor: 'primary.main', flexShrink: 0, cursor: 'pointer' }}>
                 {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
               </Avatar>
               <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -212,10 +244,11 @@ export default function ChatsPage() {
       </Drawer>
 
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
-        <MenuItem onClick={() => { pushSnackbar({ message: 'Режим выделения чатов включим следующим шагом.', timeout: 2200 }); setMenuAnchor(null); }}>
-          Выделить чаты
+        <MenuItem onClick={() => { pushSnackbar({ message: 'Функция будет добавлена позже.', timeout: 2200 }); setMenuAnchor(null); }}>
+          Создать папку чатов
         </MenuItem>
       </Menu>
     </Box>
   );
 }
+
