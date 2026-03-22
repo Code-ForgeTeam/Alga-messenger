@@ -7,9 +7,12 @@ import { AppHeader } from '../components/AppHeader';
 import { useChatStore } from '../stores/chatStore';
 import { useContactsStore } from '../stores/contactsStore';
 import type { User } from '../lib/types';
+import { useTheme } from '@mui/material/styles';
 
 export default function AddContactPage() {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -50,7 +53,7 @@ export default function AddContactPage() {
   };
 
   return (
-    <Box sx={{ p: 2, height: '100%', overflowY: 'auto' }}>
+    <Box sx={{ p: 2, pb: 'max(env(safe-area-inset-bottom), 88px)', height: '100%', overflowY: 'auto' }}>
       <AppHeader title="Новый чат" />
 
       <TextField
@@ -61,7 +64,12 @@ export default function AddContactPage() {
         value={query}
         onChange={(e) => search(e.target.value)}
         InputProps={{ startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
-        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 5, bgcolor: 'rgba(255,255,255,0.8)' } }}
+        sx={{
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 5,
+            bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.88)',
+          },
+        }}
       />
 
       {loading && <CircularProgress sx={{ mt: 2 }} />}

@@ -269,9 +269,18 @@ export default function ChatPage() {
                     target.addEventListener('pointerup', clear, { once: true });
                     target.addEventListener('pointerleave', clear, { once: true });
                   }}
-                  sx={{ px: 1.5, py: 0.95, borderRadius: 2.8, maxWidth: '72%', bgcolor: m.userId === me?.id ? (isDark ? '#2F5888' : '#D8F2E4') : (isDark ? '#152741' : '#F2F5F8') }}
+                  sx={{
+                    px: 1.5,
+                    py: 0.95,
+                    borderRadius: 2.8,
+                    maxWidth: '72%',
+                    bgcolor: m.userId === me?.id ? (isDark ? '#2F5888' : '#D8F2E4') : (isDark ? '#152741' : '#F2F5F8'),
+                    WebkitTouchCallout: 'none',
+                    WebkitUserSelect: 'none',
+                    userSelect: 'none',
+                  }}
                 >
-                  <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.text}</Typography>
+                  <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'none', WebkitUserSelect: 'none' }}>{m.text}</Typography>
                   <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                     {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                   </Typography>

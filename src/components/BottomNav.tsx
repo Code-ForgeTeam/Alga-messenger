@@ -29,9 +29,9 @@ export function BottomNav() {
     <Paper
       sx={{
         position: 'fixed',
-        left: 16,
-        right: 16,
-        bottom: 14,
+        left: 'max(env(safe-area-inset-left), 16px)',
+        right: 'max(env(safe-area-inset-right), 16px)',
+        bottom: 'max(env(safe-area-inset-bottom), 14px)',
         borderRadius: 99,
         overflow: 'hidden',
         backdropFilter: 'blur(10px)',

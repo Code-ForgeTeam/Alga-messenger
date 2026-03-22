@@ -26,6 +26,7 @@ import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
+import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../stores/chatStore';
 import { useContactsStore } from '../stores/contactsStore';
@@ -133,6 +134,27 @@ export default function ChatsPage() {
     });
   }, [chats, q, getContactByUserId, user?.id]);
 
+  const openSavedFromDrawer = async () => {
+    setDrawerOpen(false);
+    try {
+      let saved = chats.find((c) => c.type === 'saved');
+
+      if (!saved) {
+        await loadChats();
+        saved = useChatStore.getState().chats.find((c) => c.type === 'saved');
+      }
+
+      if (saved) {
+        navigate(`/chat/${saved.id}`);
+        return;
+      }
+    } catch {
+      // fallback below
+    }
+
+    navigate('/favorites');
+  };
+
   if (isLoading) {
     return <Box sx={{ p: 4, display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
   }
@@ -170,19 +192,68 @@ export default function ChatsPage() {
           const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'Сообщения самому себе' : '');
           const date = formatChatDate(chat.lastMessageTime || chat.updatedAt);
           const avatarData = getChatAvatar(chat, user?.id);
+          const unreadCount = Math.max(0, Number(chat.unreadCount || 0));
+          const hasUnread = unreadCount > 0;
+          const ownLastMessage = chat.lastMessage?.userId === user?.id;
+          const lastMessageStatus = chat.lastMessage?.status;
+          const isLastReadByPeer = lastMessageStatus === 'read';
+          const isLastSent = lastMessageStatus === 'sent' || lastMessageStatus === 'delivered';
 
           return (
-            <ListItemButton key={chat.id} onClick={() => navigate(`/chat/${chat.id}`)} sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2, bgcolor: isDark ? 'transparent' : '#FFFFFF' }}>
+            <ListItemButton
+              key={chat.id}
+              onClick={() => navigate(`/chat/${chat.id}`)}
+              sx={{
+                borderBottom: '1px solid',
+                borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E6EBEF',
+                py: 1.2,
+                borderRadius: 2.4,
+                mb: 0.45,
+                bgcolor: hasUnread
+                  ? isDark
+                    ? 'rgba(63,117,166,0.28)'
+                    : 'rgba(31,163,91,0.13)'
+                  : isDark
+                    ? 'transparent'
+                    : '#FFFFFF',
+              }}
+            >
               <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#5E5BF0' : 'primary.main' }}>
                 {chat.type === 'saved' ? <BookmarkRoundedIcon sx={{ fontSize: 30 }} /> : avatarData.initial}
               </Avatar>
               <ListItemText
-                primary={<Typography fontWeight={700}>{name}</Typography>}
+                primary={<Typography fontWeight={hasUnread ? 800 : 700}>{name}</Typography>}
                 secondary={<Typography color="text.secondary" noWrap>{subtitle}</Typography>}
               />
               <Box sx={{ textAlign: 'right' }}>
                 <Typography variant="body2" color="text.secondary">{date}</Typography>
-                {chat.lastMessageText && <DoneAllIcon sx={{ fontSize: 16, color: 'text.secondary', mt: 0.5 }} />}
+                {hasUnread ? (
+                  <Box
+                    sx={{
+                      mt: 0.6,
+                      minWidth: 20,
+                      height: 20,
+                      px: unreadCount > 9 ? 0.6 : 0,
+                      borderRadius: 99,
+                      display: 'inline-grid',
+                      placeItems: 'center',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: '#fff',
+                      bgcolor: isDark ? '#3E92E2' : '#1FA35B',
+                    }}
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Box>
+                ) : ownLastMessage && chat.lastMessageText ? (
+                  isLastReadByPeer ? (
+                    <DoneAllIcon sx={{ fontSize: 16, color: isDark ? '#73B4FF' : '#1C9C58', mt: 0.5 }} />
+                  ) : isLastSent ? (
+                    <DoneAllIcon sx={{ fontSize: 16, color: 'text.secondary', mt: 0.5 }} />
+                  ) : (
+                    <DoneRoundedIcon sx={{ fontSize: 16, color: 'text.secondary', mt: 0.5 }} />
+                  )
+                ) : null}
               </Box>
             </ListItemButton>
           );
@@ -191,12 +262,12 @@ export default function ChatsPage() {
 
       {!visible.length && <Typography sx={{ p: 2, textAlign: 'center' }} color="text.secondary">Чаты не найдены</Typography>}
 
-      <Fab color="primary" sx={{ position: 'fixed', right: 24, bottom: 110, boxShadow: isDark ? '0 10px 24px rgba(125,106,227,0.45)' : '0 10px 24px rgba(31,163,91,0.35)' }} onClick={() => navigate('/add-contact')}>
+      <Fab color="primary" sx={{ position: 'fixed', right: 'max(env(safe-area-inset-right), 24px)', bottom: 'max(env(safe-area-inset-bottom), 106px)', boxShadow: isDark ? '0 10px 24px rgba(125,106,227,0.45)' : '0 10px 24px rgba(31,163,91,0.35)' }} onClick={() => navigate('/add-contact')}>
         <EditIcon />
       </Fab>
 
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-        <Box sx={{ width: 320, height: '100%', bgcolor: isDark ? '#0E1B2A' : '#F7FAF8' }}>
+        <Box sx={{ width: 'min(320px, 88vw)', height: '100%', bgcolor: isDark ? '#0E1B2A' : '#F7FAF8' }}>
           <Box
             sx={{
               pt: 'max(env(safe-area-inset-top), 12px)',
@@ -266,7 +337,7 @@ export default function ChatsPage() {
                 <ListItemButton sx={menuItemSx} onClick={() => { navigate('/contacts'); setDrawerOpen(false); }}>
                   <ListItemIcon><Groups2RoundedIcon /></ListItemIcon><ListItemText primary="Контакты" />
                 </ListItemButton>
-                <ListItemButton sx={menuItemSx} onClick={() => { navigate('/favorites'); setDrawerOpen(false); }}>
+                <ListItemButton sx={menuItemSx} onClick={() => { void openSavedFromDrawer(); }}>
                   <ListItemIcon><BookmarkRoundedIcon /></ListItemIcon><ListItemText primary="Избранное" />
                 </ListItemButton>
                 <ListItemButton sx={menuItemSx} onClick={() => { navigate('/settings'); setDrawerOpen(false); }}>

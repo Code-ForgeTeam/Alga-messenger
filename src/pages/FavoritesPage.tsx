@@ -15,7 +15,10 @@ export default function FavoritesPage() {
     loadChats();
   }, [loadChats]);
 
-  const favorites = useMemo(() => chats.filter((c) => c.pinned || c.type === 'saved'), [chats]);
+  const favorites = useMemo(
+    () => chats.filter((c) => c.type === 'saved' || (c.pinned && c.type !== 'ai')),
+    [chats],
+  );
 
   const chatTitle = (chat: (typeof favorites)[number]) => {
     if (chat.type === 'saved') return 'Избранное';
