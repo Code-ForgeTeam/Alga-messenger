@@ -248,7 +248,7 @@ export default function ChatPage() {
             textAlign: 'left',
           }}
         >
-          <Avatar src={avatarSrc} sx={{ width: 46, height: 46, bgcolor: '#5E5BF0' }}>
+          <Avatar src={avatarSrc} sx={{ width: 46, height: 46, bgcolor: chat.type === 'saved' ? '#D6A21B' : '#5E5BF0' }}>
             {chat.type === 'saved' ? <BookmarkRoundedIcon sx={{ fontSize: 27 }} /> : title.slice(0, 1).toUpperCase()}
           </Avatar>
           <Box sx={{ minWidth: 0 }}>

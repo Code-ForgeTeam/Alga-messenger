@@ -168,8 +168,8 @@ export default function ChatsPage() {
           <IconButton onClick={() => setDrawerOpen(true)} sx={{ bgcolor: isDark ? 'rgba(39,57,78,0.75)' : 'rgba(31,163,91,0.12)' }}>
             <Box sx={{ width: 22, display: 'grid', gap: 0.6 }}>
               <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#2DBB63' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #D2D7DF' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#E8443A' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#85DFA8' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#0E8F45' }} />
             </Box>
           </IconButton>
         }
@@ -205,11 +205,27 @@ export default function ChatsPage() {
               rawChat.last_message_user_id ??
               '',
           );
-          const ownLastMessage =
-            (!!user?.id && !!lastAuthorId && String(user.id) === lastAuthorId) || (!hasUnread && !!subtitle && !lastAuthorId);
           const localLastMessage = (messages[chat.id] || [])[Math.max((messages[chat.id] || []).length - 1, 0)];
+          const inferredAuthorId =
+            lastAuthorId ||
+            String(
+              localLastMessage?.userId ??
+                rawChat.lastMessageUserId ??
+                rawChat.last_message_user_id ??
+                '',
+            );
+          const outgoingFlag = Boolean(
+            rawLastMessage?.isOutgoing ??
+              rawLastMessage?.outgoing ??
+              rawChat.lastMessageOutgoing ??
+              rawChat.last_message_outgoing ??
+              rawChat.last_message_is_mine,
+          );
+          const ownLastMessage =
+            (!!user?.id && !!inferredAuthorId && String(user.id) === inferredAuthorId) ||
+            (!!user?.id && !inferredAuthorId && outgoingFlag && !hasUnread);
           const lastMessageStatus = String(
-            rawLastMessage?.status ?? rawChat.lastMessageStatus ?? rawChat.last_message_status ?? '',
+            rawLastMessage?.status ?? localLastMessage?.status ?? rawChat.lastMessageStatus ?? rawChat.last_message_status ?? '',
           ).toLowerCase();
           const isLastReadByPeer =
             lastMessageStatus.includes('read') ||
@@ -221,7 +237,9 @@ export default function ChatsPage() {
               rawLastMessage?.seenAt ||
               rawLastMessage?.seen_at ||
               rawChat.lastMessageReadAt ||
-              rawChat.last_message_read_at
+              rawChat.last_message_read_at ||
+              rawChat.last_message_read === true ||
+              rawChat.last_message_read === 1
             );
 
           return (
@@ -243,7 +261,7 @@ export default function ChatsPage() {
                     : '#FFFFFF',
               }}
             >
-              <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#5E5BF0' : 'primary.main' }}>
+              <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#D6A21B' : 'primary.main' }}>
                 {chat.type === 'saved' ? <BookmarkRoundedIcon sx={{ fontSize: 30 }} /> : avatarData.initial}
               </Avatar>
               <ListItemText

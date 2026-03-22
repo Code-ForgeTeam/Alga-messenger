@@ -411,20 +411,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ...state.messages,
           [chatId]: nextMessages,
         },
-        chats: state.chats.map((chat) =>
-          chat.id === chatId && chat.lastMessage?.userId === me
-            ? {
-                ...chat,
-                lastMessage: { ...chat.lastMessage, status: 'read' },
-                ...(chat as any).lastMessageStatus !== undefined
-                  ? ({ lastMessageStatus: 'read' } as any)
-                  : {},
-                ...(chat as any).last_message_status !== undefined
-                  ? ({ last_message_status: 'read' } as any)
-                  : {},
-              }
-            : chat,
-        ),
+        chats: state.chats.map((chat) => {
+          if (chat.id !== chatId) return chat;
+
+          const raw = chat as any;
+          const last = raw.lastMessage ?? raw.last_message;
+          const lastAuthor =
+            chat.lastMessage?.userId ??
+            last?.userId ??
+            last?.user_id ??
+            raw.lastMessageUserId ??
+            raw.last_message_user_id;
+          const mayBeMine = !lastAuthor || String(lastAuthor) === String(me);
+
+          return {
+            ...chat,
+            lastMessage:
+              mayBeMine && chat.lastMessage
+                ? { ...chat.lastMessage, status: 'read' as Message['status'] }
+                : chat.lastMessage,
+            ...(mayBeMine ? ({ lastMessageStatus: 'read', last_message_status: 'read' } as any) : {}),
+          };
+        }),
       };
     });
   },

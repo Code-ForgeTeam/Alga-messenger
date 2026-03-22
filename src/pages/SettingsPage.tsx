@@ -10,6 +10,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  IconButton,
   Paper,
   Typography,
   Button,
@@ -52,27 +53,21 @@ export default function SettingsPage() {
         bgcolor: isDark ? '#0D1A2E' : '#F8FAFC',
       }}
     >
-      <AppHeader
-        title="Настройки"
-        rightSlot={
-          <ListItemButton
+      <AppHeader title="Настройки" />
+
+      <Paper elevation={0} sx={{ p: 1.5, mb: 1.2, borderRadius: 3, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}>
+        <Box sx={{ textAlign: 'center', pb: 0.5, position: 'relative' }}>
+          <IconButton
             onClick={() => navigate('/edit-profile')}
             sx={{
-              minWidth: 'unset',
-              width: 40,
-              height: 40,
-              borderRadius: 2,
-              p: 0,
-              justifyContent: 'center',
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(31,163,91,0.12)',
             }}
           >
             <EditIcon />
-          </ListItemButton>
-        }
-      />
-
-      <Paper elevation={0} sx={{ p: 1.5, mb: 1.2, borderRadius: 3, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}>
-        <Box sx={{ textAlign: 'center', pb: 0.5 }}>
+          </IconButton>
           <Avatar
             src={user?.avatar}
             sx={{ width: 94, height: 94, mx: 'auto', mb: 1, bgcolor: isDark ? '#2B5F8F' : 'primary.main', cursor: 'pointer' }}

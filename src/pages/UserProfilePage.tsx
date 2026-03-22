@@ -5,6 +5,7 @@ import {
   Button,
   CircularProgress,
   Divider,
+  IconButton,
   Stack,
   Typography,
 } from '@mui/material';
@@ -172,9 +173,24 @@ export default function UserProfilePage() {
       <AppHeader title="Профиль" />
 
       <Box sx={{ display: 'grid', justifyItems: 'center', textAlign: 'center', mt: 1 }}>
-        <Avatar src={user.avatar} sx={{ width: 110, height: 110, bgcolor: 'primary.main', mb: 1.5 }}>
-          {(user.fullName || user.username || '?').slice(0, 1).toUpperCase()}
-        </Avatar>
+        <Box sx={{ position: 'relative', width: 110, height: 110, mb: 1.5 }}>
+          <Avatar src={user.avatar} sx={{ width: 110, height: 110, bgcolor: 'primary.main' }}>
+            {(user.fullName || user.username || '?').slice(0, 1).toUpperCase()}
+          </Avatar>
+          {isSelfProfile && (
+            <IconButton
+              onClick={() => navigate('/edit-profile')}
+              sx={{
+                position: 'absolute',
+                top: -8,
+                right: -10,
+                bgcolor: 'rgba(31,163,91,0.16)',
+              }}
+            >
+              <EditOutlinedIcon />
+            </IconButton>
+          )}
+        </Box>
 
         <Typography variant="h5" sx={{ fontWeight: 700 }}>
           {user.fullName || user.username}
@@ -218,11 +234,7 @@ export default function UserProfilePage() {
           </Button>
         </Stack>
       ) : (
-        <Stack direction="column" spacing={1.2} sx={{ mt: 4 }}>
-          <Button variant="contained" endIcon={<EditOutlinedIcon />} onClick={() => navigate('/edit-profile')}>
-            Профиль
-          </Button>
-        </Stack>
+        <Box sx={{ mt: 3.2 }} />
       )}
     </Box>
   );
