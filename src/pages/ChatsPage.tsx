@@ -72,6 +72,19 @@ export default function ChatsPage() {
   const [q, setQ] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const menuItemSx = {
+    borderRadius: 2.5,
+    px: 1.2,
+    py: 1,
+    mb: 0.5,
+    '& .MuiListItemIcon-root': {
+      minWidth: 36,
+      color: isDark ? '#AFC1D9' : '#45635A',
+    },
+    '&:hover': {
+      bgcolor: isDark ? 'rgba(143,177,213,0.14)' : 'rgba(31,163,91,0.10)',
+    },
+  };
 
   useEffect(() => {
     if (!user?.id) return;
@@ -109,7 +122,7 @@ export default function ChatsPage() {
 
   const visible = useMemo(() => {
     const needle = q.toLowerCase().trim();
-    const base = chats.filter((c) => !c.archived);
+    const base = chats.filter((c) => !c.archived && c.type !== 'ai');
     if (!needle) return base;
 
     return base.filter((chat) => {
@@ -161,7 +174,7 @@ export default function ChatsPage() {
           return (
             <ListItemButton key={chat.id} onClick={() => navigate(`/chat/${chat.id}`)} sx={{ borderBottom: '1px solid', borderColor: 'divider', py: 1.2, bgcolor: isDark ? 'transparent' : '#FFFFFF' }}>
               <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#5E5BF0' : 'primary.main' }}>
-                {avatarData.initial}
+                {chat.type === 'saved' ? <BookmarkRoundedIcon sx={{ fontSize: 30 }} /> : avatarData.initial}
               </Avatar>
               <ListItemText
                 primary={<Typography fontWeight={700}>{name}</Typography>}
@@ -222,24 +235,63 @@ export default function ChatsPage() {
             </Box>
           </Box>
 
-          <List sx={{ pt: 1 }}>
-            <ListItemButton onClick={() => { navigate('/edit-profile'); setDrawerOpen(false); }}>
-              <ListItemIcon><PersonIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Мой профиль" />
-            </ListItemButton>
-            <ListItemButton onClick={() => { navigate('/contacts'); setDrawerOpen(false); }}>
-              <ListItemIcon><Groups2RoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Контакты" />
-            </ListItemButton>
-            <ListItemButton onClick={() => { navigate('/favorites'); setDrawerOpen(false); }}>
-              <ListItemIcon><BookmarkRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Избранное" />
-            </ListItemButton>
-            <ListItemButton onClick={() => { navigate('/settings'); setDrawerOpen(false); }}>
-              <ListItemIcon><SettingsRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="Настройки" />
-            </ListItemButton>
-            <ListItemButton onClick={() => { navigate('/support'); setDrawerOpen(false); }}>
-              <ListItemIcon><PsychologyRoundedIcon sx={{ color: 'text.secondary' }} /></ListItemIcon><ListItemText primary="AI" />
-            </ListItemButton>
-            <ListItemButton onClick={logout}><ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main', sx: { ml: 1 } }} /></ListItemButton>
-          </List>
+          <Box sx={{ p: 1.5 }}>
+            <Box
+              sx={{
+                borderRadius: 3,
+                p: 0.8,
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(175,193,217,0.18)' : 'rgba(31,163,91,0.2)',
+                bgcolor: isDark ? 'rgba(17,33,50,0.75)' : '#FFFFFF',
+                boxShadow: isDark ? '0 8px 22px rgba(0,0,0,0.28)' : '0 8px 22px rgba(31,163,91,0.12)',
+              }}
+            >
+              <Typography
+                sx={{
+                  px: 1.2,
+                  pt: 0.6,
+                  pb: 0.7,
+                  fontSize: 12,
+                  letterSpacing: 0.45,
+                  textTransform: 'uppercase',
+                  color: isDark ? '#8FA8C2' : '#5E7168',
+                }}
+              >
+                Меню
+              </Typography>
+              <List sx={{ p: 0 }}>
+                <ListItemButton sx={menuItemSx} onClick={() => { navigate('/edit-profile'); setDrawerOpen(false); }}>
+                  <ListItemIcon><PersonIcon /></ListItemIcon><ListItemText primary="Мой профиль" />
+                </ListItemButton>
+                <ListItemButton sx={menuItemSx} onClick={() => { navigate('/contacts'); setDrawerOpen(false); }}>
+                  <ListItemIcon><Groups2RoundedIcon /></ListItemIcon><ListItemText primary="Контакты" />
+                </ListItemButton>
+                <ListItemButton sx={menuItemSx} onClick={() => { navigate('/favorites'); setDrawerOpen(false); }}>
+                  <ListItemIcon><BookmarkRoundedIcon /></ListItemIcon><ListItemText primary="Избранное" />
+                </ListItemButton>
+                <ListItemButton sx={menuItemSx} onClick={() => { navigate('/settings'); setDrawerOpen(false); }}>
+                  <ListItemIcon><SettingsRoundedIcon /></ListItemIcon><ListItemText primary="Настройки" />
+                </ListItemButton>
+                <ListItemButton sx={menuItemSx} onClick={() => { navigate('/support'); setDrawerOpen(false); }}>
+                  <ListItemIcon><PsychologyRoundedIcon /></ListItemIcon><ListItemText primary="AI чат" />
+                </ListItemButton>
+                <ListItemButton
+                  sx={{
+                    ...menuItemSx,
+                    mt: 0.4,
+                    mb: 0,
+                    '& .MuiTypography-root': { color: '#E44B4B', fontWeight: 600 },
+                  }}
+                  onClick={() => {
+                    setDrawerOpen(false);
+                    logout();
+                  }}
+                >
+                  <ListItemText primary="Выйти" />
+                </ListItemButton>
+              </List>
+            </Box>
+          </Box>
         </Box>
       </Drawer>
 

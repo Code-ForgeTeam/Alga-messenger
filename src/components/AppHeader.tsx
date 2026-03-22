@@ -19,7 +19,8 @@ export function AppHeader({ title, showBack = true, leftSlot, rightSlot }: AppHe
         display: 'flex',
         alignItems: 'center',
         minHeight: 48,
-        px: 0.5,
+        pl: 'max(env(safe-area-inset-left), 8px)',
+        pr: 'max(env(safe-area-inset-right), 8px)',
         pt: 'max(env(safe-area-inset-top), 12px)',
         mb: 1,
       }}

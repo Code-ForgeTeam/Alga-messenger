@@ -73,7 +73,16 @@ export default function SupportPage() {
 
   return (
     <Box sx={{ p: 1.5, height: '100%', display: 'flex', flexDirection: 'column', gap: 1.2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          pt: 'max(env(safe-area-inset-top), 12px)',
+          pl: 'max(env(safe-area-inset-left), 4px)',
+          pr: 'max(env(safe-area-inset-right), 4px)',
+        }}
+      >
         <IconButton onClick={() => navigate(-1)}><ArrowBackIcon /></IconButton>
         <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main' }}>
           <PsychologyRoundedIcon sx={{ fontSize: 20 }} />

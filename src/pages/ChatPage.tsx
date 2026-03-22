@@ -15,6 +15,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
+import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { uploadApi } from '../lib/api';
@@ -80,6 +81,15 @@ export default function ChatPage() {
     markAsRead(chatId).catch(() => null);
     return () => setCurrentChat(null);
   }, [chatId, loadMessages, markAsRead, setCurrentChat]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    const timerId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      loadMessages(chatId).catch(() => null);
+    }, 5000);
+    return () => window.clearInterval(timerId);
+  }, [chatId, loadMessages]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
 
@@ -151,14 +161,14 @@ export default function ChatPage() {
     return (
       <Box sx={{ p: 3 }}>
         <Typography>Чат не найден</Typography>
-        <Button onClick={() => navigate('/chats')}>Назад</Button>
+        <Button variant="outlined" sx={{ mt: 2 }} onClick={() => navigate('/chats')}>Назад</Button>
       </Box>
     );
   }
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: isDark ? '#0A1A32' : '#FFFFFF', color: isDark ? '#EAF1FF' : 'text.primary' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, pt: 'max(env(safe-area-inset-top), 12px)', pb: 1, borderBottom: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider', bgcolor: isDark ? 'rgba(20,33,52,0.88)' : '#FFFFFF' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 'max(env(safe-area-inset-left), 8px)', pr: 'max(env(safe-area-inset-right), 8px)', pt: 'max(env(safe-area-inset-top), 12px)', pb: 1, borderBottom: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider', bgcolor: isDark ? 'rgba(20,33,52,0.88)' : '#FFFFFF' }}>
         <IconButton onClick={() => navigate(-1)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><ArrowBackIcon /></IconButton>
 
         <ButtonBase
@@ -176,7 +186,9 @@ export default function ChatPage() {
             textAlign: 'left',
           }}
         >
-          <Avatar src={avatarSrc} sx={{ width: 46, height: 46, bgcolor: '#5E5BF0' }}>{title.slice(0, 1).toUpperCase()}</Avatar>
+          <Avatar src={avatarSrc} sx={{ width: 46, height: 46, bgcolor: '#5E5BF0' }}>
+            {chat.type === 'saved' ? <BookmarkRoundedIcon sx={{ fontSize: 27 }} /> : title.slice(0, 1).toUpperCase()}
+          </Avatar>
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontWeight: 700, fontSize: 18 }} noWrap>{title}</Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>

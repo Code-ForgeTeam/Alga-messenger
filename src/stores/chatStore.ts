@@ -80,15 +80,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const next = Array.isArray(chats) ? chats : [];
 
       try {
-        const ai = await aiApi.getAIChat();
-        if (ai && typeof ai === 'object' && typeof ai.id === 'string' && !next.some((c) => c.id === ai.id)) {
-          next.unshift(ai as Chat);
-        }
-      } catch {
-        // ignore
-      }
-
-      try {
         const saved = await savedApi.getSavedChat();
         if (saved && typeof saved === 'object' && typeof saved.id === 'string' && !next.some((c) => c.id === saved.id)) {
           next.unshift(saved as Chat);

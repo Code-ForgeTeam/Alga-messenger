@@ -14,6 +14,7 @@ import type { Chat, User } from '../lib/types';
 import { useAuthStore } from '../stores/authStore';
 import { useChatStore } from '../stores/chatStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
+import { AppHeader } from '../components/AppHeader';
 
 const formatPresence = (status?: User['status'], lastSeen?: string): string => {
   if (status === 'online') return 'в сети';
@@ -149,20 +150,16 @@ export default function UserProfilePage() {
 
   if (!user) {
     return (
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: 2 }}>
+        <AppHeader title="Профиль" />
         <Typography variant="h6">Пользователь не найден</Typography>
-        <Button sx={{ mt: 2 }} onClick={() => navigate(-1)}>
-          Назад
-        </Button>
       </Box>
     );
   }
 
   return (
     <Box sx={{ height: '100%', overflow: 'auto', p: 2, pb: 12 }}>
-      <Button onClick={() => navigate(-1)} sx={{ mb: 1 }}>
-        Назад
-      </Button>
+      <AppHeader title="Профиль" />
 
       <Box sx={{ display: 'grid', justifyItems: 'center', textAlign: 'center', mt: 1 }}>
         <Avatar src={user.avatar} sx={{ width: 110, height: 110, bgcolor: 'primary.main', mb: 1.5 }}>
