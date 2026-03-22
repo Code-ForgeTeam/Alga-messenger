@@ -64,7 +64,7 @@ export default function ChatsPage() {
   const isDark = theme.palette.mode === 'dark';
   const setTheme = useSettingsStore((s) => s.setTheme);
   const navigate = useNavigate();
-  const { chats, isLoading, loadChats } = useChatStore();
+  const { chats, messages, isLoading, loadChats } = useChatStore();
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
   const user = useAuthStore((s) => s.user);
   const updateUser = useAuthStore((s) => s.updateUser);
@@ -207,10 +207,22 @@ export default function ChatsPage() {
           );
           const ownLastMessage =
             (!!user?.id && !!lastAuthorId && String(user.id) === lastAuthorId) || (!hasUnread && !!subtitle && !lastAuthorId);
+          const localLastMessage = (messages[chat.id] || [])[Math.max((messages[chat.id] || []).length - 1, 0)];
           const lastMessageStatus = String(
             rawLastMessage?.status ?? rawChat.lastMessageStatus ?? rawChat.last_message_status ?? '',
           ).toLowerCase();
-          const isLastReadByPeer = lastMessageStatus === 'read';
+          const isLastReadByPeer =
+            lastMessageStatus.includes('read') ||
+            lastMessageStatus.includes('seen') ||
+            localLastMessage?.status === 'read' ||
+            !!(
+              rawLastMessage?.readAt ||
+              rawLastMessage?.read_at ||
+              rawLastMessage?.seenAt ||
+              rawLastMessage?.seen_at ||
+              rawChat.lastMessageReadAt ||
+              rawChat.last_message_read_at
+            );
 
           return (
             <ListItemButton
@@ -278,7 +290,7 @@ export default function ChatsPage() {
       </Fab>
 
       <Drawer anchor="left" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-        <Box sx={{ width: 'min(320px, 88vw)', height: '100%', bgcolor: isDark ? '#0E1B2A' : '#F7FAF8' }}>
+        <Box sx={{ width: 'min(320px, 88vw)', height: '100%', bgcolor: isDark ? '#0E1B2A' : '#F7FAF8', display: 'flex', flexDirection: 'column' }}>
           <Box
             sx={{
               pt: 'max(env(safe-area-inset-top), 12px)',
@@ -317,7 +329,7 @@ export default function ChatsPage() {
             </Box>
           </Box>
 
-          <Box sx={{ p: 1.5 }}>
+          <Box sx={{ p: 1.5, flex: 1, display: 'flex', flexDirection: 'column' }}>
             <Box
               sx={{
                 borderRadius: 3,
@@ -342,7 +354,13 @@ export default function ChatsPage() {
                 Меню
               </Typography>
               <List sx={{ p: 0 }}>
-                <ListItemButton sx={menuItemSx} onClick={() => { navigate('/edit-profile'); setDrawerOpen(false); }}>
+                <ListItemButton
+                  sx={menuItemSx}
+                  onClick={() => {
+                    if (user?.id) navigate(`/user/${user.id}`);
+                    setDrawerOpen(false);
+                  }}
+                >
                   <ListItemIcon><PersonIcon /></ListItemIcon><ListItemText primary="Мой профиль" />
                 </ListItemButton>
                 <ListItemButton sx={menuItemSx} onClick={() => { navigate('/contacts'); setDrawerOpen(false); }}>
@@ -373,6 +391,24 @@ export default function ChatsPage() {
                 </ListItemButton>
               </List>
             </Box>
+            <Typography
+              sx={{
+                px: 1.2,
+                mt: 'auto',
+                pt: 1.1,
+                pb: 0.2,
+                textAlign: 'center',
+                fontSize: 12,
+                color: isDark ? 'rgba(188,206,227,0.56)' : 'rgba(56,74,67,0.54)',
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                setDrawerOpen(false);
+                navigate('/author-support');
+              }}
+            >
+              Поддержка автора
+            </Typography>
           </Box>
         </Box>
       </Drawer>

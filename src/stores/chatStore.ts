@@ -399,14 +399,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const me = useAuthStore.getState().user?.id;
     if (userId === me) return;
 
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [chatId]: (state.messages[chatId] || []).map((m) =>
-          m.userId === me && m.status !== 'read' ? { ...m, status: 'read' } : m,
+    set((state) => {
+      const nextMessages: Message[] = (state.messages[chatId] || []).map((m) =>
+        m.userId === me && m.status !== 'read'
+          ? { ...m, status: 'read' as Message['status'] }
+          : m,
+      );
+
+      return {
+        messages: {
+          ...state.messages,
+          [chatId]: nextMessages,
+        },
+        chats: state.chats.map((chat) =>
+          chat.id === chatId && chat.lastMessage?.userId === me
+            ? {
+                ...chat,
+                lastMessage: { ...chat.lastMessage, status: 'read' },
+                ...(chat as any).lastMessageStatus !== undefined
+                  ? ({ lastMessageStatus: 'read' } as any)
+                  : {},
+                ...(chat as any).last_message_status !== undefined
+                  ? ({ last_message_status: 'read' } as any)
+                  : {},
+              }
+            : chat,
         ),
-      },
-    }));
+      };
+    });
   },
 
   handleUserTyping: ({ chatId, userId }) => {

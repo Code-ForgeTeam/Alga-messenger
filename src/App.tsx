@@ -46,6 +46,7 @@ const FavoritesPage = lazy(() => import('./pages/FavoritesPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
+const AuthorSupportPage = lazy(() => import('./pages/AuthorSupportPage'));
 
 function BackgroundEffects({
   effect,
@@ -125,21 +126,32 @@ function LaunchIntro({ active }: { active: boolean }) {
         '@keyframes logoMove': {
           '0%': { top: '50%', left: '50%', transform: 'translate(-50%, -50%) scale(1)' },
           '100%': {
-            top: 'calc(max(env(safe-area-inset-top), 12px) + 23px)',
-            left: 'calc(max(env(safe-area-inset-left), 12px) + 56px)',
-            transform: 'translate(-50%, -50%) scale(0.83)',
+            top: 'calc(max(env(safe-area-inset-top), 12px) + 35px)',
+            left: 'calc(max(env(safe-area-inset-left), 12px) + 122px)',
+            transform: 'translate(-50%, -50%) scale(0.78)',
           },
         },
-        '@keyframes bveFade': {
-          '0%': { opacity: 0.9, transform: 'translate(-50%, -50%) scale(1)' },
-          '100%': { opacity: 0, transform: 'translate(-50%, -62%) scale(0.96)' },
+        '@keyframes bveTravel': {
+          '0%': { top: 'calc(50% + 40px)', left: '50%', opacity: 0.92, transform: 'translate(-50%, -50%) scale(1)' },
+          '72%': {
+            top: 'calc(max(env(safe-area-inset-top), 12px) + 37px)',
+            left: 'calc(max(env(safe-area-inset-left), 12px) + 184px)',
+            opacity: 0.92,
+            transform: 'translate(-50%, -50%) scale(0.86)',
+          },
+          '100%': {
+            top: 'calc(max(env(safe-area-inset-top), 12px) + 37px)',
+            left: 'calc(max(env(safe-area-inset-left), 12px) + 192px)',
+            opacity: 0,
+            transform: 'translate(-50%, -50%) scale(0.78)',
+          },
         },
         '@keyframes sparkle': {
           '0%': { opacity: 0, transform: 'scale(0.2) rotate(0deg)' },
           '42%': { opacity: 1, transform: 'scale(1.12) rotate(24deg)' },
           '100%': { opacity: 0, transform: 'scale(0.1) rotate(52deg)' },
         },
-        animation: 'introFadeOut 1550ms ease forwards',
+        animation: 'introFadeOut 1650ms ease forwards',
       }}
     >
       <Box
@@ -158,7 +170,7 @@ function LaunchIntro({ active }: { active: boolean }) {
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          animation: 'logoMove 1120ms cubic-bezier(0.2, 0.84, 0.24, 1) 120ms forwards',
+          animation: 'logoMove 1180ms cubic-bezier(0.2, 0.84, 0.24, 1) 80ms forwards',
         }}
       >
         <Typography
@@ -181,11 +193,11 @@ function LaunchIntro({ active }: { active: boolean }) {
           top: 'calc(50% + 40px)',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          fontSize: { xs: 18, sm: 20 },
+          fontSize: { xs: 16, sm: 18 },
           fontWeight: 700,
-          letterSpacing: 2,
+          letterSpacing: 1.8,
           color: isDark ? 'rgba(214,231,255,0.92)' : 'rgba(23,103,63,0.86)',
-          animation: 'bveFade 380ms ease 120ms forwards',
+          animation: 'bveTravel 1240ms cubic-bezier(0.24, 0.88, 0.28, 1) 120ms forwards',
         }}
       >
         BVE
@@ -196,12 +208,12 @@ function LaunchIntro({ active }: { active: boolean }) {
           position: 'absolute',
           width: 18,
           height: 18,
-          left: 'calc(max(env(safe-area-inset-left), 12px) + 90px)',
-          top: 'calc(max(env(safe-area-inset-top), 12px) + 4px)',
+          left: 'calc(max(env(safe-area-inset-left), 12px) + 202px)',
+          top: 'calc(max(env(safe-area-inset-top), 12px) + 21px)',
           borderRadius: '50%',
           background: 'radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 72%)',
           opacity: 0,
-          animation: 'sparkle 440ms ease 1110ms forwards',
+          animation: 'sparkle 420ms ease 1220ms forwards',
         }}
       />
     </Box>
@@ -230,7 +242,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const timerId = window.setTimeout(() => setShowLaunchIntro(false), 1600);
+    const timerId = window.setTimeout(() => setShowLaunchIntro(false), 1700);
     return () => window.clearTimeout(timerId);
   }, []);
 
@@ -321,6 +333,7 @@ export default function App() {
           <Route path="/admin" element={<Guard><AdminPage /></Guard>} />
           <Route path="/support" element={<Guard><SupportPage /></Guard>} />
           <Route path="/support-agent" element={<Guard><SupportAgentPage /></Guard>} />
+          <Route path="/author-support" element={<Guard><AuthorSupportPage /></Guard>} />
 
           <Route path="*" element={<Navigate to="/chats" replace />} />
         </Routes>

@@ -1,16 +1,19 @@
 import {
   Avatar,
   Box,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
-  IconButton,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
   Paper,
   Typography,
+  Button,
 } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
 import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
@@ -21,29 +24,60 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
+import { AppHeader } from '../components/AppHeader';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
-  const { theme, setTheme } = useSettingsStore();
+  const { theme: appTheme, setTheme } = useSettingsStore();
   const push = useSnackbarStore((s) => s.push);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   return (
-    <Box sx={{ p: 1.5, height: '100%', overflowY: 'auto' }}>
-      <Paper elevation={0} sx={{ p: 1.5, mb: 1.2, borderRadius: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <IconButton onClick={() => navigate(-1)}><ArrowBackIcon /></IconButton>
-          <Typography variant="h6" sx={{ fontWeight: 700, ml: 1, flex: 1 }}>Настройки</Typography>
-          <IconButton onClick={() => navigate('/edit-profile')}><EditIcon /></IconButton>
-        </Box>
+    <Box
+      sx={{
+        px: 1.5,
+        pb: 'max(env(safe-area-inset-bottom), 92px)',
+        height: '100%',
+        overflowY: 'auto',
+        bgcolor: isDark ? '#0D1A2E' : '#F8FAFC',
+      }}
+    >
+      <AppHeader
+        title="Настройки"
+        rightSlot={
+          <ListItemButton
+            onClick={() => navigate('/edit-profile')}
+            sx={{
+              minWidth: 'unset',
+              width: 40,
+              height: 40,
+              borderRadius: 2,
+              p: 0,
+              justifyContent: 'center',
+            }}
+          >
+            <EditIcon />
+          </ListItemButton>
+        }
+      />
 
-        <Box sx={{ textAlign: 'center', pb: 1 }}>
-          <Avatar src={user?.avatar} sx={{ width: 94, height: 94, mx: 'auto', mb: 1, bgcolor: 'primary.main' }}>
+      <Paper elevation={0} sx={{ p: 1.5, mb: 1.2, borderRadius: 3, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}>
+        <Box sx={{ textAlign: 'center', pb: 0.5 }}>
+          <Avatar
+            src={user?.avatar}
+            sx={{ width: 94, height: 94, mx: 'auto', mb: 1, bgcolor: isDark ? '#2B5F8F' : 'primary.main', cursor: 'pointer' }}
+            onClick={() => user?.id && navigate(`/user/${user.id}`)}
+          >
             {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
           </Avatar>
           <Typography fontWeight={700}>{user?.fullName || 'Пользователь'}</Typography>
@@ -51,12 +85,12 @@ export default function SettingsPage() {
         </Box>
       </Paper>
 
-      <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden', mb: 1.2 }}>
-        <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>ОСНОВНЫЕ</Typography>
+      <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden', mb: 1.2, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}>
+        <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>Основные</Typography>
         <List disablePadding>
-          <ListItemButton onClick={() => push({ message: 'Скоро добавим расширенные настройки чата.', timeout: 2200 })} sx={{ py: 1.25 }}>
+          <ListItemButton onClick={() => push({ message: 'Расширенные настройки чатов появятся позже.', timeout: 2200 })} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><ChatBubbleOutlineRoundedIcon /></ListItemIcon>
-            <ListItemText primary="Настройки чата" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
+            <ListItemText primary="Настройки чатов" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
           <ListItemButton onClick={() => navigate('/privacy')} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><LockOutlinedIcon /></ListItemIcon>
@@ -81,13 +115,13 @@ export default function SettingsPage() {
         </List>
       </Paper>
 
-      <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden' }}>
-        <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>ПРИЛОЖЕНИЕ</Typography>
+      <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden', bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}>
+        <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>Приложение</Typography>
         <List disablePadding>
-          <ListItemButton onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} sx={{ py: 1.25 }}>
+          <ListItemButton onClick={() => setTheme(appTheme === 'dark' ? 'light' : 'dark')} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><PaletteOutlinedIcon /></ListItemIcon>
             <ListItemText
-              primary={theme === 'dark' ? 'Тема: Тёмная' : 'Тема: Светлая'}
+              primary={appTheme === 'dark' ? 'Тема: Тёмная' : 'Тема: Светлая'}
               primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }}
             />
           </ListItemButton>
@@ -100,12 +134,32 @@ export default function SettingsPage() {
         <Divider />
 
         <List disablePadding>
-          <ListItemButton onClick={logout} sx={{ py: 1.25 }}>
+          <ListItemButton onClick={() => setShowLogoutDialog(true)} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'error.main' }}><LogoutRoundedIcon /></ListItemIcon>
             <ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main', fontSize: 15, fontWeight: 600 }} />
           </ListItemButton>
         </List>
       </Paper>
+
+      <Dialog open={showLogoutDialog} onClose={() => setShowLogoutDialog(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ color: 'error.main', fontWeight: 800 }}>Выйти из аккаунта?</DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary">Вы всегда сможете войти снова по логину и паролю.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowLogoutDialog(false)}>Нет</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              setShowLogoutDialog(false);
+              logout();
+            }}
+          >
+            Да
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

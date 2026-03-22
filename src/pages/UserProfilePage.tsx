@@ -8,6 +8,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { chatApi, userApi } from '../lib/api';
 import type { Chat, User } from '../lib/types';
@@ -35,6 +36,15 @@ const formatPresence = (status?: User['status'], lastSeen?: string): string => {
 
 const findPrivateChatWithUser = (chats: Chat[], peerId: string): Chat | undefined =>
   chats.find((chat) => chat.type === 'private' && chat.participants.some((p) => p.id === peerId));
+
+const formatBirthday = (user: User | null): string => {
+  if (!user) return 'Не указано';
+  const raw = (user as any).birthday || (user as any).birthDate || (user as any).birth_date || (user as any).dob;
+  if (!raw) return 'Не указано';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return String(raw);
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
 
 export default function UserProfilePage() {
   const { userId = '' } = useParams();
@@ -184,6 +194,13 @@ export default function UserProfilePage() {
         {user.bio?.trim() || 'Описание пока не добавлено'}
       </Typography>
 
+      <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>
+        День рождения
+      </Typography>
+      <Typography sx={{ mt: 0.4 }}>
+        {formatBirthday(user)}
+      </Typography>
+
       {!isSelfProfile ? (
         <Stack direction="column" spacing={1.2} sx={{ mt: 4 }}>
           <Button variant="contained" onClick={openChat} disabled={actionLoading !== null}>
@@ -202,8 +219,8 @@ export default function UserProfilePage() {
         </Stack>
       ) : (
         <Stack direction="column" spacing={1.2} sx={{ mt: 4 }}>
-          <Button variant="contained" onClick={() => navigate('/edit-profile')}>
-            Редактировать профиль
+          <Button variant="contained" endIcon={<EditOutlinedIcon />} onClick={() => navigate('/edit-profile')}>
+            Профиль
           </Button>
         </Stack>
       )}
