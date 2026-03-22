@@ -26,6 +26,7 @@
         "@capacitor/core": "^7.0.0",
         "@capacitor/ios": "^7.6.0",
         "@capacitor/local-notifications": "^7.0.0",
+        "@capacitor/push-notifications": "^7.0.6",
         "@emotion/react": "^11.13.3",
         "@emotion/styled": "^11.13.0",
         "@mui/icons-material": "^6.1.0",

@@ -11,6 +11,7 @@ final class Api
     private ?array $chatParticipantColumns = null;
     private ?array $userColumns = null;
     private ?bool $messageReactionTableReady = null;
+    private ?bool $pushTokensTableReady = null;
 
     public function __construct()
     {
@@ -66,11 +67,12 @@ final class Api
         if ($path === '/api/saved/chat' && $method === 'GET') { $this->savedChat(); }
         if ($path === '/api/messages' && $method === 'POST') { $this->sendMessage($body); }
         if ($path === '/api/messages/read' && $method === 'POST') { $this->markMessagesRead($body); }
+        if ($path === '/api/push/token' && $method === 'POST') { $this->registerPushToken($body); }
+        if ($path === '/api/push/token' && $method === 'DELETE') { $this->removePushToken($body); }
         if ($path === '/api/ai/chat' && $method === 'GET') { $this->aiChat(); }
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
-        if ($path === '/api/admin/users/block' && $method === 'POST') { $this->adminSetUserBan($body, true); }
-        if ($path === '/api/admin/users/unblock' && $method === 'POST') { $this->adminSetUserBan($body, false); }
+        if ($path === '/api/admin/users/delete' && $method === 'POST') { $this->adminDeleteUser($body); }
 
         if (preg_match('#^/api/messages/chat/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatMessages($m[1]); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteMessage($m[1], $body); }
@@ -285,17 +287,12 @@ final class Api
         $this->json(['ok' => true, 'creatorUserId' => $creatorId]);
     }
 
-    private function adminSetUserBan(array $body, bool $isBanned): void
+    private function adminDeleteUser(array $body): void
     {
         $actorId = $this->authUserId();
         $this->assertCreator($actorId);
 
-        if (!$this->ensureUserBanColumns()) {
-            $this->json(['error' => 'Ban columns are unavailable in DB schema'], 500);
-        }
-
         $username = trim((string)($body['username'] ?? ''));
-        $reason = trim((string)($body['reason'] ?? ''));
         if ($username === '') {
             $this->json(['error' => 'username is required'], 400);
         }
@@ -309,20 +306,27 @@ final class Api
 
         $creatorId = $this->creatorUserId();
         if ($creatorId !== '' && (string)$target['id'] === $creatorId) {
-            $this->json(['error' => 'Cannot change creator account status'], 400);
+            $this->json(['error' => 'Нельзя удалить владельца приложения'], 400);
         }
 
-        $update = $this->db()->prepare('UPDATE users SET is_banned = ?, ban_reason = ? WHERE id = ?');
-        $update->execute([
-            $isBanned ? 1 : 0,
-            $isBanned ? ($reason !== '' ? $reason : 'Заблокирован администратором') : null,
-            $target['id'],
-        ]);
+        $db = $this->db();
+        try {
+            $db->beginTransaction();
+            $delete = $db->prepare('DELETE FROM users WHERE id = ? LIMIT 1');
+            $delete->execute([(string)$target['id']]);
+            $db->exec('DELETE c FROM chats c LEFT JOIN chat_participants cp ON cp.chat_id = c.id WHERE cp.chat_id IS NULL');
+            $db->commit();
+        } catch (\Throwable) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            $this->json(['error' => 'Не удалось удалить пользователя'], 500);
+        }
 
         $this->json([
             'ok' => true,
             'username' => $target['username'],
-            'isBanned' => $isBanned,
+            'deleted' => true,
         ]);
     }
 
@@ -586,6 +590,7 @@ final class Api
 
         $updateChat = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
         $updateChat->execute([$chatId]);
+        $this->sendPushForMessage($chatId, $userId, $text);
 
         $message = [
             'id' => $messageId,
@@ -617,6 +622,52 @@ final class Api
                 'UPDATE chat_participants SET unread_count = 0 WHERE chat_id = ? AND user_id = ?'
             );
             $update->execute([$chatId, $userId]);
+        }
+
+        $this->json(['ok' => true]);
+    }
+
+    private function registerPushToken(array $body): void
+    {
+        $userId = $this->authUserId();
+        $token = trim((string)($body['token'] ?? ''));
+        $platform = trim((string)($body['platform'] ?? 'unknown'));
+        if ($token === '') {
+            $this->json(['error' => 'token is required'], 400);
+        }
+
+        if (!$this->ensurePushTokensTable()) {
+            $this->json(['error' => 'Push token storage is unavailable'], 500);
+        }
+
+        $stmt = $this->db()->prepare(
+            'INSERT INTO push_tokens (id, user_id, token, platform, last_seen_at)
+             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+             ON DUPLICATE KEY UPDATE
+                user_id = VALUES(user_id),
+                platform = VALUES(platform),
+                last_seen_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP'
+        );
+        $stmt->execute([$this->uuid(), $userId, $token, $platform]);
+
+        $this->json(['ok' => true]);
+    }
+
+    private function removePushToken(array $body): void
+    {
+        $userId = $this->authUserId();
+        $token = trim((string)($body['token'] ?? ''));
+        if (!$this->ensurePushTokensTable()) {
+            $this->json(['ok' => true]);
+        }
+
+        if ($token !== '') {
+            $stmt = $this->db()->prepare('DELETE FROM push_tokens WHERE user_id = ? AND token = ?');
+            $stmt->execute([$userId, $token]);
+        } else {
+            $stmt = $this->db()->prepare('DELETE FROM push_tokens WHERE user_id = ?');
+            $stmt->execute([$userId]);
         }
 
         $this->json(['ok' => true]);
@@ -1226,6 +1277,156 @@ final class Api
     private function isAiMessageText(string $text): bool
     {
         return stripos(trim($text), 'AI:') === 0;
+    }
+
+    private function sendPushForMessage(string $chatId, string $senderId, string $messageText): void
+    {
+        $serverKey = trim((string)Config::get('FCM_SERVER_KEY', ''));
+        if ($serverKey === '' || !function_exists('curl_init')) {
+            return;
+        }
+        if (!$this->ensurePushTokensTable()) {
+            return;
+        }
+
+        try {
+            $chatStmt = $this->db()->prepare('SELECT type, name FROM chats WHERE id = ? LIMIT 1');
+            $chatStmt->execute([$chatId]);
+            $chat = $chatStmt->fetch();
+            if (!$chat) {
+                return;
+            }
+
+            $chatType = (string)($chat['type'] ?? '');
+            if ($chatType === 'saved' || $chatType === 'ai') {
+                return;
+            }
+
+            $recipientsStmt = $this->db()->prepare(
+                'SELECT user_id FROM chat_participants WHERE chat_id = ? AND user_id <> ?'
+            );
+            $recipientsStmt->execute([$chatId, $senderId]);
+            $recipientRows = $recipientsStmt->fetchAll() ?: [];
+            $recipientIds = array_values(array_filter(array_map(
+                fn ($row) => (string)($row['user_id'] ?? ''),
+                $recipientRows
+            )));
+            if (!$recipientIds) {
+                return;
+            }
+
+            $placeholders = implode(',', array_fill(0, count($recipientIds), '?'));
+            $tokenStmt = $this->db()->prepare("SELECT token FROM push_tokens WHERE user_id IN ({$placeholders})");
+            $tokenStmt->execute($recipientIds);
+            $tokenRows = $tokenStmt->fetchAll() ?: [];
+            $tokens = array_values(array_unique(array_filter(array_map(
+                fn ($row) => trim((string)($row['token'] ?? '')),
+                $tokenRows
+            ))));
+            if (!$tokens) {
+                return;
+            }
+
+            $senderStmt = $this->db()->prepare('SELECT full_name, username FROM users WHERE id = ? LIMIT 1');
+            $senderStmt->execute([$senderId]);
+            $sender = $senderStmt->fetch() ?: [];
+
+            $senderName = trim((string)($sender['full_name'] ?? ''));
+            if ($senderName === '') {
+                $senderUsername = trim((string)($sender['username'] ?? ''));
+                $senderName = $senderUsername !== '' ? '@' . $senderUsername : 'Alga';
+            }
+
+            $normalizedBody = trim(preg_replace('/\s+/u', ' ', $messageText) ?? '');
+            if ($normalizedBody === '') {
+                $normalizedBody = 'Новое сообщение';
+            }
+            if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+                if (mb_strlen($normalizedBody) > 140) {
+                    $normalizedBody = mb_substr($normalizedBody, 0, 137) . '...';
+                }
+            } elseif (strlen($normalizedBody) > 140) {
+                $normalizedBody = substr($normalizedBody, 0, 137) . '...';
+            }
+
+            foreach (array_chunk($tokens, 500) as $chunk) {
+                $payload = [
+                    'registration_ids' => $chunk,
+                    'priority' => 'high',
+                    'notification' => [
+                        'title' => $senderName,
+                        'body' => $normalizedBody,
+                        'sound' => 'default',
+                    ],
+                    'data' => [
+                        'type' => 'message',
+                        'chatId' => $chatId,
+                        'senderId' => $senderId,
+                    ],
+                    'content_available' => true,
+                    'mutable_content' => true,
+                ];
+
+                $this->sendFcmPayload($serverKey, $payload);
+            }
+        } catch (\Throwable) {
+            // ignore push failures
+        }
+    }
+
+    private function sendFcmPayload(string $serverKey, array $payload): void
+    {
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            return;
+        }
+
+        $ch = curl_init('https://fcm.googleapis.com/fcm/send');
+        if ($ch === false) {
+            return;
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: key=' . $serverKey,
+                'Content-Type: application/json',
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_POSTFIELDS => $json,
+        ]);
+        curl_exec($ch);
+        curl_close($ch);
+    }
+
+    private function ensurePushTokensTable(): bool
+    {
+        if ($this->pushTokensTableReady !== null) {
+            return $this->pushTokensTableReady;
+        }
+
+        try {
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS push_tokens (
+                    id CHAR(36) PRIMARY KEY,
+                    user_id CHAR(36) NOT NULL,
+                    token VARCHAR(512) NOT NULL,
+                    platform VARCHAR(32) NOT NULL DEFAULT "unknown",
+                    last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_push_token (token),
+                    KEY idx_push_user (user_id),
+                    CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->pushTokensTableReady = true;
+        } catch (\Throwable) {
+            $this->pushTokensTableReady = false;
+        }
+
+        return $this->pushTokensTableReady;
     }
 
     private function uploadAvatar(): void

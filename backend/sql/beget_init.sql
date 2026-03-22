@@ -78,6 +78,19 @@ CREATE TABLE IF NOT EXISTS message_reactions (
   CONSTRAINT fk_react_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS push_tokens (
+  id            CHAR(36) PRIMARY KEY,
+  user_id       CHAR(36) NOT NULL,
+  token         VARCHAR(512) NOT NULL,
+  platform      VARCHAR(32) NOT NULL DEFAULT 'unknown',
+  last_seen_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_push_token (token),
+  INDEX idx_push_user (user_id),
+  CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS contacts (
   id              CHAR(36) PRIMARY KEY,
   owner_user_id   CHAR(36) NOT NULL,

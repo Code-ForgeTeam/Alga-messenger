@@ -120,10 +120,15 @@ export const adminApi = {
   clearAllChats: async () => (await api.post('/admin/clear-chats')).data,
   clearAllMessages: async () => (await api.post('/admin/clear-messages')).data,
   resetUsersExceptCreator: async () => (await api.post('/admin/reset-users')).data,
-  blockUserByUsername: async (username: string, reason = '') =>
-    (await api.post('/admin/users/block', { username, reason })).data,
-  unblockUserByUsername: async (username: string) =>
-    (await api.post('/admin/users/unblock', { username })).data,
+  deleteUserByUsername: async (username: string) =>
+    (await api.post('/admin/users/delete', { username })).data,
+};
+
+export const pushApi = {
+  registerToken: async (token: string, platform: string) =>
+    (await api.post('/push/token', { token, platform })).data,
+  unregisterToken: async (token: string) =>
+    (await api.delete('/push/token', { data: { token } })).data,
 };
 
 export const supportApi = {

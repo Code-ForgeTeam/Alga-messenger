@@ -60,7 +60,7 @@ export default function AdminPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [action, setAction] = useState<AdminAction>(null);
   const [targetUsername, setTargetUsername] = useState('');
-  const [banReason, setBanReason] = useState('');
+  const [confirmDeleteUserOpen, setConfirmDeleteUserOpen] = useState(false);
 
   const isCreator = isCreatorUser(me);
 
@@ -104,7 +104,7 @@ export default function AdminPage() {
     }
   };
 
-  const blockByUsername = async () => {
+  const deleteByUsername = async () => {
     const username = targetUsername.replace('@', '').trim();
     if (!username) {
       pushSnackbar({ message: 'Введите username', timeout: 2200 });
@@ -112,29 +112,14 @@ export default function AdminPage() {
     }
     setIsBusy(true);
     try {
-      await adminApi.blockUserByUsername(username, banReason.trim());
-      pushSnackbar({ message: `Пользователь @${username} заблокирован`, timeout: 2300 });
-      setBanReason('');
+      await adminApi.deleteUserByUsername(username);
+      pushSnackbar({ message: `Пользователь @${username} удалён`, timeout: 2300 });
+      setTargetUsername('');
+      setConfirmDeleteUserOpen(false);
+      await loadChats({ silent: true });
+      await refreshOverview();
     } catch (error: any) {
-      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось заблокировать пользователя', timeout: 2600 });
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const unblockByUsername = async () => {
-    const username = targetUsername.replace('@', '').trim();
-    if (!username) {
-      pushSnackbar({ message: 'Введите username', timeout: 2200 });
-      return;
-    }
-    setIsBusy(true);
-    try {
-      await adminApi.unblockUserByUsername(username);
-      pushSnackbar({ message: `Пользователь @${username} разблокирован`, timeout: 2300 });
-      setBanReason('');
-    } catch (error: any) {
-      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось разблокировать пользователя', timeout: 2600 });
+      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось удалить пользователя', timeout: 2600 });
     } finally {
       setIsBusy(false);
     }
@@ -227,7 +212,7 @@ export default function AdminPage() {
                   bgcolor: isDark ? 'rgba(14,29,47,0.74)' : '#F7FBF8',
                 }}
               >
-                <Typography sx={{ fontWeight: 800, mb: 1 }}>Блокировка пользователя</Typography>
+                <Typography sx={{ fontWeight: 800, mb: 1 }}>Удаление пользователя</Typography>
                 <Stack spacing={1}>
                   <TextField
                     size="small"
@@ -236,21 +221,20 @@ export default function AdminPage() {
                     value={targetUsername}
                     onChange={(e) => setTargetUsername(e.target.value)}
                   />
-                  <TextField
-                    size="small"
-                    label="Причина блокировки"
-                    placeholder="например: спам"
-                    value={banReason}
-                    onChange={(e) => setBanReason(e.target.value)}
-                  />
-                  <Stack direction="row" spacing={1}>
-                    <Button color="error" variant="contained" onClick={blockByUsername} disabled={isBusy}>
-                      Заблокировать
-                    </Button>
-                    <Button color="success" variant="outlined" onClick={unblockByUsername} disabled={isBusy}>
-                      Разблокировать
-                    </Button>
-                  </Stack>
+                  <Button
+                    color="error"
+                    variant="contained"
+                    onClick={() => {
+                      if (!targetUsername.replace('@', '').trim()) {
+                        pushSnackbar({ message: 'Введите username', timeout: 2200 });
+                        return;
+                      }
+                      setConfirmDeleteUserOpen(true);
+                    }}
+                    disabled={isBusy}
+                  >
+                    Удалить пользователя
+                  </Button>
                 </Stack>
               </Paper>
             </>
@@ -269,6 +253,21 @@ export default function AdminPage() {
           <Button disabled={isBusy} onClick={() => setAction(null)}>Отмена</Button>
           <Button disabled={isBusy} color="error" variant="contained" onClick={runAction}>
             {isBusy ? 'Выполняется...' : action ? ACTION_TEXT[action].button : 'Подтвердить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmDeleteUserOpen} onClose={() => (!isBusy ? setConfirmDeleteUserOpen(false) : null)} fullWidth maxWidth="xs">
+        <DialogTitle>Удалить пользователя?</DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary">
+            Пользователь @{targetUsername.replace('@', '').trim()} будет удалён из системы. Это действие необратимо.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={isBusy} onClick={() => setConfirmDeleteUserOpen(false)}>Отмена</Button>
+          <Button disabled={isBusy} color="error" variant="contained" onClick={deleteByUsername}>
+            {isBusy ? 'Удаление...' : 'Удалить'}
           </Button>
         </DialogActions>
       </Dialog>

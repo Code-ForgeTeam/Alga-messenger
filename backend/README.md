@@ -28,6 +28,7 @@ CORS_ORIGIN=http://q99916rz.beget.tech
 CREATOR_USER_ID=uuid-of-owner-account
 AI_SERVICE_URL=http://127.0.0.1:8099/reply
 AI_MODEL=gpt-4o-mini
+FCM_SERVER_KEY=your_firebase_server_key
 ```
 
 `CREATOR_USER_ID` is used for `/api/admin/*` tools access.
@@ -35,6 +36,9 @@ If it is empty, the backend automatically uses the oldest user in the database a
 
 `AI_SERVICE_URL` is optional. If empty, backend uses local fallback AI replies.
 When configured, backend forwards `/api/ai/message` prompts to this endpoint.
+
+`FCM_SERVER_KEY` is optional. If empty, native push notifications are disabled.
+When configured, backend sends real push notifications through Firebase Cloud Messaging.
 
 ## 2) Initialize database
 
@@ -66,6 +70,18 @@ Then set in `backend/.env`:
 ```env
 AI_SERVICE_URL=http://127.0.0.1:8099/reply
 ```
+
+## Optional: real push notifications (Android + iOS)
+
+1. Create project in Firebase and connect Android/iOS apps.
+2. Configure APNs in Firebase for iOS delivery.
+3. Put FCM server key into `backend/.env`:
+
+```env
+FCM_SERVER_KEY=your_firebase_server_key
+```
+
+Frontend app automatically registers device token through `/api/push/token`.
 
 
 ## Troubleshooting: 500 on `/backend/public/index.php/health`
