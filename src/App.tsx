@@ -9,6 +9,7 @@ import {
   DialogTitle,
   Typography,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthPage } from './components/AuthPage';
 import { AppSnackbar } from './components/AppSnackbar';
@@ -103,6 +104,110 @@ function BackgroundEffects({
   );
 }
 
+function LaunchIntro({ active }: { active: boolean }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  if (!active) return null;
+
+  return (
+    <Box
+      sx={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 4000,
+        overflow: 'hidden',
+        bgcolor: isDark ? '#061124' : '#F4FBF6',
+        '@keyframes introFadeOut': {
+          '0%, 84%': { opacity: 1 },
+          '100%': { opacity: 0 },
+        },
+        '@keyframes logoMove': {
+          '0%': { top: '50%', left: '50%', transform: 'translate(-50%, -50%) scale(1)' },
+          '100%': {
+            top: 'calc(max(env(safe-area-inset-top), 12px) + 23px)',
+            left: 'calc(max(env(safe-area-inset-left), 12px) + 56px)',
+            transform: 'translate(-50%, -50%) scale(0.83)',
+          },
+        },
+        '@keyframes bveFade': {
+          '0%': { opacity: 0.9, transform: 'translate(-50%, -50%) scale(1)' },
+          '100%': { opacity: 0, transform: 'translate(-50%, -62%) scale(0.96)' },
+        },
+        '@keyframes sparkle': {
+          '0%': { opacity: 0, transform: 'scale(0.2) rotate(0deg)' },
+          '42%': { opacity: 1, transform: 'scale(1.12) rotate(24deg)' },
+          '100%': { opacity: 0, transform: 'scale(0.1) rotate(52deg)' },
+        },
+        animation: 'introFadeOut 1550ms ease forwards',
+      }}
+    >
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          background: isDark
+            ? 'radial-gradient(circle at 46% 44%, rgba(81,142,224,0.24), rgba(5,14,26,0.97))'
+            : 'radial-gradient(circle at 46% 44%, rgba(31,163,91,0.22), rgba(242,251,246,0.96))',
+        }}
+      />
+
+      <Box
+        sx={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          animation: 'logoMove 1120ms cubic-bezier(0.2, 0.84, 0.24, 1) 120ms forwards',
+        }}
+      >
+        <Typography
+          sx={{
+            fontSize: { xs: 46, sm: 56 },
+            lineHeight: 1,
+            fontWeight: 900,
+            letterSpacing: 0.4,
+            color: isDark ? '#EAF2FF' : '#0E3C2D',
+            textShadow: isDark ? '0 10px 32px rgba(74,139,223,0.42)' : '0 10px 28px rgba(31,163,91,0.35)',
+          }}
+        >
+          Alga
+        </Typography>
+      </Box>
+
+      <Typography
+        sx={{
+          position: 'absolute',
+          top: 'calc(50% + 40px)',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          fontSize: { xs: 18, sm: 20 },
+          fontWeight: 700,
+          letterSpacing: 2,
+          color: isDark ? 'rgba(214,231,255,0.92)' : 'rgba(23,103,63,0.86)',
+          animation: 'bveFade 380ms ease 120ms forwards',
+        }}
+      >
+        BVE
+      </Typography>
+
+      <Box
+        sx={{
+          position: 'absolute',
+          width: 18,
+          height: 18,
+          left: 'calc(max(env(safe-area-inset-left), 12px) + 90px)',
+          top: 'calc(max(env(safe-area-inset-top), 12px) + 4px)',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 72%)',
+          opacity: 0,
+          animation: 'sparkle 440ms ease 1110ms forwards',
+        }}
+      />
+    </Box>
+  );
+}
+
 function Guard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/auth" replace />;
@@ -118,9 +223,15 @@ export default function App() {
 
   const [apkUpdate, setApkUpdate] = useState<ApkUpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [showLaunchIntro, setShowLaunchIntro] = useState(true);
 
   useEffect(() => {
     auth.checkAuth();
+  }, []);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => setShowLaunchIntro(false), 1600);
+    return () => window.clearTimeout(timerId);
   }, []);
 
   useEffect(() => {
@@ -183,6 +294,7 @@ export default function App() {
       }}
     >
       <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
+      <LaunchIntro active={showLaunchIntro} />
 
       <Suspense
         fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}

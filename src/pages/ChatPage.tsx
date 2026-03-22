@@ -8,6 +8,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Popover,
   TextField,
   Typography,
 } from '@mui/material';
@@ -40,6 +41,9 @@ const formatPresence = (status?: User['status'], lastSeen?: string): string => {
   })}`;
 };
 
+const QUICK_REACTIONS = ['❤️', '👍', '👎', '🔥'] as const;
+type QuickReaction = (typeof QUICK_REACTIONS)[number];
+
 export default function ChatPage() {
   const { chatId = '' } = useParams();
   const navigate = useNavigate();
@@ -69,6 +73,9 @@ export default function ChatPage() {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [msgMenuAnchor, setMsgMenuAnchor] = useState<HTMLElement | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [reactionAnchor, setReactionAnchor] = useState<HTMLElement | null>(null);
+  const [reactionMessageId, setReactionMessageId] = useState<string | null>(null);
+  const [reactions, setReactions] = useState<Record<string, QuickReaction>>({});
   const [files, setFiles] = useState<File[]>([]);
   const [uploaded, setUploaded] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -90,6 +97,30 @@ export default function ChatPage() {
     }, 5000);
     return () => window.clearInterval(timerId);
   }, [chatId, loadMessages]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    try {
+      const raw = localStorage.getItem(`alga:reactions:${chatId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, QuickReaction>;
+        setReactions(parsed && typeof parsed === 'object' ? parsed : {});
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    setReactions({});
+  }, [chatId]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    try {
+      localStorage.setItem(`alga:reactions:${chatId}`, JSON.stringify(reactions));
+    } catch {
+      // ignore
+    }
+  }, [chatId, reactions]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
 
@@ -155,6 +186,37 @@ export default function ChatPage() {
   const openProfileFromHeader = () => {
     if (!peerUser) return;
     navigate(`/user/${peerUser.id}?chatId=${encodeURIComponent(chatId)}`);
+  };
+
+  const openReactionPicker = (message: Message, anchor: HTMLElement) => {
+    setSelectedMessage(message);
+    setReactionMessageId(message.id);
+    setReactionAnchor(anchor);
+  };
+
+  const closeReactionPicker = () => {
+    setReactionAnchor(null);
+    setReactionMessageId(null);
+  };
+
+  const applyReaction = (value: QuickReaction) => {
+    if (!reactionMessageId) return;
+    setReactions((prev) => {
+      const current = prev[reactionMessageId];
+      if (current === value) {
+        const next = { ...prev };
+        delete next[reactionMessageId];
+        return next;
+      }
+      return { ...prev, [reactionMessageId]: value };
+    });
+    closeReactionPicker();
+  };
+
+  const openMessageActionsFromReactions = () => {
+    if (!reactionAnchor || !selectedMessage) return;
+    setMsgMenuAnchor(reactionAnchor);
+    closeReactionPicker();
   };
 
   if (!chat) {
@@ -235,6 +297,56 @@ export default function ChatPage() {
         </MenuItem>
       </Menu>
 
+      <Popover
+        open={!!reactionAnchor}
+        anchorEl={reactionAnchor}
+        onClose={closeReactionPicker}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 99,
+              px: 0.6,
+              py: 0.4,
+              bgcolor: isDark ? 'rgba(19,33,52,0.96)' : 'rgba(255,255,255,0.96)',
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)',
+            },
+          },
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
+          {QUICK_REACTIONS.map((item) => (
+            <ButtonBase
+              key={item}
+              onClick={() => applyReaction(item)}
+              sx={{
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                fontSize: 20,
+                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' },
+              }}
+            >
+              {item}
+            </ButtonBase>
+          ))}
+          <ButtonBase
+            onClick={openMessageActionsFromReactions}
+            sx={{
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              color: isDark ? '#B7C8DD' : '#556370',
+              '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' },
+            }}
+          >
+            <MoreVertIcon sx={{ fontSize: 20 }} />
+          </ButtonBase>
+        </Box>
+      </Popover>
+
       <Box sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
         {isLoadingMessages && chatMessages.length === 0 ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}><CircularProgress /></Box>
@@ -251,6 +363,7 @@ export default function ChatPage() {
             }
 
             const m = row.value;
+            const reaction = reactions[m.id];
             return (
               <Box key={row.key} sx={{ mb: 1, display: 'flex', justifyContent: m.userId === me?.id ? 'flex-end' : 'flex-start' }}>
                 <Box
@@ -260,14 +373,15 @@ export default function ChatPage() {
                     setMsgMenuAnchor(e.currentTarget);
                   }}
                   onPointerDown={(e) => {
+                    if (e.pointerType !== 'mouse') e.preventDefault();
                     const target = e.currentTarget as HTMLElement;
                     const timer = window.setTimeout(() => {
-                      setSelectedMessage(m);
-                      setMsgMenuAnchor(target);
+                      openReactionPicker(m, target);
                     }, 450);
                     const clear = () => window.clearTimeout(timer);
                     target.addEventListener('pointerup', clear, { once: true });
                     target.addEventListener('pointerleave', clear, { once: true });
+                    target.addEventListener('pointercancel', clear, { once: true });
                   }}
                   sx={{
                     px: 1.5,
@@ -278,12 +392,29 @@ export default function ChatPage() {
                     WebkitTouchCallout: 'none',
                     WebkitUserSelect: 'none',
                     userSelect: 'none',
+                    touchAction: 'manipulation',
                   }}
                 >
                   <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'none', WebkitUserSelect: 'none' }}>{m.text}</Typography>
                   <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                     {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                   </Typography>
+                  {!!reaction && (
+                    <Box
+                      sx={{
+                        mt: 0.45,
+                        ml: 'auto',
+                        width: 26,
+                        height: 22,
+                        borderRadius: 11,
+                        display: 'grid',
+                        placeItems: 'center',
+                        bgcolor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)',
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 14, lineHeight: 1 }}>{reaction}</Typography>
+                    </Box>
+                  )}
                 </Box>
               </Box>
             );

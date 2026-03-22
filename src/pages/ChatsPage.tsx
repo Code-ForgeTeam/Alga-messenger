@@ -188,16 +188,29 @@ export default function ChatsPage() {
 
       <List sx={{ mt: 1 }}>
         {visible.map((chat) => {
+          const rawChat = chat as Chat & Record<string, any>;
+          const rawLastMessage = (rawChat.lastMessage ?? rawChat.last_message) as Record<string, any> | undefined;
           const name = getChatName(chat, user?.id);
-          const subtitle = chat.lastMessageText || (chat.type === 'saved' ? 'Сообщения самому себе' : '');
-          const date = formatChatDate(chat.lastMessageTime || chat.updatedAt);
+          const subtitle = chat.lastMessageText || rawChat.last_message_text || (chat.type === 'saved' ? 'Сообщения самому себе' : '');
+          const date = formatChatDate(chat.lastMessageTime || rawChat.last_message_time || chat.updatedAt || rawChat.updated_at);
           const avatarData = getChatAvatar(chat, user?.id);
-          const unreadCount = Math.max(0, Number(chat.unreadCount || 0));
+          const unreadCount = Math.max(0, Number(rawChat.unreadCount ?? rawChat.unread_count ?? 0));
           const hasUnread = unreadCount > 0;
-          const ownLastMessage = chat.lastMessage?.userId === user?.id;
-          const lastMessageStatus = chat.lastMessage?.status;
+          const lastAuthorId = String(
+            rawLastMessage?.userId ??
+              rawLastMessage?.user_id ??
+              rawLastMessage?.senderId ??
+              rawLastMessage?.sender_id ??
+              rawChat.lastMessageUserId ??
+              rawChat.last_message_user_id ??
+              '',
+          );
+          const ownLastMessage =
+            (!!user?.id && !!lastAuthorId && String(user.id) === lastAuthorId) || (!hasUnread && !!subtitle && !lastAuthorId);
+          const lastMessageStatus = String(
+            rawLastMessage?.status ?? rawChat.lastMessageStatus ?? rawChat.last_message_status ?? '',
+          ).toLowerCase();
           const isLastReadByPeer = lastMessageStatus === 'read';
-          const isLastSent = lastMessageStatus === 'sent' || lastMessageStatus === 'delivered';
 
           return (
             <ListItemButton
@@ -245,11 +258,9 @@ export default function ChatsPage() {
                   >
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </Box>
-                ) : ownLastMessage && chat.lastMessageText ? (
+                ) : ownLastMessage && !!subtitle ? (
                   isLastReadByPeer ? (
                     <DoneAllIcon sx={{ fontSize: 16, color: isDark ? '#73B4FF' : '#1C9C58', mt: 0.5 }} />
-                  ) : isLastSent ? (
-                    <DoneAllIcon sx={{ fontSize: 16, color: 'text.secondary', mt: 0.5 }} />
                   ) : (
                     <DoneRoundedIcon sx={{ fontSize: 16, color: 'text.secondary', mt: 0.5 }} />
                   )
