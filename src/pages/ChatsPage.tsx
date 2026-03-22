@@ -2,7 +2,12 @@
 import {
   Avatar,
   Box,
+  Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Drawer,
   Fab,
   IconButton,
@@ -76,6 +81,7 @@ export default function ChatsPage() {
   const [q, setQ] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const menuItemSx = {
     borderRadius: 2.5,
     px: 1.2,
@@ -108,7 +114,7 @@ export default function ChatsPage() {
   useEffect(() => {
     let active = true;
     if (!user?.id) return;
-    if (user.username && user.fullName) return;
+    if (user.username && user.fullName && typeof user.isCreator === 'boolean') return;
 
     userApi
       .getMe()
@@ -317,7 +323,16 @@ export default function ChatsPage() {
 
       {!visible.length && <Typography sx={{ p: 2, textAlign: 'center' }} color="text.secondary">Чаты не найдены</Typography>}
 
-      <Fab color="primary" sx={{ position: 'fixed', right: 'max(env(safe-area-inset-right), 24px)', bottom: 'max(env(safe-area-inset-bottom), 106px)', boxShadow: isDark ? '0 10px 24px rgba(125,106,227,0.45)' : '0 10px 24px rgba(31,163,91,0.35)' }} onClick={() => navigate('/add-contact')}>
+      <Fab
+        color="primary"
+        sx={{
+          position: 'fixed',
+          right: 'max(env(safe-area-inset-right), 24px)',
+          bottom: 'calc(max(env(safe-area-inset-bottom), 14px) + 96px)',
+          boxShadow: isDark ? '0 10px 24px rgba(125,106,227,0.45)' : '0 10px 24px rgba(31,163,91,0.35)',
+        }}
+        onClick={() => navigate('/add-contact')}
+      >
         <EditIcon />
       </Fab>
 
@@ -421,7 +436,7 @@ export default function ChatsPage() {
                   }}
                   onClick={() => {
                     setDrawerOpen(false);
-                    logout();
+                    setShowLogoutDialog(true);
                   }}
                 >
                   <ListItemText primary="Выйти" />
@@ -455,6 +470,26 @@ export default function ChatsPage() {
           Создать папку чатов
         </MenuItem>
       </Menu>
+
+      <Dialog open={showLogoutDialog} onClose={() => setShowLogoutDialog(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ color: 'error.main', fontWeight: 800 }}>Выйти из аккаунта?</DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary">Вы всегда сможете войти снова по логину и паролю.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowLogoutDialog(false)}>Нет</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              setShowLogoutDialog(false);
+              logout();
+            }}
+          >
+            Да
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

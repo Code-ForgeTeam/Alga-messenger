@@ -64,7 +64,12 @@ const normalizeUser = (payload: any): User | null => {
     status: payload.status ?? undefined,
     lastSeen: payload.lastSeen ?? payload.last_seen ?? undefined,
     badge: payload.badge ?? undefined,
-    isCreator: Boolean(payload.isCreator ?? payload.is_creator),
+    isCreator:
+      typeof payload.isCreator === 'boolean'
+        ? payload.isCreator
+        : typeof payload.is_creator === 'boolean'
+          ? payload.is_creator
+          : undefined,
   };
 };
 
@@ -79,16 +84,30 @@ const fetchMyProfileSafe = async (): Promise<User | null> => {
 
 const ensureProfile = async (candidate: unknown): Promise<User | null> => {
   const normalized = normalizeUser(extractUserPayload(candidate));
-  if (normalized && normalized.username && normalized.fullName) {
-    return normalized;
-  }
+  const needServerProfile =
+    !normalized ||
+    !normalized.username ||
+    !normalized.fullName ||
+    typeof normalized.isCreator !== 'boolean';
+
+  if (!needServerProfile) return normalized;
 
   const fromMe = await fetchMyProfileSafe();
-  if (fromMe) {
-    return fromMe;
+  if (fromMe && normalized) {
+    return {
+      ...normalized,
+      ...fromMe,
+      id: normalized.id || fromMe.id,
+      username: fromMe.username || normalized.username,
+      fullName: fromMe.fullName || normalized.fullName,
+      isCreator:
+        typeof fromMe.isCreator === 'boolean'
+          ? fromMe.isCreator
+          : normalized.isCreator,
+    };
   }
 
-  return normalized;
+  return fromMe || normalized;
 };
 
 const mapAuthError = (errorPayload: any, fallback: string): string => {

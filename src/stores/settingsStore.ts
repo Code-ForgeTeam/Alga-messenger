@@ -1,4 +1,5 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { privacyApi } from '../lib/api';
 import type { PrivacyRule } from '../lib/types';
 
@@ -49,85 +50,105 @@ const defaultRule: PrivacyRule = {
   neverShareWith: [],
 };
 
-export const useSettingsStore = create<SettingsState>((set, get) => ({
-  theme: 'light',
-  fontSize: 'medium',
-  language: 'ru',
-  customColors: {
-    primary: '#FF6B6B',
-    secondary: '#4ECDC4',
-    background: '#2C3E50',
-    paper: '#34495E',
-  },
-  privacySettings: {
-    lastSeen: { ...defaultRule },
-    profilePhoto: { ...defaultRule },
-    bio: { ...defaultRule },
-    searchByUsername: { ...defaultRule },
-    hideReadTime: false,
-  },
-  bgEffect: 'none',
-  effectIntensity: 100,
-  glowMode: false,
-  aiProvider: 'g4f',
-  aiApiKey: '',
-
-  setTheme: (theme) => set({ theme }),
-  setFontSize: (fontSize) => set({ fontSize }),
-  setLanguage: (language) => set({ language }),
-  setCustomColors: (customColors) => set({ customColors }),
-  setBgEffect: (bgEffect) => set({ bgEffect }),
-  setEffectIntensity: (effectIntensity) => set({ effectIntensity }),
-  setGlowMode: (glowMode) => set({ glowMode }),
-  setAiProvider: (aiProvider) => set({ aiProvider }),
-  setAiApiKey: (aiApiKey) => set({ aiApiKey }),
-
-  updatePrivacyRule: async (key, patch) => {
-    set((state) => ({
-      privacySettings: {
-        ...state.privacySettings,
-        [key]: { ...state.privacySettings[key], ...patch },
+export const useSettingsStore = create<SettingsState>()(
+  persist(
+    (set, get) => ({
+      theme: 'light',
+      fontSize: 'medium',
+      language: 'ru',
+      customColors: {
+        primary: '#FF6B6B',
+        secondary: '#4ECDC4',
+        background: '#2C3E50',
+        paper: '#34495E',
       },
-    }));
+      privacySettings: {
+        lastSeen: { ...defaultRule },
+        profilePhoto: { ...defaultRule },
+        bio: { ...defaultRule },
+        searchByUsername: { ...defaultRule },
+        hideReadTime: false,
+      },
+      bgEffect: 'none',
+      effectIntensity: 100,
+      glowMode: false,
+      aiProvider: 'g4f',
+      aiApiKey: '',
 
-    const current = get().privacySettings[key];
-    try {
-      await privacyApi.updateSetting(
-        key,
-        current.value,
-        current.alwaysShareWith,
-        current.neverShareWith,
-      );
-    } catch {
-      // keep optimistic update
-    }
-  },
+      setTheme: (theme) => set({ theme }),
+      setFontSize: (fontSize) => set({ fontSize }),
+      setLanguage: (language) => set({ language }),
+      setCustomColors: (customColors) => set({ customColors }),
+      setBgEffect: (bgEffect) => set({ bgEffect }),
+      setEffectIntensity: (effectIntensity) => set({ effectIntensity }),
+      setGlowMode: (glowMode) => set({ glowMode }),
+      setAiProvider: (aiProvider) => set({ aiProvider }),
+      setAiApiKey: (aiApiKey) => set({ aiApiKey }),
 
-  setHideReadTime: (hideReadTime) =>
-    set((state) => ({
-      privacySettings: { ...state.privacySettings, hideReadTime },
-    })),
+      updatePrivacyRule: async (key, patch) => {
+        set((state) => ({
+          privacySettings: {
+            ...state.privacySettings,
+            [key]: { ...state.privacySettings[key], ...patch },
+          },
+        }));
 
-  loadPrivacyFromServer: async () => {
-    try {
-      const data = await privacyApi.getSettings();
-      set((state) => {
-        const privacySettings = { ...state.privacySettings };
+        const current = get().privacySettings[key];
+        try {
+          await privacyApi.updateSetting(
+            key,
+            current.value,
+            current.alwaysShareWith,
+            current.neverShareWith,
+          );
+        } catch {
+          // keep optimistic update
+        }
+      },
 
-        (['lastSeen', 'profilePhoto', 'bio', 'searchByUsername'] as const).forEach((k) => {
-          if (data[k]) {
-            privacySettings[k] = {
-              value: data[k].value || 'everybody',
-              alwaysShareWith: data[k].alwaysShareWith || [],
-              neverShareWith: data[k].neverShareWith || [],
-            };
-          }
-        });
+      setHideReadTime: (hideReadTime) =>
+        set((state) => ({
+          privacySettings: { ...state.privacySettings, hideReadTime },
+        })),
 
-        return { privacySettings };
-      });
-    } catch {
-      // ignore
-    }
-  },
-}));
+      loadPrivacyFromServer: async () => {
+        try {
+          const data = await privacyApi.getSettings();
+          set((state) => {
+            const privacySettings = { ...state.privacySettings };
+
+            (['lastSeen', 'profilePhoto', 'bio', 'searchByUsername'] as const).forEach((k) => {
+              if (data[k]) {
+                privacySettings[k] = {
+                  value: data[k].value || 'everybody',
+                  alwaysShareWith: data[k].alwaysShareWith || [],
+                  neverShareWith: data[k].neverShareWith || [],
+                };
+              }
+            });
+
+            return { privacySettings };
+          });
+        } catch {
+          // ignore
+        }
+      },
+    }),
+    {
+      name: 'alga:settings',
+      version: 1,
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        theme: state.theme,
+        fontSize: state.fontSize,
+        language: state.language,
+        customColors: state.customColors,
+        bgEffect: state.bgEffect,
+        effectIntensity: state.effectIntensity,
+        glowMode: state.glowMode,
+        aiProvider: state.aiProvider,
+        aiApiKey: state.aiApiKey,
+      }),
+    },
+  ),
+);

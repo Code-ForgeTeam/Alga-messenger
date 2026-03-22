@@ -1682,8 +1682,36 @@ final class Api
                     $columns[$name] = true;
                 }
             }
+
+            $optional = [
+                'archived' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'pinned' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'muted' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'blocked' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'unread_count' => 'INT NOT NULL DEFAULT 0',
+            ];
+            foreach ($optional as $name => $definition) {
+                if (isset($columns[$name])) {
+                    continue;
+                }
+                try {
+                    $this->db()->exec("ALTER TABLE chat_participants ADD COLUMN {$name} {$definition}");
+                    $columns[$name] = true;
+                } catch (\Throwable) {
+                    // keep graceful fallback for shared hosting with no ALTER privileges
+                }
+            }
         } catch (\Throwable) {
-            $columns = ['chat_id' => true, 'user_id' => true];
+            // Some shared hosts restrict SHOW COLUMNS; assume modern schema to keep UX features working.
+            $columns = [
+                'chat_id' => true,
+                'user_id' => true,
+                'archived' => true,
+                'pinned' => true,
+                'muted' => true,
+                'blocked' => true,
+                'unread_count' => true,
+            ];
         }
 
         $this->chatParticipantColumns = $columns;
