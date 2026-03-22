@@ -158,7 +158,7 @@ export default function ChatPage() {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: isDark ? '#0A1A32' : '#FFFFFF', color: isDark ? '#EAF1FF' : 'text.primary' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, pt: 'max(env(safe-area-inset-top), 8px)', pb: 1, borderBottom: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider', bgcolor: isDark ? 'rgba(20,33,52,0.88)' : '#FFFFFF' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, pt: 'max(env(safe-area-inset-top), 12px)', pb: 1, borderBottom: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider', bgcolor: isDark ? 'rgba(20,33,52,0.88)' : '#FFFFFF' }}>
         <IconButton onClick={() => navigate(-1)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><ArrowBackIcon /></IconButton>
 
         <ButtonBase

@@ -14,7 +14,16 @@ export function AppHeader({ title, showBack = true, leftSlot, rightSlot }: AppHe
   const navigate = useNavigate();
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 48, px: 0.5, mb: 1 }}>
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        minHeight: 48,
+        px: 0.5,
+        pt: 'max(env(safe-area-inset-top), 12px)',
+        mb: 1,
+      }}
+    >
       {leftSlot ??
         (showBack ? (
           <IconButton onClick={() => navigate(-1)}>
