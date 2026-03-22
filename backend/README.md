@@ -26,10 +26,15 @@ DB_PASS=...
 JWT_SECRET=...
 CORS_ORIGIN=http://q99916rz.beget.tech
 CREATOR_USER_ID=uuid-of-owner-account
+AI_SERVICE_URL=http://127.0.0.1:8099/reply
+AI_MODEL=gpt-4o-mini
 ```
 
 `CREATOR_USER_ID` is used for `/api/admin/*` tools access.
 If it is empty, the backend automatically uses the oldest user in the database as the creator.
+
+`AI_SERVICE_URL` is optional. If empty, backend uses local fallback AI replies.
+When configured, backend forwards `/api/ai/message` prompts to this endpoint.
 
 ## 2) Initialize database
 
@@ -43,6 +48,24 @@ php -S 0.0.0.0:3001 -t public
 ```
 
 Healthcheck: `http://SERVER_IP:3001/health`
+
+## Optional: g4f bridge (Python)
+
+If you want free g4f responses instead of fallback text:
+
+```bash
+cd backend/ai
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn g4f_service:app --host 0.0.0.0 --port 8099
+```
+
+Then set in `backend/.env`:
+
+```env
+AI_SERVICE_URL=http://127.0.0.1:8099/reply
+```
 
 
 ## Troubleshooting: 500 on `/backend/public/index.php/health`

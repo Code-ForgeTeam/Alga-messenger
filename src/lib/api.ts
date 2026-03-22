@@ -101,6 +101,10 @@ export const messageApi = {
   send: async (chatId: string, text: string, attachments: unknown[] = [], replyToId?: string) =>
     (await api.post('/messages', { chatId, text, attachments, replyToId })).data,
   markAsRead: async (chatId: string) => (await api.post('/messages/read', { chatId })).data,
+  setReaction: async (messageId: string, reaction: string) =>
+    (await api.post(`/messages/${messageId}/reaction`, { reaction })).data,
+  removeReaction: async (messageId: string) =>
+    (await api.delete(`/messages/${messageId}/reaction`)).data,
   delete: async (messageId: string, deleteForAll = false) =>
     (await api.delete(`/messages/${messageId}`, { data: { deleteForAll } })).data,
 };
@@ -116,6 +120,10 @@ export const adminApi = {
   clearAllChats: async () => (await api.post('/admin/clear-chats')).data,
   clearAllMessages: async () => (await api.post('/admin/clear-messages')).data,
   resetUsersExceptCreator: async () => (await api.post('/admin/reset-users')).data,
+  blockUserByUsername: async (username: string, reason = '') =>
+    (await api.post('/admin/users/block', { username, reason })).data,
+  unblockUserByUsername: async (username: string) =>
+    (await api.post('/admin/users/unblock', { username })).data,
 };
 
 export const supportApi = {

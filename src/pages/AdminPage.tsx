@@ -10,6 +10,7 @@ import {
   DialogTitle,
   Paper,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -58,6 +59,8 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
   const [action, setAction] = useState<AdminAction>(null);
+  const [targetUsername, setTargetUsername] = useState('');
+  const [banReason, setBanReason] = useState('');
 
   const isCreator = isCreatorUser(me);
 
@@ -96,6 +99,42 @@ export default function AdminPage() {
       setAction(null);
     } catch (error: any) {
       pushSnackbar({ message: error?.response?.data?.error || 'Операция не выполнена', timeout: 2600 });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const blockByUsername = async () => {
+    const username = targetUsername.replace('@', '').trim();
+    if (!username) {
+      pushSnackbar({ message: 'Введите username', timeout: 2200 });
+      return;
+    }
+    setIsBusy(true);
+    try {
+      await adminApi.blockUserByUsername(username, banReason.trim());
+      pushSnackbar({ message: `Пользователь @${username} заблокирован`, timeout: 2300 });
+      setBanReason('');
+    } catch (error: any) {
+      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось заблокировать пользователя', timeout: 2600 });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const unblockByUsername = async () => {
+    const username = targetUsername.replace('@', '').trim();
+    if (!username) {
+      pushSnackbar({ message: 'Введите username', timeout: 2200 });
+      return;
+    }
+    setIsBusy(true);
+    try {
+      await adminApi.unblockUserByUsername(username);
+      pushSnackbar({ message: `Пользователь @${username} разблокирован`, timeout: 2300 });
+      setBanReason('');
+    } catch (error: any) {
+      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось разблокировать пользователя', timeout: 2600 });
     } finally {
       setIsBusy(false);
     }
@@ -176,6 +215,44 @@ export default function AdminPage() {
                   </Button>
                 </Stack>
               </Paper>
+
+              <Paper
+                elevation={0}
+                sx={{
+                  mt: 1.4,
+                  p: 1.4,
+                  borderRadius: 3,
+                  border: '1px solid',
+                  borderColor: isDark ? 'rgba(175,193,217,0.28)' : '#DDE7E2',
+                  bgcolor: isDark ? 'rgba(14,29,47,0.74)' : '#F7FBF8',
+                }}
+              >
+                <Typography sx={{ fontWeight: 800, mb: 1 }}>Блокировка пользователя</Typography>
+                <Stack spacing={1}>
+                  <TextField
+                    size="small"
+                    label="Username"
+                    placeholder="@username"
+                    value={targetUsername}
+                    onChange={(e) => setTargetUsername(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    label="Причина блокировки"
+                    placeholder="например: спам"
+                    value={banReason}
+                    onChange={(e) => setBanReason(e.target.value)}
+                  />
+                  <Stack direction="row" spacing={1}>
+                    <Button color="error" variant="contained" onClick={blockByUsername} disabled={isBusy}>
+                      Заблокировать
+                    </Button>
+                    <Button color="success" variant="outlined" onClick={unblockByUsername} disabled={isBusy}>
+                      Разблокировать
+                    </Button>
+                  </Stack>
+                </Stack>
+              </Paper>
             </>
           )}
         </>
@@ -198,4 +275,3 @@ export default function AdminPage() {
     </Box>
   );
 }
-

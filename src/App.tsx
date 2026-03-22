@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   Box,
   Button,
@@ -225,6 +225,32 @@ function Guard({ children }: { children: React.ReactNode }) {
   return isAuthenticated ? <>{children}</> : <Navigate to="/auth" replace />;
 }
 
+async function notifyAboutUnread(chatName: string, delta: number) {
+  try {
+    const module = await import('@capacitor/local-notifications');
+    const LocalNotifications = module.LocalNotifications;
+
+    const permission = await LocalNotifications.checkPermissions();
+    if (permission.display !== 'granted') {
+      const requested = await LocalNotifications.requestPermissions();
+      if (requested.display !== 'granted') return;
+    }
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: Date.now() % 2147483000,
+          title: 'Alga',
+          body: delta > 1 ? `${delta} новых сообщений` : `Новое сообщение: ${chatName}`,
+          schedule: { at: new Date(Date.now() + 300) },
+        },
+      ],
+    });
+  } catch {
+    // ignore if plugin is unavailable in current environment
+  }
+}
+
 export default function App() {
   const auth = useAuthStore();
   const chatStore = useChatStore();
@@ -236,6 +262,7 @@ export default function App() {
   const [apkUpdate, setApkUpdate] = useState<ApkUpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
   const [showLaunchIntro, setShowLaunchIntro] = useState(true);
+  const unreadSnapshotRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     auth.checkAuth();
@@ -267,6 +294,52 @@ export default function App() {
     chatStore.loadChats();
     useSettingsStore.getState().loadPrivacyFromServer();
     loadBanners(APP_VERSION_CODE);
+
+    const makeSnapshot = () => {
+      const map: Record<string, number> = {};
+      useChatStore.getState().chats.forEach((chat) => {
+        map[chat.id] = Math.max(0, Number((chat as any).unreadCount ?? (chat as any).unread_count ?? 0));
+      });
+      unreadSnapshotRef.current = map;
+    };
+
+    makeSnapshot();
+
+    const pollId = window.setInterval(async () => {
+      if (!auth.isAuthenticated) return;
+
+      const prev = { ...unreadSnapshotRef.current };
+      try {
+        await chatStore.loadChats({ silent: true });
+        await loadBanners(APP_VERSION_CODE);
+      } catch {
+        return;
+      }
+
+      const currentChats = useChatStore.getState().chats;
+      let increase = 0;
+      let chatName = 'Чаты';
+      const next: Record<string, number> = {};
+
+      currentChats.forEach((chat) => {
+        const unread = Math.max(0, Number((chat as any).unreadCount ?? (chat as any).unread_count ?? 0));
+        const prevUnread = prev[chat.id] || 0;
+        if (unread > prevUnread) {
+          increase += unread - prevUnread;
+          if (chatName === 'Чаты') {
+            chatName = chat.name || 'Чаты';
+          }
+        }
+        next[chat.id] = unread;
+      });
+
+      unreadSnapshotRef.current = next;
+      if (increase > 0 && typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        await notifyAboutUnread(chatName, increase);
+      }
+    }, 120000);
+
+    return () => window.clearInterval(pollId);
   }, [auth.isAuthenticated]);
 
   const dismissUpdateDialog = () => {

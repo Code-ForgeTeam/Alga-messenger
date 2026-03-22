@@ -24,6 +24,11 @@ export interface Attachment {
   duration?: number;
 }
 
+export interface MessageReactions {
+  mine?: string | null;
+  counts?: Record<string, number>;
+}
+
 export interface Message {
   id: string;
   chatId: string;
@@ -36,6 +41,7 @@ export interface Message {
   editedAt?: string;
   replyTo?: { id: string; text: string; fullName?: string };
   tempId?: string;
+  reactions?: MessageReactions;
 }
 
 export interface Chat {

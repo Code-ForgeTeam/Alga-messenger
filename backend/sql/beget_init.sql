@@ -67,6 +67,17 @@ CREATE TABLE IF NOT EXISTS attachments (
   CONSTRAINT fk_att_msg FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS message_reactions (
+  message_id    CHAR(36) NOT NULL,
+  user_id       CHAR(36) NOT NULL,
+  reaction      VARCHAR(32) NOT NULL,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (message_id, user_id),
+  INDEX idx_react_message (message_id),
+  CONSTRAINT fk_react_message FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  CONSTRAINT fk_react_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS contacts (
   id              CHAR(36) PRIMARY KEY,
   owner_user_id   CHAR(36) NOT NULL,

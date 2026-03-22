@@ -19,7 +19,7 @@ import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
-import { uploadApi, userApi } from '../lib/api';
+import { messageApi, uploadApi, userApi } from '../lib/api';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
 import type { Message, User } from '../lib/types';
@@ -78,7 +78,6 @@ export default function ChatPage() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [reactionAnchor, setReactionAnchor] = useState<HTMLElement | null>(null);
   const [reactionMessageId, setReactionMessageId] = useState<string | null>(null);
-  const [reactions, setReactions] = useState<Record<string, QuickReaction>>({});
   const [files, setFiles] = useState<File[]>([]);
   const [uploaded, setUploaded] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -102,31 +101,20 @@ export default function ChatPage() {
     return () => window.clearInterval(timerId);
   }, [chatId, loadMessages]);
 
-  useEffect(() => {
-    if (!chatId) return;
-    try {
-      const raw = localStorage.getItem(`alga:reactions:${chatId}`);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, QuickReaction>;
-        setReactions(parsed && typeof parsed === 'object' ? parsed : {});
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    setReactions({});
-  }, [chatId]);
-
-  useEffect(() => {
-    if (!chatId) return;
-    try {
-      localStorage.setItem(`alga:reactions:${chatId}`, JSON.stringify(reactions));
-    } catch {
-      // ignore
-    }
-  }, [chatId, reactions]);
-
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
+  const reactions = useMemo(() => {
+    const map: Record<string, { mine?: string; top?: string; total: number }> = {};
+    for (const item of chatMessages) {
+      const raw = (item as any)?.reactions;
+      const mine = typeof raw?.mine === 'string' ? raw.mine : undefined;
+      const counts = raw?.counts && typeof raw.counts === 'object' ? (raw.counts as Record<string, number>) : {};
+      const entries = Object.entries(counts || {}).filter(([key]) => !!key);
+      const top = entries.sort((a, b) => (b[1] || 0) - (a[1] || 0))[0]?.[0];
+      const total = entries.reduce((sum, [, value]) => sum + Number(value || 0), 0);
+      map[item.id] = { mine, top, total };
+    }
+    return map;
+  }, [chatMessages]);
 
   const rows = useMemo(() => {
     const result: Array<{ type: 'date'; key: string; label: string } | { type: 'message'; key: string; value: Message }> = [];
@@ -203,18 +191,21 @@ export default function ChatPage() {
     setReactionMessageId(null);
   };
 
-  const applyReaction = (value: QuickReaction) => {
+  const applyReaction = async (value: QuickReaction) => {
     if (!reactionMessageId) return;
-    setReactions((prev) => {
-      const current = prev[reactionMessageId];
-      if (current === value) {
-        const next = { ...prev };
-        delete next[reactionMessageId];
-        return next;
+    const currentMine = reactions[reactionMessageId]?.mine;
+    try {
+      if (currentMine === value) {
+        await messageApi.removeReaction(reactionMessageId);
+      } else {
+        await messageApi.setReaction(reactionMessageId, value);
       }
-      return { ...prev, [reactionMessageId]: value };
-    });
-    closeReactionPicker();
+      await loadMessages(chatId);
+    } catch {
+      pushSnackbar({ message: 'Не удалось обновить реакцию', timeout: 2200 });
+    } finally {
+      closeReactionPicker();
+    }
   };
 
   const openMessageActionsFromReactions = () => {
@@ -391,7 +382,7 @@ export default function ChatPage() {
           {QUICK_REACTIONS.map((item) => (
             <ButtonBase
               key={item}
-              onClick={() => applyReaction(item)}
+              onClick={() => { void applyReaction(item); }}
               sx={{
                 width: 34,
                 height: 34,
@@ -435,6 +426,7 @@ export default function ChatPage() {
 
             const m = row.value;
             const reaction = reactions[m.id];
+            const reactionGlyph = reaction?.mine || reaction?.top;
             return (
               <Box key={row.key} sx={{ mb: 1, display: 'flex', justifyContent: m.userId === me?.id ? 'flex-end' : 'flex-start' }}>
                 <Box
@@ -472,20 +464,26 @@ export default function ChatPage() {
                   <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                     {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                   </Typography>
-                  {!!reaction && (
+                  {!!reactionGlyph && (
                     <Box
                       sx={{
                         mt: 0.45,
                         ml: 'auto',
-                        width: 26,
+                        minWidth: 26,
                         height: 22,
+                        px: reaction?.total && reaction.total > 1 ? 0.65 : 0,
                         borderRadius: 11,
-                        display: 'grid',
-                        placeItems: 'center',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 0.25,
                         bgcolor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)',
                       }}
                     >
-                      <Typography sx={{ fontSize: 14, lineHeight: 1 }}>{reaction}</Typography>
+                      <Typography sx={{ fontSize: 14, lineHeight: 1 }}>{reactionGlyph}</Typography>
+                      {reaction?.total && reaction.total > 1 && (
+                        <Typography sx={{ fontSize: 11, lineHeight: 1, fontWeight: 700 }}>{reaction.total}</Typography>
+                      )}
                     </Box>
                   )}
                 </Box>

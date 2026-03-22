@@ -91,6 +91,16 @@ const ensureProfile = async (candidate: unknown): Promise<User | null> => {
   return normalized;
 };
 
+const mapAuthError = (errorPayload: any, fallback: string): string => {
+  const code = String(errorPayload?.error ?? '').toLowerCase();
+  if (code === 'invalid_credentials') return 'Неправильный логин или пароль';
+  if (code === 'banned') return 'Данный пользователь заблокирован';
+  if (code === 'username already exists') return 'Пользователь с таким логином уже существует';
+  const message = String(errorPayload?.message ?? '').trim();
+  if (message) return message;
+  return fallback;
+};
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
@@ -155,10 +165,13 @@ export const useAuthStore = create<AuthState>((set) => ({
           isLoading: false,
           banned: true,
           banReason: e.response?.data?.reason || '',
-          error: null,
+          error: 'Данный пользователь заблокирован',
         });
       } else {
-        set({ isLoading: false, error: e.response?.data?.error ?? 'Login failed' });
+        set({
+          isLoading: false,
+          error: mapAuthError(e.response?.data, 'Ошибка входа'),
+        });
       }
       throw e;
     }
@@ -184,7 +197,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user, token, isAuthenticated: true, isLoading: false, error: null });
     } catch (e: any) {
       localStorage.removeItem('token');
-      set({ isLoading: false, error: e.response?.data?.error ?? 'Registration failed' });
+      set({
+        isLoading: false,
+        error: mapAuthError(e.response?.data, 'Ошибка регистрации'),
+      });
       throw e;
     }
   },

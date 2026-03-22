@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Avatar,
   Box,
@@ -17,17 +17,24 @@ import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import { useNavigate } from 'react-router-dom';
 import { aiApi } from '../lib/api';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAuthStore } from '../stores/authStore';
+import { useChatStore } from '../stores/chatStore';
 
-type Msg = { from: 'ai' | 'me'; text: string };
+type UiMessage = { id: string; from: 'ai' | 'me'; text: string };
+
+const stripAiPrefix = (text: string) => text.replace(/^AI:\s*/i, '').trim();
+const isAiMessage = (text: string, isAiFlag?: boolean) => Boolean(isAiFlag) || /^AI:\s*/i.test(text);
 
 export default function SupportPage() {
   const navigate = useNavigate();
   const { aiProvider, aiApiKey } = useSettingsStore();
+  const me = useAuthStore((s) => s.user);
+  const { messages, loadMessages, isLoadingMessages } = useChatStore();
+
   const [provider, setProvider] = useState<'g4f' | 'custom'>(aiProvider);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [loading, setLoading] = useState(false);
   const [chatId, setChatId] = useState<string>('');
+  const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -38,38 +45,61 @@ export default function SupportPage() {
   }, []);
 
   useEffect(() => {
+    setProvider(aiProvider);
+  }, [aiProvider]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    loadMessages(chatId).catch(() => null);
+  }, [chatId, loadMessages]);
+
+  const uiMessages = useMemo<UiMessage[]>(() => {
+    const list = messages[chatId] || [];
+    return list.map((m) => {
+      const ai = isAiMessage(m.text, (m as any).isAi);
+      if (ai) {
+        return { id: m.id, from: 'ai', text: stripAiPrefix(m.text) };
+      }
+      return { id: m.id, from: m.userId === me?.id ? 'me' : 'ai', text: m.text };
+    });
+  }, [messages, chatId, me?.id]);
+
+  useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, loading]);
+  }, [uiMessages, sending, isLoadingMessages]);
 
   const onSend = async () => {
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || sending) return;
 
-    setMessages((prev) => [...prev, { from: 'me', text }]);
+    if (!chatId) {
+      const chat = await aiApi.getAIChat();
+      const resolved = String(chat?.id || '');
+      if (!resolved) return;
+      setChatId(resolved);
+    }
+
+    if (provider === 'custom' && !aiApiKey.trim()) {
+      return;
+    }
+
     setInput('');
-    setLoading(true);
-
+    setSending(true);
     try {
       const resolvedChatId = chatId || String((await aiApi.getAIChat())?.id || '');
-      if (!resolvedChatId) throw new Error('AI chat id missing');
-      if (!chatId) setChatId(resolvedChatId);
-
-      // Пока backend использует встроенный AI endpoint.
-      // Для custom провайдера сохраняем совместимость и обязательно возвращаем ответ.
-      if (provider === 'custom' && !aiApiKey.trim()) {
-        setMessages((prev) => [...prev, { from: 'ai', text: 'Введите AI API ключ в Спец. возможностях.' }]);
-      } else {
-        const payload = await aiApi.sendMessage(resolvedChatId, text);
-        const answer = String(payload?.aiMessage?.text || payload?.message || 'Ответ получен.');
-        setMessages((prev) => [...prev, { from: 'ai', text: answer }]);
+      if (!resolvedChatId) return;
+      if (resolvedChatId !== chatId) {
+        setChatId(resolvedChatId);
       }
-    } catch {
-      setMessages((prev) => [...prev, { from: 'ai', text: 'Ошибка ответа AI. Проверьте подключение к backend.' }]);
+      await aiApi.sendMessage(resolvedChatId, text);
+      await loadMessages(resolvedChatId);
     } finally {
-      setLoading(false);
+      setSending(false);
     }
   };
+
+  const showCustomWarning = provider === 'custom' && !aiApiKey.trim();
 
   return (
     <Box sx={{ p: 1.5, height: '100%', display: 'flex', flexDirection: 'column', gap: 1.2 }}>
@@ -94,25 +124,37 @@ export default function SupportPage() {
         </Select>
       </Box>
 
-      <Box ref={listRef} sx={{ flex: 1, overflowY: 'auto', pr: 0.2, display: 'grid', gap: 1, alignContent: 'start' }}>
-        {messages.map((m, i) => (
-          <Paper
-            key={`${m.from}-${i}`}
-            elevation={0}
-            sx={{
-              p: 1.4,
-              borderRadius: 3,
-              maxWidth: '92%',
-              justifySelf: m.from === 'me' ? 'end' : 'start',
-              bgcolor: m.from === 'me' ? 'primary.main' : 'background.paper',
-              color: m.from === 'me' ? '#fff' : 'text.primary',
-            }}
-          >
-            <Typography sx={{ whiteSpace: 'pre-wrap' }}>{m.text}</Typography>
-          </Paper>
-        ))}
+      {showCustomWarning && (
+        <Paper sx={{ p: 1.1, borderRadius: 2, bgcolor: 'rgba(228,75,75,0.12)', border: '1px solid', borderColor: 'rgba(228,75,75,0.36)' }}>
+          <Typography variant="body2">Введите AI API ключ в разделе «Спец. возможности».</Typography>
+        </Paper>
+      )}
 
-        {loading && (
+      <Box ref={listRef} sx={{ flex: 1, overflowY: 'auto', pr: 0.2, display: 'grid', gap: 1, alignContent: 'start' }}>
+        {isLoadingMessages && !uiMessages.length ? (
+          <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          uiMessages.map((m) => (
+            <Paper
+              key={m.id}
+              elevation={0}
+              sx={{
+                p: 1.4,
+                borderRadius: 3,
+                maxWidth: '92%',
+                justifySelf: m.from === 'me' ? 'end' : 'start',
+                bgcolor: m.from === 'me' ? 'primary.main' : 'background.paper',
+                color: m.from === 'me' ? '#fff' : 'text.primary',
+              }}
+            >
+              <Typography sx={{ whiteSpace: 'pre-wrap' }}>{m.text}</Typography>
+            </Paper>
+          ))
+        )}
+
+        {sending && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 1 }}>
             <CircularProgress size={16} />
             <Typography variant="body2" color="text.secondary">AI печатает...</Typography>
@@ -141,13 +183,13 @@ export default function SupportPage() {
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              onSend();
+              void onSend();
             }
           }}
           fullWidth
           InputProps={{ disableUnderline: true }}
         />
-        <IconButton color="primary" onClick={onSend} disabled={!input.trim() || loading}><SendRoundedIcon /></IconButton>
+        <IconButton color="primary" onClick={() => void onSend()} disabled={!input.trim() || sending}><SendRoundedIcon /></IconButton>
       </Paper>
     </Box>
   );

@@ -9,6 +9,8 @@ final class Api
 {
     private ?PDO $db = null;
     private ?array $chatParticipantColumns = null;
+    private ?array $userColumns = null;
+    private ?bool $messageReactionTableReady = null;
 
     public function __construct()
     {
@@ -67,9 +69,13 @@ final class Api
         if ($path === '/api/ai/chat' && $method === 'GET') { $this->aiChat(); }
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
+        if ($path === '/api/admin/users/block' && $method === 'POST') { $this->adminSetUserBan($body, true); }
+        if ($path === '/api/admin/users/unblock' && $method === 'POST') { $this->adminSetUserBan($body, false); }
 
         if (preg_match('#^/api/messages/chat/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatMessages($m[1]); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteMessage($m[1], $body); }
+        if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reaction$#', $path, $m) && $method === 'POST') { $this->setMessageReaction($m[1], $body); }
+        if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reaction$#', $path, $m) && $method === 'DELETE') { $this->removeMessageReaction($m[1]); }
 
         $this->json(['error' => 'Not found', 'path' => $path], 404);
     }
@@ -115,14 +121,31 @@ final class Api
         $p = (string)($body['password'] ?? '');
 
         try {
-            $stmt = $this->db()->prepare('SELECT id, username, full_name, avatar, password_hash FROM users WHERE username = ? LIMIT 1');
+            $select = 'SELECT id, username, full_name, avatar, password_hash';
+            if ($this->hasUserColumn('is_banned')) {
+                $select .= ', is_banned';
+            }
+            if ($this->hasUserColumn('ban_reason')) {
+                $select .= ', ban_reason';
+            }
+            $select .= ' FROM users WHERE username = ? LIMIT 1';
+            $stmt = $this->db()->prepare($select);
             $stmt->execute([$u]);
             $user = $stmt->fetch();
         } catch (\Throwable) {
             $this->json(['error' => 'Login failed'], 500);
         }
 
-        if (!$user || !password_verify($p, $user['password_hash'])) $this->json(['error' => 'Invalid credentials'], 401);
+        if (!$user || !password_verify($p, $user['password_hash'])) {
+            $this->json(['error' => 'invalid_credentials', 'message' => 'Неправильный логин или пароль'], 401);
+        }
+        if ($this->hasUserColumn('is_banned') && !empty($user['is_banned'])) {
+            $this->json([
+                'error' => 'banned',
+                'reason' => $this->hasUserColumn('ban_reason') ? (string)($user['ban_reason'] ?? '') : '',
+                'message' => 'Данный пользователь заблокирован',
+            ], 403);
+        }
 
         $this->touchUserPresence((string)$user['id']);
         $token = Jwt::issue(['userId' => $user['id']]);
@@ -260,6 +283,47 @@ final class Api
         }
 
         $this->json(['ok' => true, 'creatorUserId' => $creatorId]);
+    }
+
+    private function adminSetUserBan(array $body, bool $isBanned): void
+    {
+        $actorId = $this->authUserId();
+        $this->assertCreator($actorId);
+
+        if (!$this->ensureUserBanColumns()) {
+            $this->json(['error' => 'Ban columns are unavailable in DB schema'], 500);
+        }
+
+        $username = trim((string)($body['username'] ?? ''));
+        $reason = trim((string)($body['reason'] ?? ''));
+        if ($username === '') {
+            $this->json(['error' => 'username is required'], 400);
+        }
+
+        $find = $this->db()->prepare('SELECT id, username FROM users WHERE username = ? LIMIT 1');
+        $find->execute([$username]);
+        $target = $find->fetch();
+        if (!$target) {
+            $this->json(['error' => 'User not found'], 404);
+        }
+
+        $creatorId = $this->creatorUserId();
+        if ($creatorId !== '' && (string)$target['id'] === $creatorId) {
+            $this->json(['error' => 'Cannot change creator account status'], 400);
+        }
+
+        $update = $this->db()->prepare('UPDATE users SET is_banned = ?, ban_reason = ? WHERE id = ?');
+        $update->execute([
+            $isBanned ? 1 : 0,
+            $isBanned ? ($reason !== '' ? $reason : 'Заблокирован администратором') : null,
+            $target['id'],
+        ]);
+
+        $this->json([
+            'ok' => true,
+            'username' => $target['username'],
+            'isBanned' => $isBanned,
+        ]);
     }
 
     private function createChat(array $body): void
@@ -531,6 +595,8 @@ final class Api
             'createdAt' => date('c'),
             'edited' => 0,
             'status' => 'delivered',
+            'isAi' => false,
+            'reactions' => ['mine' => null, 'counts' => new \stdClass()],
         ];
 
         $this->json(['message' => $message], 201);
@@ -556,6 +622,56 @@ final class Api
         $this->json(['ok' => true]);
     }
 
+    private function setMessageReaction(string $messageId, array $body): void
+    {
+        $userId = $this->authUserId();
+        $reaction = trim((string)($body['reaction'] ?? ''));
+        if ($reaction === '') {
+            $this->json(['error' => 'reaction is required'], 400);
+        }
+
+        $message = $this->findMessageForParticipant($messageId, $userId);
+        if (!$message) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        if (!$this->ensureMessageReactionsTable()) {
+            $this->json(['ok' => true, 'reactions' => ['mine' => $reaction, 'counts' => [$reaction => 1]]]);
+        }
+
+        $stmt = $this->db()->prepare(
+            'INSERT INTO message_reactions (message_id, user_id, reaction) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE reaction = VALUES(reaction), created_at = CURRENT_TIMESTAMP'
+        );
+        $stmt->execute([$messageId, $userId, $reaction]);
+
+        $this->json([
+            'ok' => true,
+            'messageId' => $messageId,
+            'reactions' => $this->messageReactionSummary($messageId, $userId),
+        ]);
+    }
+
+    private function removeMessageReaction(string $messageId): void
+    {
+        $userId = $this->authUserId();
+        $message = $this->findMessageForParticipant($messageId, $userId);
+        if (!$message) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        if ($this->ensureMessageReactionsTable()) {
+            $del = $this->db()->prepare('DELETE FROM message_reactions WHERE message_id = ? AND user_id = ?');
+            $del->execute([$messageId, $userId]);
+        }
+
+        $this->json([
+            'ok' => true,
+            'messageId' => $messageId,
+            'reactions' => $this->messageReactionSummary($messageId, $userId),
+        ]);
+    }
+
 
     private function aiChat(): void
     {
@@ -575,8 +691,13 @@ final class Api
             $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, "ai")');
             $insertChat->execute([$chatId, 'AI']);
 
-            $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, pinned) VALUES (?, ?, 1)');
-            $insertParticipant->execute([$chatId, $userId]);
+            if ($this->hasChatParticipantColumn('pinned')) {
+                $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, pinned) VALUES (?, ?, 1)');
+                $insertParticipant->execute([$chatId, $userId]);
+            } else {
+                $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
+                $insertParticipant->execute([$chatId, $userId]);
+            }
             $existing = $chatId;
         }
 
@@ -608,7 +729,15 @@ final class Api
         $insert = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text) VALUES (?, ?, ?, ?)');
         $insert->execute([$messageId, $chatId, $userId, $text]);
 
-        $replyText = 'AI: ' . $this->composeAiReply($text);
+        $contextStmt = $this->db()->prepare(
+            'SELECT text FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT 16'
+        );
+        $contextStmt->execute([$chatId]);
+        $historyRows = array_reverse($contextStmt->fetchAll() ?: []);
+        $history = array_map(fn ($row) => (string)($row['text'] ?? ''), $historyRows);
+
+        $rawReply = $this->fetchAiReply($text, $history) ?: $this->composeAiReplyClean($text);
+        $replyText = 'AI: ' . trim($rawReply);
         $replyId = $this->uuid();
         $insert->execute([$replyId, $chatId, $userId, $replyText]);
 
@@ -623,6 +752,8 @@ final class Api
                 'text' => $text,
                 'createdAt' => date('c'),
                 'edited' => 0,
+                'isAi' => false,
+                'reactions' => ['mine' => null, 'counts' => new \stdClass()],
             ],
             'aiMessage' => [
                 'id' => $replyId,
@@ -631,6 +762,8 @@ final class Api
                 'text' => $replyText,
                 'createdAt' => date('c'),
                 'edited' => 0,
+                'isAi' => true,
+                'reactions' => ['mine' => null, 'counts' => new \stdClass()],
             ],
             'message' => $replyText,
         ], 201);
@@ -646,6 +779,68 @@ final class Api
         }
 
         return 'РЇ РїРѕР»СѓС‡РёР» СЃРѕРѕР±С‰РµРЅРёРµ. Р Р°СЃСЃРєР°Р¶Рё РїРѕРґСЂРѕР±РЅРµРµ, Рё СЏ РїРѕСЃС‚Р°СЂР°СЋСЃСЊ РїРѕРјРѕС‡СЊ.';
+    }
+
+    private function composeAiReplyClean(string $text): string
+    {
+        if (preg_match('/\b(hello|hi|привет|здравствуй)\b/ui', $text)) {
+            return 'Привет! Я AI-помощник Alga. Чем могу помочь?';
+        }
+        if (preg_match('/\b(help|помоги|что умеешь)\b/ui', $text)) {
+            return 'Я могу отвечать на вопросы, помогать с идеями и объяснять сложные вещи простыми словами.';
+        }
+        return 'Я получил сообщение. Уточни запрос, и я постараюсь помочь максимально точно.';
+    }
+
+    private function fetchAiReply(string $prompt, array $history): ?string
+    {
+        $endpoint = trim((string)Config::get('AI_SERVICE_URL', ''));
+        if ($endpoint === '') {
+            return null;
+        }
+        if (!function_exists('curl_init')) {
+            return null;
+        }
+
+        $payload = json_encode(
+            [
+                'prompt' => $prompt,
+                'history' => $history,
+                'model' => (string)Config::get('AI_MODEL', 'gpt-4o-mini'),
+            ],
+            JSON_UNESCAPED_UNICODE
+        );
+        if ($payload === false) {
+            return null;
+        }
+
+        $ch = curl_init($endpoint);
+        if ($ch === false) {
+            return null;
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 45,
+            CURLOPT_POSTFIELDS => $payload,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($response === false || $httpCode < 200 || $httpCode >= 300) {
+            return null;
+        }
+
+        $data = json_decode((string)$response, true);
+        if (!is_array($data)) {
+            return null;
+        }
+
+        $text = trim((string)($data['answer'] ?? $data['text'] ?? $data['message'] ?? ''));
+        return $text !== '' ? $text : null;
     }
 
     private function deleteMessage(string $messageId, array $body): void
@@ -812,7 +1007,23 @@ final class Api
 
         $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
         $stmt->execute([$chatId]);
-        $this->json($stmt->fetchAll());
+        $rows = $stmt->fetchAll() ?: [];
+        $payload = array_map(function ($row) use ($userId) {
+            $text = (string)($row['text'] ?? '');
+            $isAi = $this->isAiMessageText($text);
+            return [
+                'id' => $row['id'],
+                'chatId' => $row['chatId'],
+                'userId' => $row['userId'],
+                'text' => $text,
+                'createdAt' => isset($row['createdAt']) ? date('c', strtotime((string)$row['createdAt'])) : date('c'),
+                'edited' => (bool)($row['edited'] ?? false),
+                'isAi' => $isAi,
+                'reactions' => $this->messageReactionSummary((string)$row['id'], $userId),
+            ];
+        }, $rows);
+
+        $this->json($payload);
     }
 
     private function chatByIdForUser(string $chatId, string $userId): ?array
@@ -933,7 +1144,88 @@ final class Api
             'createdAt' => date('c', strtotime((string)$m['created_at'])),
             'edited' => (bool)$m['edited'],
             'status' => $status,
+            'isAi' => $this->isAiMessageText((string)($m['text'] ?? '')),
+            'reactions' => $this->messageReactionSummary((string)$m['id'], $viewerId),
         ];
+    }
+
+    private function findMessageForParticipant(string $messageId, string $userId): ?array
+    {
+        $stmt = $this->db()->prepare(
+            'SELECT m.id, m.chat_id
+             FROM messages m
+             JOIN chat_participants cp ON cp.chat_id = m.chat_id
+             WHERE m.id = ? AND cp.user_id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$messageId, $userId]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    private function ensureMessageReactionsTable(): bool
+    {
+        if ($this->messageReactionTableReady !== null) {
+            return $this->messageReactionTableReady;
+        }
+
+        try {
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS message_reactions (
+                    message_id CHAR(36) NOT NULL,
+                    user_id CHAR(36) NOT NULL,
+                    reaction VARCHAR(32) NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (message_id, user_id),
+                    KEY idx_message_reactions_message (message_id),
+                    CONSTRAINT fk_reaction_message FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_reaction_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->messageReactionTableReady = true;
+        } catch (\Throwable) {
+            $this->messageReactionTableReady = false;
+        }
+
+        return $this->messageReactionTableReady;
+    }
+
+    private function messageReactionSummary(string $messageId, string $viewerId): array
+    {
+        if (!$this->ensureMessageReactionsTable()) {
+            return ['mine' => null, 'counts' => new \stdClass()];
+        }
+
+        $mineStmt = $this->db()->prepare(
+            'SELECT reaction FROM message_reactions WHERE message_id = ? AND user_id = ? LIMIT 1'
+        );
+        $mineStmt->execute([$messageId, $viewerId]);
+        $mine = $mineStmt->fetchColumn();
+
+        $countsStmt = $this->db()->prepare(
+            'SELECT reaction, COUNT(*) as total
+             FROM message_reactions
+             WHERE message_id = ?
+             GROUP BY reaction'
+        );
+        $countsStmt->execute([$messageId]);
+        $rows = $countsStmt->fetchAll() ?: [];
+        $counts = [];
+        foreach ($rows as $row) {
+            $key = (string)($row['reaction'] ?? '');
+            if ($key === '') continue;
+            $counts[$key] = (int)($row['total'] ?? 0);
+        }
+
+        return [
+            'mine' => $mine !== false ? (string)$mine : null,
+            'counts' => $counts ?: new \stdClass(),
+        ];
+    }
+
+    private function isAiMessageText(string $text): bool
+    {
+        return stripos(trim($text), 'AI:') === 0;
     }
 
     private function uploadAvatar(): void
@@ -1024,6 +1316,36 @@ final class Api
         if (!$payload || empty($payload['userId'])) $this->json(['error' => 'Unauthorized'], 401);
 
         $userId = (string)$payload['userId'];
+        try {
+            if ($this->hasUserColumn('is_banned')) {
+                $select = 'SELECT is_banned';
+                if ($this->hasUserColumn('ban_reason')) {
+                    $select .= ', ban_reason';
+                }
+                $select .= ' FROM users WHERE id = ? LIMIT 1';
+                $stmt = $this->db()->prepare($select);
+                $stmt->execute([$userId]);
+                $row = $stmt->fetch();
+                if (!$row) {
+                    $this->json(['error' => 'Unauthorized'], 401);
+                }
+                if (!empty($row['is_banned'])) {
+                    $this->json([
+                        'error' => 'banned',
+                        'reason' => $this->hasUserColumn('ban_reason') ? (string)($row['ban_reason'] ?? '') : '',
+                        'message' => 'Данный пользователь заблокирован',
+                    ], 403);
+                }
+            } else {
+                $stmt = $this->db()->prepare('SELECT id FROM users WHERE id = ? LIMIT 1');
+                $stmt->execute([$userId]);
+                if (!$stmt->fetchColumn()) {
+                    $this->json(['error' => 'Unauthorized'], 401);
+                }
+            }
+        } catch (\Throwable) {
+            $this->json(['error' => 'Unauthorized'], 401);
+        }
         $this->touchUserPresence($userId);
 
         return $userId;
@@ -1115,6 +1437,35 @@ final class Api
         return isset($columns[strtolower($column)]);
     }
 
+    private function hasUserColumn(string $column): bool
+    {
+        $columns = $this->userColumns();
+        return isset($columns[strtolower($column)]);
+    }
+
+    private function ensureUserBanColumns(): bool
+    {
+        $hasBanned = $this->hasUserColumn('is_banned');
+        $hasReason = $this->hasUserColumn('ban_reason');
+        if ($hasBanned && $hasReason) {
+            return true;
+        }
+
+        try {
+            if (!$hasBanned) {
+                $this->db()->exec('ALTER TABLE users ADD COLUMN is_banned TINYINT(1) NOT NULL DEFAULT 0');
+            }
+            if (!$hasReason) {
+                $this->db()->exec('ALTER TABLE users ADD COLUMN ban_reason VARCHAR(1024) NULL');
+            }
+            $this->userColumns = null;
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $this->hasUserColumn('is_banned') && $this->hasUserColumn('ban_reason');
+    }
+
     private function chatParticipantColumns(): array
     {
         if ($this->chatParticipantColumns !== null) {
@@ -1135,6 +1486,29 @@ final class Api
         }
 
         $this->chatParticipantColumns = $columns;
+        return $columns;
+    }
+
+    private function userColumns(): array
+    {
+        if ($this->userColumns !== null) {
+            return $this->userColumns;
+        }
+
+        $columns = [];
+        try {
+            $stmt = $this->db()->query('SHOW COLUMNS FROM users');
+            foreach ($stmt->fetchAll() as $row) {
+                $name = strtolower((string)($row['Field'] ?? ''));
+                if ($name !== '') {
+                    $columns[$name] = true;
+                }
+            }
+        } catch (\Throwable) {
+            $columns = ['id' => true];
+        }
+
+        $this->userColumns = $columns;
         return $columns;
     }
 
