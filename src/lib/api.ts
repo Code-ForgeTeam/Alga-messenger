@@ -111,6 +111,13 @@ export const notificationsApi = {
   dismiss: async (id: string) => (await api.post(`/notifications/${id}/dismiss`)).data,
 };
 
+export const adminApi = {
+  getOverview: async () => (await api.get('/admin/overview')).data,
+  clearAllChats: async () => (await api.post('/admin/clear-chats')).data,
+  clearAllMessages: async () => (await api.post('/admin/clear-messages')).data,
+  resetUsersExceptCreator: async () => (await api.post('/admin/reset-users')).data,
+};
+
 export const supportApi = {
   createTicket: async (category: string, subject: string) =>
     (await api.post('/support/tickets', { category, subject })).data,

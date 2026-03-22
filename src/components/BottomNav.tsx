@@ -6,6 +6,7 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '@mui/material/styles';
+import { isCreatorUser } from '../lib/creator';
 
 export function BottomNav() {
   const theme = useTheme();
@@ -13,7 +14,7 @@ export function BottomNav() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const user = useAuthStore((s) => s.user);
-  const isAdmin = ['2'].includes(String(user?.id || ''));
+  const isAdmin = isCreatorUser(user);
 
   const tabs = [
     { path: '/chats', label: 'Чаты', icon: <ChatBubbleOutlineRoundedIcon /> },

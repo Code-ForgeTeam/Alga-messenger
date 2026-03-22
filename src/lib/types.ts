@@ -9,6 +9,7 @@ export interface User {
   lastSeen?: string;
   badge?: BadgeType;
   bio?: string;
+  isCreator?: boolean;
 }
 
 export interface Attachment {

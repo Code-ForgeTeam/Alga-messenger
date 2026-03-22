@@ -25,7 +25,11 @@ DB_USER=...
 DB_PASS=...
 JWT_SECRET=...
 CORS_ORIGIN=http://q99916rz.beget.tech
+CREATOR_USER_ID=uuid-of-owner-account
 ```
+
+`CREATOR_USER_ID` is used for `/api/admin/*` tools access.
+If it is empty, the backend automatically uses the oldest user in the database as the creator.
 
 ## 2) Initialize database
 

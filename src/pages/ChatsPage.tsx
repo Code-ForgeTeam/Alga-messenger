@@ -23,6 +23,7 @@ import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
@@ -37,6 +38,7 @@ import { useTheme } from '@mui/material/styles';
 import { useSettingsStore } from '../stores/settingsStore';
 import { userApi } from '../lib/api';
 import type { Chat } from '../lib/types';
+import { isCreatorUser } from '../lib/creator';
 
 const formatChatDate = (value?: string) => {
   if (!value) return '';
@@ -67,6 +69,7 @@ export default function ChatsPage() {
   const { chats, messages, isLoading, loadChats } = useChatStore();
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
   const user = useAuthStore((s) => s.user);
+  const isCreator = isCreatorUser(user);
   const updateUser = useAuthStore((s) => s.updateUser);
   const logout = useAuthStore((s) => s.logout);
   const pushSnackbar = useSnackbarStore((s) => s.push);
@@ -93,6 +96,16 @@ export default function ChatsPage() {
   }, [loadChats, user?.id]);
 
   useEffect(() => {
+    if (!user?.id) return;
+    const timerId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      loadChats({ silent: true }).catch(() => null);
+    }, 5000);
+
+    return () => window.clearInterval(timerId);
+  }, [loadChats, user?.id]);
+
+  useEffect(() => {
     let active = true;
     if (!user?.id) return;
     if (user.username && user.fullName) return;
@@ -112,6 +125,7 @@ export default function ChatsPage() {
           bio: profile?.bio ?? user.bio,
           status: profile?.status ?? user.status,
           lastSeen,
+          isCreator: Boolean(profile?.isCreator ?? profile?.is_creator ?? user.isCreator),
         });
       })
       .catch(() => null);
@@ -119,7 +133,7 @@ export default function ChatsPage() {
     return () => {
       active = false;
     };
-  }, [user?.id, user?.username, user?.fullName, user?.avatar, user?.bio, user?.status, user?.lastSeen, updateUser]);
+  }, [user?.id, user?.username, user?.fullName, user?.avatar, user?.bio, user?.status, user?.lastSeen, user?.isCreator, updateUser]);
 
   const visible = useMemo(() => {
     const needle = q.toLowerCase().trim();
@@ -168,8 +182,8 @@ export default function ChatsPage() {
           <IconButton onClick={() => setDrawerOpen(true)} sx={{ bgcolor: isDark ? 'rgba(39,57,78,0.75)' : 'rgba(31,163,91,0.12)' }}>
             <Box sx={{ width: 22, display: 'grid', gap: 0.6 }}>
               <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#2DBB63' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#85DFA8' }} />
-              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#0E8F45' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#FFFFFF', border: '1px solid #D2D7DF' }} />
+              <Box sx={{ height: 2.5, borderRadius: 2, bgcolor: '#E8443A' }} />
             </Box>
           </IconButton>
         }
@@ -393,6 +407,11 @@ export default function ChatsPage() {
                 <ListItemButton sx={menuItemSx} onClick={() => { navigate('/support'); setDrawerOpen(false); }}>
                   <ListItemIcon><PsychologyRoundedIcon /></ListItemIcon><ListItemText primary="AI чат" />
                 </ListItemButton>
+                {isCreator && (
+                  <ListItemButton sx={menuItemSx} onClick={() => { navigate('/admin'); setDrawerOpen(false); }}>
+                    <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon><ListItemText primary="Инструменты" />
+                  </ListItemButton>
+                )}
                 <ListItemButton
                   sx={{
                     ...menuItemSx,

@@ -19,10 +19,11 @@ import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
-import { uploadApi } from '../lib/api';
+import { uploadApi, userApi } from '../lib/api';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
 import type { Message, User } from '../lib/types';
+import { useSnackbarStore } from '../stores/snackbarStore';
 
 const formatPresence = (status?: User['status'], lastSeen?: string): string => {
   if (status === 'online') return 'в сети';
@@ -43,6 +44,7 @@ const formatPresence = (status?: User['status'], lastSeen?: string): string => {
 
 const QUICK_REACTIONS = ['❤️', '👍', '👎', '🔥'] as const;
 type QuickReaction = (typeof QUICK_REACTIONS)[number];
+const USERNAME_MENTION_RE = /@([A-Za-z0-9_]{3,32})/g;
 
 export default function ChatPage() {
   const { chatId = '' } = useParams();
@@ -67,6 +69,7 @@ export default function ChatPage() {
   } = useChatStore();
 
   const me = useAuthStore((s) => s.user);
+  const pushSnackbar = useSnackbarStore((s) => s.push);
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const [text, setText] = useState('');
@@ -79,6 +82,7 @@ export default function ChatPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploaded, setUploaded] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const mentionCacheRef = useRef<Record<string, string>>({});
 
   const chat = chats.find((c) => c.id === chatId);
 
@@ -217,6 +221,73 @@ export default function ChatPage() {
     if (!reactionAnchor || !selectedMessage) return;
     setMsgMenuAnchor(reactionAnchor);
     closeReactionPicker();
+  };
+
+  const openMentionProfile = async (username: string) => {
+    const normalized = username.replace(/^@/, '').trim().toLowerCase();
+    if (!normalized) return;
+
+    const cachedId = mentionCacheRef.current[normalized];
+    if (cachedId) {
+      navigate(`/user/${cachedId}?chatId=${encodeURIComponent(chatId)}`);
+      return;
+    }
+
+    try {
+      const profile = await userApi.getByUsername(normalized);
+      const targetId = String(profile?.id ?? '').trim();
+      if (!targetId) {
+        throw new Error('User not found');
+      }
+      mentionCacheRef.current[normalized] = targetId;
+      navigate(`/user/${targetId}?chatId=${encodeURIComponent(chatId)}`);
+    } catch {
+      pushSnackbar({ message: `Пользователь @${normalized} не найден`, timeout: 2200 });
+    }
+  };
+
+  const renderMessageText = (value: string) => {
+    USERNAME_MENTION_RE.lastIndex = 0;
+    const chunks: any[] = [];
+    let cursor = 0;
+    let match: RegExpExecArray | null = null;
+
+    while ((match = USERNAME_MENTION_RE.exec(value)) !== null) {
+      const fullMatch = match[0];
+      const username = match[1] || '';
+      const start = match.index;
+      const end = start + fullMatch.length;
+
+      if (start > cursor) {
+        chunks.push(value.slice(cursor, start));
+      }
+
+      chunks.push(
+        <Box
+          component="span"
+          key={`mention-${start}-${username}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            void openMentionProfile(username);
+          }}
+          sx={{
+            color: isDark ? '#88C0FF' : '#0A8D4F',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          {fullMatch}
+        </Box>,
+      );
+
+      cursor = end;
+    }
+
+    if (cursor < value.length) {
+      chunks.push(value.slice(cursor));
+    }
+
+    return chunks;
   };
 
   if (!chat) {
@@ -395,7 +466,9 @@ export default function ChatPage() {
                     touchAction: 'manipulation',
                   }}
                 >
-                  <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'none', WebkitUserSelect: 'none' }}>{m.text}</Typography>
+                  <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'none', WebkitUserSelect: 'none' }}>
+                    {renderMessageText(m.text)}
+                  </Typography>
                   <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                     {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                   </Typography>

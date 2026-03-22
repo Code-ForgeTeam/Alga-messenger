@@ -33,6 +33,10 @@ final class Api
         if ($path === '/api/auth/register' && $method === 'POST') { $this->register($body); }
         if ($path === '/api/auth/login' && $method === 'POST') { $this->login($body); }
         if ($path === '/api/auth/verify' && $method === 'GET') { $this->verify(); }
+        if ($path === '/api/admin/overview' && $method === 'GET') { $this->adminOverview(); }
+        if ($path === '/api/admin/clear-chats' && $method === 'POST') { $this->adminClearChats(); }
+        if ($path === '/api/admin/clear-messages' && $method === 'POST') { $this->adminClearMessages(); }
+        if ($path === '/api/admin/reset-users' && $method === 'POST') { $this->adminResetUsers(); }
 
         if ($path === '/api/users/me' && $method === 'GET') { $this->me(); }
         if ($path === '/api/users/me' && $method === 'PUT') { $this->updateMe($body); }
@@ -59,7 +63,7 @@ final class Api
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/block$#', $path, $m) && $method === 'DELETE') { $this->unblockInChat($m[1]); }
         if ($path === '/api/saved/chat' && $method === 'GET') { $this->savedChat(); }
         if ($path === '/api/messages' && $method === 'POST') { $this->sendMessage($body); }
-        if ($path === '/api/messages/read' && $method === 'POST') { $this->json(['ok' => true]); }
+        if ($path === '/api/messages/read' && $method === 'POST') { $this->markMessagesRead($body); }
         if ($path === '/api/ai/chat' && $method === 'GET') { $this->aiChat(); }
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
@@ -93,7 +97,16 @@ final class Api
 
         $this->touchUserPresence($id);
         $token = Jwt::issue(['userId' => $id]);
-        $this->json(['token' => $token, 'user' => ['id' => $id, 'username' => $u, 'fullName' => $n, 'avatar' => null]]);
+        $this->json([
+            'token' => $token,
+            'user' => [
+                'id' => $id,
+                'username' => $u,
+                'fullName' => $n,
+                'avatar' => null,
+                'isCreator' => $this->creatorUserId() === $id,
+            ],
+        ]);
     }
 
     private function login(array $body): void
@@ -113,7 +126,16 @@ final class Api
 
         $this->touchUserPresence((string)$user['id']);
         $token = Jwt::issue(['userId' => $user['id']]);
-        $this->json(['token' => $token, 'user' => ['id' => $user['id'], 'username' => $user['username'], 'fullName' => $user['full_name'], 'avatar' => $user['avatar'] ?? null]]);
+        $this->json([
+            'token' => $token,
+            'user' => [
+                'id' => $user['id'],
+                'username' => $user['username'],
+                'fullName' => $user['full_name'],
+                'avatar' => $user['avatar'] ?? null,
+                'isCreator' => $this->creatorUserId() === (string)$user['id'],
+            ],
+        ]);
     }
 
     private function verify(): void
@@ -133,6 +155,7 @@ final class Api
             'avatar' => $u['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
+            'isCreator' => $this->creatorUserId() === (string)$u['id'],
         ]]);
     }
 
@@ -160,6 +183,83 @@ final class Api
 
         $payload = array_map(fn ($row) => $this->buildChatPayload($row, $userId), $rows ?: []);
         $this->json($payload);
+    }
+
+    private function adminOverview(): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+
+        $users = (int)$this->db()->query('SELECT COUNT(*) FROM users')->fetchColumn();
+        $chats = (int)$this->db()->query('SELECT COUNT(*) FROM chats')->fetchColumn();
+        $messages = (int)$this->db()->query('SELECT COUNT(*) FROM messages')->fetchColumn();
+
+        $this->json([
+            'ok' => true,
+            'users' => $users,
+            'chats' => $chats,
+            'messages' => $messages,
+            'creatorUserId' => $this->creatorUserId(),
+        ]);
+    }
+
+    private function adminClearChats(): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+
+        $this->db()->exec('DELETE FROM chats');
+        $this->json(['ok' => true]);
+    }
+
+    private function adminClearMessages(): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+
+        $this->db()->exec('DELETE FROM messages');
+
+        if ($this->hasChatParticipantColumn('unread_count')) {
+            $this->db()->exec('UPDATE chat_participants SET unread_count = 0');
+        }
+
+        $this->db()->exec('UPDATE chats SET updated_at = CURRENT_TIMESTAMP');
+        $this->json(['ok' => true]);
+    }
+
+    private function adminResetUsers(): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+
+        $creatorId = $this->creatorUserId();
+        if ($creatorId === '') {
+            $this->json(['error' => 'Creator user is not configured'], 500);
+        }
+
+        $db = $this->db();
+        try {
+            $db->beginTransaction();
+
+            $deleteUsers = $db->prepare('DELETE FROM users WHERE id <> ?');
+            $deleteUsers->execute([$creatorId]);
+
+            $db->exec('DELETE c FROM chats c LEFT JOIN chat_participants cp ON cp.chat_id = c.id WHERE cp.chat_id IS NULL');
+
+            if ($this->hasChatParticipantColumn('unread_count')) {
+                $resetUnread = $db->prepare('UPDATE chat_participants SET unread_count = 0 WHERE user_id = ?');
+                $resetUnread->execute([$creatorId]);
+            }
+
+            $db->commit();
+        } catch (\Throwable) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            $this->json(['error' => 'Failed to reset users'], 500);
+        }
+
+        $this->json(['ok' => true, 'creatorUserId' => $creatorId]);
     }
 
     private function createChat(array $body): void
@@ -413,6 +513,13 @@ final class Api
         $insert = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text) VALUES (?, ?, ?, ?)');
         $insert->execute([$messageId, $chatId, $userId, $text]);
 
+        if ($this->hasChatParticipantColumn('unread_count')) {
+            $incUnread = $this->db()->prepare(
+                'UPDATE chat_participants SET unread_count = unread_count + 1 WHERE chat_id = ? AND user_id <> ?'
+            );
+            $incUnread->execute([$chatId, $userId]);
+        }
+
         $updateChat = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
         $updateChat->execute([$chatId]);
 
@@ -423,9 +530,30 @@ final class Api
             'text' => $text,
             'createdAt' => date('c'),
             'edited' => 0,
+            'status' => 'delivered',
         ];
 
         $this->json(['message' => $message], 201);
+    }
+
+    private function markMessagesRead(array $body): void
+    {
+        $userId = $this->authUserId();
+        $chatId = trim((string)($body['chatId'] ?? ''));
+        if ($chatId === '') {
+            $this->json(['error' => 'chatId is required'], 400);
+        }
+
+        $this->assertChatParticipant($chatId, $userId);
+
+        if ($this->hasChatParticipantColumn('unread_count')) {
+            $update = $this->db()->prepare(
+                'UPDATE chat_participants SET unread_count = 0 WHERE chat_id = ? AND user_id = ?'
+            );
+            $update->execute([$chatId, $userId]);
+        }
+
+        $this->json(['ok' => true]);
     }
 
 
@@ -572,6 +700,7 @@ final class Api
             'avatar' => $u['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
+            'isCreator' => $this->creatorUserId() === (string)$u['id'],
         ]);
     }
 
@@ -648,6 +777,7 @@ final class Api
             'avatar' => $row['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
+            'isCreator' => $this->creatorUserId() === (string)$row['id'],
         ]);
     }
 
@@ -671,6 +801,7 @@ final class Api
             'avatar' => $row['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
+            'isCreator' => $this->creatorUserId() === (string)$row['id'],
         ]);
     }
 
@@ -713,7 +844,7 @@ final class Api
     private function buildChatPayload(array $row, string $viewerId): array
     {
         $participants = $this->chatParticipants((string)$row['id'], $viewerId, (string)$row['type']);
-        $last = $this->chatLastMessage((string)$row['id']);
+        $last = $this->chatLastMessage((string)$row['id'], $viewerId);
 
         return [
             'id' => $row['id'],
@@ -726,8 +857,11 @@ final class Api
             'muted' => (bool)$row['muted'],
             'blocked' => (bool)$row['blocked'],
             'unreadCount' => (int)$row['unread_count'],
+            'lastMessage' => $last,
             'lastMessageText' => $last['text'] ?? '',
             'lastMessageTime' => $last['createdAt'] ?? null,
+            'lastMessageUserId' => $last['userId'] ?? null,
+            'lastMessageStatus' => $last['status'] ?? null,
             'updatedAt' => isset($row['updated_at']) ? date('c', strtotime((string)$row['updated_at'])) : null,
         ];
     }
@@ -763,7 +897,7 @@ final class Api
         }, $rows ?: []);
     }
 
-    private function chatLastMessage(string $chatId): ?array
+    private function chatLastMessage(string $chatId, string $viewerId): ?array
     {
         $stmt = $this->db()->prepare(
             'SELECT id, chat_id, user_id, text, created_at, edited
@@ -778,6 +912,19 @@ final class Api
             return null;
         }
 
+        $status = 'sent';
+        $authorId = (string)$m['user_id'];
+        if ($authorId === $viewerId) {
+            $status = 'delivered';
+            if ($this->hasChatParticipantColumn('unread_count')) {
+                $unread = $this->db()->prepare(
+                    'SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id <> ? AND unread_count > 0 LIMIT 1'
+                );
+                $unread->execute([$chatId, $viewerId]);
+                $status = $unread->fetchColumn() ? 'delivered' : 'read';
+            }
+        }
+
         return [
             'id' => $m['id'],
             'chatId' => $m['chat_id'],
@@ -785,6 +932,7 @@ final class Api
             'text' => $m['text'],
             'createdAt' => date('c', strtotime((string)$m['created_at'])),
             'edited' => (bool)$m['edited'],
+            'status' => $status,
         ];
     }
 
@@ -839,6 +987,30 @@ final class Api
         $url = $base !== '' ? ($base . $relative) : $relative;
 
         $this->json(['url' => $url], 201);
+    }
+
+    private function creatorUserId(): string
+    {
+        $configured = trim((string)Config::get('CREATOR_USER_ID', ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        try {
+            $stmt = $this->db()->query('SELECT id FROM users ORDER BY created_at ASC LIMIT 1');
+            $first = $stmt->fetchColumn();
+            return $first ? (string)$first : '';
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    private function assertCreator(string $userId): void
+    {
+        $creatorId = $this->creatorUserId();
+        if ($creatorId === '' || $creatorId !== $userId) {
+            $this->json(['error' => 'Forbidden'], 403);
+        }
     }
 
     private function authUserId(): string

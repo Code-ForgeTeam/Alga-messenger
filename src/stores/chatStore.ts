@@ -17,7 +17,7 @@ interface ChatState {
   typingUsers: Record<string, string[]>;
   showArchived: boolean;
 
-  loadChats: () => Promise<void>;
+  loadChats: (options?: { silent?: boolean }) => Promise<void>;
   loadMessages: (chatId: string) => Promise<void>;
   setCurrentChat: (chatId: string | null) => void;
   sendMessage: (chatId: string, text: string, attachments?: unknown[], replyToId?: string) => Promise<void>;
@@ -73,8 +73,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       showArchived: false,
     }),
 
-  loadChats: async () => {
-    set({ isLoading: true });
+  loadChats: async (options) => {
+    const silent = !!options?.silent;
+    if (!silent) set({ isLoading: true });
     try {
       const chats = (await chatApi.getChats()) as Chat[];
       const next = Array.isArray(chats) ? chats : [];
@@ -97,9 +98,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       }
 
-      set({ chats: next, isLoading: false });
+      const myId = useAuthStore.getState().user?.id;
+      useContactsStore.getState().hydrateFromChats(next, myId);
+
+      if (silent) {
+        set({ chats: next });
+      } else {
+        set({ chats: next, isLoading: false });
+      }
     } catch {
-      set({ isLoading: false });
+      if (!silent) set({ isLoading: false });
     }
   },
 
