@@ -17,17 +17,6 @@ api.interceptors.response.use(
   async (error) => {
     const requestConfig = error.config ?? {};
     const originalBaseUrl = String(requestConfig.baseURL || API_BASE_URL || '');
-    const isNetworkError = !error.response;
-    const canRetryWithHttps =
-      isNetworkError &&
-      originalBaseUrl.startsWith('http://') &&
-      !requestConfig.__httpsFallbackRetried;
-
-    if (canRetryWithHttps) {
-      requestConfig.__httpsFallbackRetried = true;
-      requestConfig.baseURL = originalBaseUrl.replace(/^http:\/\//, 'https://');
-      return api.request(requestConfig);
-    }
 
     if (!error.response) {
       error.response = {
