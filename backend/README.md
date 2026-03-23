@@ -7,6 +7,7 @@ Backend rewritten to PHP (no Node.js required).
 - `public/index.php` — entrypoint/router
 - `app/` — config, db, jwt, API handlers
 - `sql/beget_init.sql` — MySQL schema bootstrap
+- `sql/beget_reset.sql` — full DB reset (drop all tables/data)
 
 ## 1) Configure environment
 
@@ -20,29 +21,33 @@ Fill DB credentials in `.env`:
 ```env
 DB_HOST=...
 DB_PORT=3306
-DB_NAME=q99916rz_alga
+DB_NAME=...
 DB_USER=...
 DB_PASS=...
 JWT_SECRET=...
-CORS_ORIGIN=http://q99916rz.beget.tech
+CORS_ORIGIN=http://your-domain
 CREATOR_USER_ID=uuid-of-owner-account
 AI_SERVICE_URL=http://127.0.0.1:8099/reply
 AI_MODEL=gpt-4o-mini
 FCM_SERVER_KEY=your_firebase_server_key
 ```
 
-`CREATOR_USER_ID` is used for `/api/admin/*` tools access.
-If it is empty, the backend automatically uses the oldest user in the database as the creator.
+`CREATOR_USER_ID` is used for `/api/admin/*` access.
+If empty, backend falls back to the oldest user in DB.
 
 `AI_SERVICE_URL` is optional. If empty, backend uses local fallback AI replies.
-When configured, backend forwards `/api/ai/message` prompts to this endpoint.
 
 `FCM_SERVER_KEY` is optional. If empty, native push notifications are disabled.
-When configured, backend sends real push notifications through Firebase Cloud Messaging.
 
 ## 2) Initialize database
 
 Run SQL from `sql/beget_init.sql` in your MySQL console.
+
+For a full clean rebuild:
+
+1. Run `sql/beget_reset.sql`
+2. Run `sql/beget_init.sql`
+3. Set `CREATOR_USER_ID` in backend `.env` to your owner UUID
 
 If your database already existed before, run this patch manually once:
 
@@ -58,9 +63,14 @@ CREATE TABLE IF NOT EXISTS chat_read_state (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-If MySQL returns `Duplicate column name 'unread_count'`, just continue to the next command.
+If MySQL returns `Duplicate column name 'unread_count'`, continue to the next command.
 
-## 3) Run with PHP built-in server (for test)
+`beget_init.sql` now also includes groundwork for Telegram-like 24h statuses:
+
+- `stories`
+- `story_views`
+
+## 3) Run with PHP built-in server (test)
 
 ```bash
 cd backend
@@ -99,16 +109,15 @@ FCM_SERVER_KEY=your_firebase_server_key
 
 Frontend app automatically registers device token through `/api/push/token`.
 
-
 ## Troubleshooting: 500 on `/backend/public/index.php/health`
 
 If you receive HTTP 500:
 
 1. Verify PHP version is **8.0+** (recommended 8.1+).
 2. Ensure `.env` exists in `backend/.env` and DB credentials are valid.
-3. Ensure MySQL extension for PHP is enabled (`pdo_mysql`).
+3. Ensure PHP extension `pdo_mysql` is enabled.
 4. Use one of these URLs:
    - `http://your-domain/backend/public/index.php/health`
    - `http://your-domain/health` (if document root points to `backend/public`)
 
-This backend now normalizes `.../index.php/health` paths automatically.
+Backend normalizes `.../index.php/health` paths automatically.

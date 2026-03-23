@@ -258,7 +258,7 @@ export default function App() {
       return;
     }
 
-    checkAdminAccess(userId).catch(() => null);
+    checkAdminAccess(userId, true).catch(() => null);
   }, [
     auth.isAuthenticated,
     auth.user?.id,

@@ -57,6 +57,7 @@ const resolveUnreadCount = ({
   viewerId?: string;
   currentChatId?: string | null;
 }): number => {
+  if (String(nextChat.type || '').toLowerCase() === 'saved') return 0;
   if (currentChatId && currentChatId === nextChat.id) return 0;
 
   const fromServer = readUnreadCount(nextChat);
@@ -67,13 +68,29 @@ const resolveUnreadCount = ({
   const previousUnread = readUnreadCount(previousChat);
   const prevMeta = readLastMessageMeta(previousChat);
   const nextMeta = readLastMessageMeta(nextChat);
+  const nextStatus = String(
+    (nextChat.lastMessage as any)?.status ??
+      (nextChat.last_message as any)?.status ??
+      nextChat.lastMessageStatus ??
+      nextChat.last_message_status ??
+      '',
+  ).toLowerCase();
 
   if (didLastMessageChange(prevMeta, nextMeta)) {
     const incoming = !!viewerId && !!nextMeta.authorId && nextMeta.authorId !== viewerId;
     if (incoming) return previousUnread > 0 ? previousUnread + 1 : 1;
   }
 
-  return previousUnread;
+  if (nextStatus.includes('read') || nextStatus.includes('seen')) {
+    return 0;
+  }
+
+  const incomingLatest = !!viewerId && !!nextMeta.authorId && nextMeta.authorId !== viewerId;
+  if (incomingLatest && previousUnread > 0) {
+    return previousUnread;
+  }
+
+  return 0;
 };
 
 interface ChatState {
@@ -159,6 +176,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (statusCache.size > 0) {
         next.forEach((chat) => {
+          if (!Array.isArray(chat.participants)) return;
           chat.participants.forEach((p) => {
             const cached = statusCache.get(p.id);
             if (cached) Object.assign(p, cached);

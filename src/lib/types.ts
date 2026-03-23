@@ -69,6 +69,18 @@ export interface Contact {
   user: User;
 }
 
+export interface Story {
+  id: string;
+  userId: string;
+  text?: string | null;
+  mediaUrl?: string | null;
+  createdAt: string;
+  expiresAt: string;
+  isViewed: boolean;
+  viewsCount: number;
+  user: Pick<User, 'id' | 'username' | 'fullName' | 'avatar'>;
+}
+
 export interface NotificationBanner {
   id: string;
   title?: string;

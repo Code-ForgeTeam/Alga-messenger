@@ -131,6 +131,15 @@ export const pushApi = {
     (await api.delete('/push/token', { data: { token } })).data,
 };
 
+export const storyApi = {
+  getFeed: async () => (await api.get('/stories')).data,
+  getMine: async () => (await api.get('/stories/mine')).data,
+  create: async (payload: { text?: string; mediaUrl?: string; durationHours?: number }) =>
+    (await api.post('/stories', payload)).data,
+  markViewed: async (storyId: string) => (await api.post(`/stories/${storyId}/view`)).data,
+  delete: async (storyId: string) => (await api.delete(`/stories/${storyId}`)).data,
+};
+
 export const supportApi = {
   createTicket: async (category: string, subject: string) =>
     (await api.post('/support/tickets', { category, subject })).data,

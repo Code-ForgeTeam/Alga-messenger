@@ -13,6 +13,7 @@ final class Api
     private ?bool $messageReactionTableReady = null;
     private ?bool $chatReadStateTableReady = null;
     private ?bool $pushTokensTableReady = null;
+    private ?bool $storyTablesReady = null;
 
     public function __construct()
     {
@@ -70,6 +71,11 @@ final class Api
         if ($path === '/api/messages/read' && $method === 'POST') { $this->markMessagesRead($body); }
         if ($path === '/api/push/token' && $method === 'POST') { $this->registerPushToken($body); }
         if ($path === '/api/push/token' && $method === 'DELETE') { $this->removePushToken($body); }
+        if ($path === '/api/stories' && $method === 'GET') { $this->storiesFeed(); }
+        if ($path === '/api/stories' && $method === 'POST') { $this->createStory($body); }
+        if ($path === '/api/stories/mine' && $method === 'GET') { $this->myStories(); }
+        if (preg_match('#^/api/stories/([a-zA-Z0-9\-]+)/view$#', $path, $m) && $method === 'POST') { $this->viewStory($m[1]); }
+        if (preg_match('#^/api/stories/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteStory($m[1]); }
         if ($path === '/api/ai/chat' && $method === 'GET') { $this->aiChat(); }
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
@@ -678,6 +684,200 @@ final class Api
         $this->json(['ok' => true]);
     }
 
+    private function storiesFeed(): void
+    {
+        $viewerId = $this->authUserId();
+        if (!$this->ensureStoryTables()) {
+            $this->json([]);
+        }
+        $this->cleanupExpiredStories();
+
+        $stmt = $this->db()->prepare(
+            'SELECT s.id, s.user_id, s.text, s.media_url, s.created_at, s.expires_at,
+                    u.username, u.full_name, u.avatar,
+                    EXISTS(
+                        SELECT 1
+                        FROM story_views sv
+                        WHERE sv.story_id = s.id AND sv.user_id = ?
+                        LIMIT 1
+                    ) AS is_viewed,
+                    (
+                        SELECT COUNT(*)
+                        FROM story_views sv2
+                        WHERE sv2.story_id = s.id
+                    ) AS views_count
+             FROM stories s
+             JOIN users u ON u.id = s.user_id
+             WHERE s.expires_at > CURRENT_TIMESTAMP
+             ORDER BY s.created_at DESC
+             LIMIT 200'
+        );
+        $stmt->execute([$viewerId]);
+        $rows = $stmt->fetchAll() ?: [];
+
+        $this->json(array_map(fn ($row) => $this->storyToPayload($row, $viewerId), $rows));
+    }
+
+    private function myStories(): void
+    {
+        $viewerId = $this->authUserId();
+        if (!$this->ensureStoryTables()) {
+            $this->json([]);
+        }
+        $this->cleanupExpiredStories();
+
+        $stmt = $this->db()->prepare(
+            'SELECT s.id, s.user_id, s.text, s.media_url, s.created_at, s.expires_at,
+                    u.username, u.full_name, u.avatar,
+                    1 AS is_viewed,
+                    (
+                        SELECT COUNT(*)
+                        FROM story_views sv2
+                        WHERE sv2.story_id = s.id
+                    ) AS views_count
+             FROM stories s
+             JOIN users u ON u.id = s.user_id
+             WHERE s.user_id = ? AND s.expires_at > CURRENT_TIMESTAMP
+             ORDER BY s.created_at DESC
+             LIMIT 100'
+        );
+        $stmt->execute([$viewerId]);
+        $rows = $stmt->fetchAll() ?: [];
+
+        $this->json(array_map(fn ($row) => $this->storyToPayload($row, $viewerId), $rows));
+    }
+
+    private function createStory(array $body): void
+    {
+        $userId = $this->authUserId();
+        if (!$this->ensureStoryTables()) {
+            $this->json(['error' => 'Stories storage is unavailable'], 500);
+        }
+
+        $text = trim((string)($body['text'] ?? ''));
+        $mediaUrl = trim((string)($body['mediaUrl'] ?? ''));
+        $durationHours = max(1, min(48, (int)($body['durationHours'] ?? 24)));
+        if ($text === '' && $mediaUrl === '') {
+            $this->json(['error' => 'Story text or mediaUrl is required'], 400);
+        }
+
+        $storyId = $this->uuid();
+        $expiresAt = date('Y-m-d H:i:s', time() + ($durationHours * 3600));
+        $insert = $this->db()->prepare(
+            'INSERT INTO stories (id, user_id, text, media_url, expires_at) VALUES (?, ?, ?, ?, ?)'
+        );
+        $insert->execute([
+            $storyId,
+            $userId,
+            $text === '' ? null : $text,
+            $mediaUrl === '' ? null : $mediaUrl,
+            $expiresAt,
+        ]);
+
+        $stmt = $this->db()->prepare(
+            'SELECT s.id, s.user_id, s.text, s.media_url, s.created_at, s.expires_at,
+                    u.username, u.full_name, u.avatar,
+                    1 AS is_viewed,
+                    0 AS views_count
+             FROM stories s
+             JOIN users u ON u.id = s.user_id
+             WHERE s.id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$storyId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            $this->json(['error' => 'Failed to create story'], 500);
+        }
+
+        $this->json(['story' => $this->storyToPayload($row, $userId)], 201);
+    }
+
+    private function viewStory(string $storyId): void
+    {
+        $viewerId = $this->authUserId();
+        if (!$this->ensureStoryTables()) {
+            $this->json(['ok' => true]);
+        }
+        $this->cleanupExpiredStories();
+
+        $check = $this->db()->prepare(
+            'SELECT id, user_id FROM stories WHERE id = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1'
+        );
+        $check->execute([$storyId]);
+        $story = $check->fetch();
+        if (!$story) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        if ((string)$story['user_id'] !== $viewerId) {
+            $stmt = $this->db()->prepare(
+                'INSERT INTO story_views (story_id, user_id, viewed_at)
+                 VALUES (?, ?, CURRENT_TIMESTAMP)
+                 ON DUPLICATE KEY UPDATE viewed_at = CURRENT_TIMESTAMP'
+            );
+            $stmt->execute([$storyId, $viewerId]);
+        }
+
+        $this->json(['ok' => true]);
+    }
+
+    private function deleteStory(string $storyId): void
+    {
+        $userId = $this->authUserId();
+        if (!$this->ensureStoryTables()) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $stmt = $this->db()->prepare('SELECT id, user_id FROM stories WHERE id = ? LIMIT 1');
+        $stmt->execute([$storyId]);
+        $story = $stmt->fetch();
+        if (!$story) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        if ((string)$story['user_id'] !== $userId && !$this->isCreatorMatch($userId)) {
+            $this->json(['error' => 'Forbidden'], 403);
+        }
+
+        $delete = $this->db()->prepare('DELETE FROM stories WHERE id = ?');
+        $delete->execute([$storyId]);
+        $this->json(['ok' => true]);
+    }
+
+    private function cleanupExpiredStories(): void
+    {
+        if (!$this->ensureStoryTables()) {
+            return;
+        }
+
+        try {
+            $this->db()->exec('DELETE FROM stories WHERE expires_at <= CURRENT_TIMESTAMP');
+        } catch (\Throwable) {
+            // ignore cleanup errors
+        }
+    }
+
+    private function storyToPayload(array $row, string $viewerId): array
+    {
+        return [
+            'id' => (string)($row['id'] ?? ''),
+            'userId' => (string)($row['user_id'] ?? ''),
+            'text' => $row['text'] ?? null,
+            'mediaUrl' => $row['media_url'] ?? null,
+            'createdAt' => isset($row['created_at']) ? date('c', strtotime((string)$row['created_at'])) : date('c'),
+            'expiresAt' => isset($row['expires_at']) ? date('c', strtotime((string)$row['expires_at'])) : null,
+            'isViewed' => ((string)($row['user_id'] ?? '') === $viewerId) ? true : ((int)($row['is_viewed'] ?? 0) > 0),
+            'viewsCount' => max(0, (int)($row['views_count'] ?? 0)),
+            'user' => [
+                'id' => (string)($row['user_id'] ?? ''),
+                'username' => (string)($row['username'] ?? ''),
+                'fullName' => (string)($row['full_name'] ?? ''),
+                'avatar' => $row['avatar'] ?? null,
+            ],
+        ];
+    }
+
     private function setMessageReaction(string $messageId, array $body): void
     {
         $userId = $this->authUserId();
@@ -1141,17 +1341,32 @@ final class Api
 
     private function resolveUnreadCount(string $chatId, string $viewerId, array $row): int
     {
+        if (strtolower((string)($row['type'] ?? '')) === 'saved') {
+            return 0;
+        }
+
+        $fromReadState = $this->unreadCountFromReadStateOrNull($chatId, $viewerId);
+        if ($fromReadState !== null) {
+            $this->syncUnreadCountColumn($chatId, $viewerId, $fromReadState);
+            return $fromReadState;
+        }
+
         if ($this->hasChatParticipantColumn('unread_count') && array_key_exists('unread_count', $row)) {
             return max(0, (int)$row['unread_count']);
         }
 
-        return $this->unreadCountFromReadState($chatId, $viewerId);
+        return 0;
     }
 
     private function unreadCountFromReadState(string $chatId, string $userId): int
     {
+        return max(0, (int)($this->unreadCountFromReadStateOrNull($chatId, $userId) ?? 0));
+    }
+
+    private function unreadCountFromReadStateOrNull(string $chatId, string $userId): ?int
+    {
         if (!$this->ensureChatReadStateTable()) {
-            return 0;
+            return null;
         }
 
         try {
@@ -1160,7 +1375,23 @@ final class Api
             );
             $stateStmt->execute([$chatId, $userId]);
             $lastReadAt = $stateStmt->fetchColumn();
+
             if (!$lastReadAt) {
+                if ($this->hasChatParticipantColumn('unread_count')) {
+                    $cpStmt = $this->db()->prepare(
+                        'SELECT unread_count FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
+                    );
+                    $cpStmt->execute([$chatId, $userId]);
+                    $cpValue = $cpStmt->fetchColumn();
+                    if ($cpValue !== false) {
+                        $unread = max(0, (int)$cpValue);
+                        if ($unread === 0) {
+                            $this->touchChatReadState($chatId, $userId);
+                        }
+                        return $unread;
+                    }
+                }
+
                 $this->touchChatReadState($chatId, $userId);
                 return 0;
             }
@@ -1171,12 +1402,34 @@ final class Api
             $countStmt->execute([$chatId, $userId, (string)$lastReadAt]);
             return max(0, (int)$countStmt->fetchColumn());
         } catch (\Throwable) {
-            return 0;
+            return null;
+        }
+    }
+
+    private function syncUnreadCountColumn(string $chatId, string $userId, int $unreadCount): void
+    {
+        if (!$this->hasChatParticipantColumn('unread_count')) {
+            return;
+        }
+
+        try {
+            $stmt = $this->db()->prepare(
+                'UPDATE chat_participants SET unread_count = ? WHERE chat_id = ? AND user_id = ?'
+            );
+            $stmt->execute([max(0, $unreadCount), $chatId, $userId]);
+        } catch (\Throwable) {
+            // ignore sync errors
         }
     }
 
     private function viewerHasUnreadMessages(string $chatId, string $viewerId): bool
     {
+        $fromReadState = $this->unreadCountFromReadStateOrNull($chatId, $viewerId);
+        if ($fromReadState !== null) {
+            $this->syncUnreadCountColumn($chatId, $viewerId, $fromReadState);
+            return $fromReadState > 0;
+        }
+
         if ($this->hasChatParticipantColumn('unread_count')) {
             try {
                 $stmt = $this->db()->prepare(
@@ -1194,6 +1447,10 @@ final class Api
 
     private function ownMessagesStatus(string $chatId, string $authorId): string
     {
+        if ($this->ensureChatReadStateTable()) {
+            return $this->hasUnreadForPeersByReadState($chatId, $authorId) ? 'delivered' : 'read';
+        }
+
         if ($this->hasChatParticipantColumn('unread_count')) {
             try {
                 $stmt = $this->db()->prepare(
@@ -1585,6 +1842,48 @@ final class Api
         return $this->pushTokensTableReady;
     }
 
+    private function ensureStoryTables(): bool
+    {
+        if ($this->storyTablesReady !== null) {
+            return $this->storyTablesReady;
+        }
+
+        try {
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS stories (
+                    id CHAR(36) PRIMARY KEY,
+                    user_id CHAR(36) NOT NULL,
+                    text TEXT NULL,
+                    media_url VARCHAR(2048) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    KEY idx_stories_user_created (user_id, created_at),
+                    KEY idx_stories_expires (expires_at),
+                    CONSTRAINT fk_story_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS story_views (
+                    story_id CHAR(36) NOT NULL,
+                    user_id CHAR(36) NOT NULL,
+                    viewed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (story_id, user_id),
+                    KEY idx_story_views_user (user_id),
+                    CONSTRAINT fk_story_view_story FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_story_view_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+
+            $this->storyTablesReady = true;
+        } catch (\Throwable) {
+            $this->storyTablesReady = false;
+        }
+
+        return $this->storyTablesReady;
+    }
+
     private function uploadAvatar(): void
     {
         $this->authUserId();
@@ -1640,7 +1939,12 @@ final class Api
 
     private function creatorUserId(): string
     {
-        $configured = trim((string)Config::get('CREATOR_USER_ID', ''));
+        $configuredRaw = trim((string)Config::get('CREATOR_USER_ID', ''));
+        $configured = $configuredRaw;
+        if ($configuredRaw !== '' && preg_match('/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i', $configuredRaw, $m)) {
+            $configured = (string)$m[1];
+        }
+
         if ($configured !== '') {
             try {
                 $stmt = $this->db()->prepare('SELECT id FROM users WHERE LOWER(id) = LOWER(?) LIMIT 1');
@@ -1655,25 +1959,31 @@ final class Api
         }
 
         try {
-            if ($this->hasUserColumn('created_at')) {
-                $stmt = $this->db()->query('SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1');
-                $first = $stmt->fetchColumn();
-                if ($first) {
-                    return (string)$first;
-                }
+            $stmt = $this->db()->query('SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1');
+            $first = $stmt->fetchColumn();
+            if ($first) {
+                return (string)$first;
             }
+        } catch (\Throwable) {
+            // fallback below
+        }
 
+        try {
             $stmt = $this->db()->query('SELECT id FROM users ORDER BY id ASC LIMIT 1');
+            $first = $stmt->fetchColumn();
+            if ($first) {
+                return (string)$first;
+            }
+        } catch (\Throwable) {
+            // fallback below
+        }
+
+        try {
+            $stmt = $this->db()->query('SELECT id FROM users LIMIT 1');
             $first = $stmt->fetchColumn();
             return $first ? (string)$first : '';
         } catch (\Throwable) {
-            try {
-                $stmt = $this->db()->query('SELECT id FROM users LIMIT 1');
-                $first = $stmt->fetchColumn();
-                return $first ? (string)$first : '';
-            } catch (\Throwable) {
-                return '';
-            }
+            return '';
         }
     }
 

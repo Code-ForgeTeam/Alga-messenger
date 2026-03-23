@@ -89,6 +89,29 @@ CREATE TABLE IF NOT EXISTS message_reactions (
   CONSTRAINT fk_react_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS stories (
+  id            CHAR(36) PRIMARY KEY,
+  user_id       CHAR(36) NOT NULL,
+  text          TEXT NULL,
+  media_url     VARCHAR(2048) NULL,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at    DATETIME NOT NULL,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_stories_user_created (user_id, created_at),
+  INDEX idx_stories_expires (expires_at),
+  CONSTRAINT fk_story_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS story_views (
+  story_id      CHAR(36) NOT NULL,
+  user_id       CHAR(36) NOT NULL,
+  viewed_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (story_id, user_id),
+  INDEX idx_story_views_user (user_id),
+  CONSTRAINT fk_story_view_story FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE,
+  CONSTRAINT fk_story_view_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS push_tokens (
   id            CHAR(36) PRIMARY KEY,
   user_id       CHAR(36) NOT NULL,

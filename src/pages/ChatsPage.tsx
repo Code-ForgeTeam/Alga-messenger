@@ -262,13 +262,8 @@ export default function ChatsPage() {
               rawChat.last_message_read === true ||
               rawChat.last_message_read === 1
             );
-          const statusShowsUnread =
-            !ownLastMessage &&
-            !!subtitle &&
-            !lastMessageStatus.includes('read') &&
-            !lastMessageStatus.includes('seen');
-          const hasUnread = serverUnreadCount > 0 || statusShowsUnread;
-          const unreadCount = hasUnread ? Math.max(serverUnreadCount, statusShowsUnread ? 1 : 0) : 0;
+          const hasUnread = chat.type !== 'saved' && serverUnreadCount > 0;
+          const unreadCount = hasUnread ? serverUnreadCount : 0;
 
           return (
             <ListItemButton
