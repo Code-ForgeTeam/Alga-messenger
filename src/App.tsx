@@ -108,26 +108,46 @@ function BackgroundEffects({
   );
 }
 
+type IntroTarget = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  lineHeight: number;
+};
+
+const DEFAULT_INTRO_TARGET: IntroTarget = {
+  left: 96,
+  top: 54,
+  width: 68,
+  height: 26,
+  fontSize: 20,
+  lineHeight: 24,
+};
+
 function LaunchIntro({
   active,
   target,
 }: {
   active: boolean;
-  target: { x: number; y: number; scale: number };
+  target: IntroTarget;
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
   if (!active) return null;
 
-  const startShiftX = `calc(50vw - ${target.x}px)`;
-  const startShiftY = `calc(50vh - ${target.y}px)`;
-  const bveTargetX = target.x + 72 * target.scale;
-  const bveTargetY = target.y + 3;
-  const bveStartShiftX = `calc(50vw - ${bveTargetX}px)`;
-  const bveStartShiftY = `calc(50vh + 40px - ${bveTargetY}px)`;
-  const sparkleX = target.x + 78 * target.scale;
-  const sparkleY = target.y - 14;
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 390;
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 844;
+  const startLeft = viewportWidth / 2 - target.width / 2;
+  const startTop = viewportHeight / 2 - target.height / 2;
+  const shiftX = startLeft - target.left;
+  const shiftY = startTop - target.top;
+  const bveBaseX = viewportWidth / 2;
+  const bveBaseY = viewportHeight / 2 + Math.max(28, target.height * 1.45);
+  const sparkleX = target.left + target.width - 2;
+  const sparkleY = target.top - 6;
 
   return (
     <Box
@@ -138,28 +158,32 @@ function LaunchIntro({
         overflow: 'hidden',
         bgcolor: isDark ? '#061124' : '#F4FBF6',
         '@keyframes introFadeOut': {
-          '0%, 88%': { opacity: 1 },
+          '0%, 92%': { opacity: 1 },
           '100%': { opacity: 0 },
         },
-        '@keyframes algaDock': {
-          '0%': { transform: `translate(${startShiftX}, ${startShiftY}) scale(1.02)`, opacity: 1 },
-          '70%': { transform: 'translate(0, 0) scale(0.84)', opacity: 1 },
-          '100%': { transform: `translate(0, 0) scale(${target.scale})`, opacity: 1 },
+        '@keyframes algaExactDock': {
+          '0%, 22%': { transform: `translate(${shiftX}px, ${shiftY}px) scale(2.56)`, opacity: 1 },
+          '72%': { transform: 'translate(0px, 0px) scale(1.04)', opacity: 1 },
+          '100%': { transform: 'translate(0px, 0px) scale(1)', opacity: 1 },
         },
-        '@keyframes bveDock': {
-          '0%': { transform: `translate(${bveStartShiftX}, ${bveStartShiftY}) scale(1)`, opacity: 0.95 },
-          '72%': { transform: 'translate(0, 0) scale(0.86)', opacity: 0.95 },
-          '100%': {
-            transform: 'translate(0, 0) scale(0.78)',
-            opacity: 0,
-          },
+        '@keyframes bveDustB': {
+          '0%, 26%': { opacity: 0.96, transform: 'translate(-50%, -50%) scale(1)', filter: 'blur(0px)' },
+          '100%': { opacity: 0, transform: 'translate(-180%, -205%) scale(0.08)', filter: 'blur(5px)' },
+        },
+        '@keyframes bveDustV': {
+          '0%, 26%': { opacity: 0.96, transform: 'translate(-50%, -50%) scale(1)', filter: 'blur(0px)' },
+          '100%': { opacity: 0, transform: 'translate(-50%, -260%) scale(0.08)', filter: 'blur(5px)' },
+        },
+        '@keyframes bveDustE': {
+          '0%, 26%': { opacity: 0.96, transform: 'translate(-50%, -50%) scale(1)', filter: 'blur(0px)' },
+          '100%': { opacity: 0, transform: 'translate(80%, -195%) scale(0.08)', filter: 'blur(5px)' },
         },
         '@keyframes sparkle': {
           '0%': { opacity: 0, transform: 'scale(0.2) rotate(0deg)' },
           '42%': { opacity: 1, transform: 'scale(1.12) rotate(24deg)' },
           '100%': { opacity: 0, transform: 'scale(0.1) rotate(52deg)' },
         },
-        animation: 'introFadeOut 1750ms ease forwards',
+        animation: 'introFadeOut 1950ms ease forwards',
       }}
     >
       <Box
@@ -175,42 +199,50 @@ function LaunchIntro({
       <Box
         sx={{
           position: 'absolute',
-          top: target.y,
-          left: target.x,
+          top: target.top,
+          left: target.left,
           transform: 'translate(0, 0)',
-          animation: 'algaDock 1260ms cubic-bezier(0.2, 0.84, 0.24, 1) 60ms forwards',
+          animation: 'algaExactDock 1460ms cubic-bezier(0.2, 0.84, 0.24, 1) 70ms forwards',
         }}
       >
         <Typography
           sx={{
-            fontSize: { xs: 46, sm: 56 },
-            lineHeight: 1,
-            fontWeight: 900,
-            letterSpacing: 0.4,
-            color: isDark ? '#EAF2FF' : '#0E3C2D',
-            textShadow: isDark ? '0 10px 32px rgba(74,139,223,0.42)' : '0 10px 28px rgba(31,163,91,0.35)',
-            transform: 'translate(-50%, -50%)',
+            fontSize: `${target.fontSize}px`,
+            lineHeight: `${target.lineHeight}px`,
+            fontWeight: 800,
+            letterSpacing: 0,
+            color: theme.palette.text.primary,
+            textShadow: isDark ? '0 5px 18px rgba(66,129,219,0.32)' : '0 5px 18px rgba(31,163,91,0.26)',
+            transformOrigin: 'left top',
           }}
         >
           Alga
         </Typography>
       </Box>
 
-      <Typography
-        sx={{
-          position: 'absolute',
-          top: bveTargetY,
-          left: bveTargetX,
-          transform: 'translate(-50%, -50%)',
-          fontSize: { xs: 16, sm: 18 },
-          fontWeight: 700,
-          letterSpacing: 1.8,
-          color: isDark ? 'rgba(214,231,255,0.92)' : 'rgba(23,103,63,0.86)',
-          animation: 'bveDock 1310ms cubic-bezier(0.24, 0.88, 0.28, 1) 100ms forwards',
-        }}
-      >
-        BVE
-      </Typography>
+      {(['B', 'V', 'E'] as const).map((letter, idx) => (
+        <Typography
+          key={letter}
+          sx={{
+            position: 'absolute',
+            top: bveBaseY,
+            left: bveBaseX,
+            transform: 'translate(-50%, -50%)',
+            fontSize: 16,
+            fontWeight: 700,
+            letterSpacing: 1.4,
+            color: isDark ? 'rgba(214,231,255,0.94)' : 'rgba(23,103,63,0.88)',
+            animation:
+              idx === 0
+                ? 'bveDustB 700ms cubic-bezier(0.3, 0.8, 0.28, 1) 120ms forwards'
+                : idx === 1
+                  ? 'bveDustV 700ms cubic-bezier(0.3, 0.8, 0.28, 1) 120ms forwards'
+                  : 'bveDustE 700ms cubic-bezier(0.3, 0.8, 0.28, 1) 120ms forwards',
+          }}
+        >
+          {letter}
+        </Typography>
+      ))}
 
       <Box
         sx={{
@@ -222,7 +254,7 @@ function LaunchIntro({
           borderRadius: '50%',
           background: 'radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 72%)',
           opacity: 0,
-          animation: 'sparkle 420ms ease 1260ms forwards',
+          animation: 'sparkle 420ms ease 1490ms forwards',
         }}
       />
     </Box>
@@ -249,11 +281,8 @@ export default function App() {
   const [apkUpdate, setApkUpdate] = useState<ApkUpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
   const [showLaunchIntro, setShowLaunchIntro] = useState(launchIntroEnabled);
-  const [introTarget, setIntroTarget] = useState<{ x: number; y: number; scale: number }>({
-    x: 136,
-    y: 48,
-    scale: 0.8,
-  });
+  const [introTarget, setIntroTarget] = useState<IntroTarget>(DEFAULT_INTRO_TARGET);
+  const launchIntroOnChats = showLaunchIntro && launchIntroEnabled && pathname === '/chats';
 
   useEffect(() => {
     auth.checkAuth();
@@ -287,36 +316,42 @@ export default function App() {
   }, [launchIntroEnabled]);
 
   useEffect(() => {
-    if (!showLaunchIntro || !launchIntroEnabled) return;
+    if (!launchIntroOnChats) return;
     let attempts = 0;
     const timer = window.setInterval(() => {
       const anchor = document.getElementById('alga-home-anchor');
       attempts += 1;
       if (!anchor) {
-        if (attempts > 24) window.clearInterval(timer);
+        if (attempts > 40) window.clearInterval(timer);
         return;
       }
 
       const rect = anchor.getBoundingClientRect();
-      const scale = Math.max(0.74, Math.min(0.9, rect.height / 56));
+      const style = window.getComputedStyle(anchor);
+      const fontSize = Number.parseFloat(style.fontSize || '20') || 20;
+      const lineHeightValue = Number.parseFloat(style.lineHeight || '');
+      const lineHeight = Number.isFinite(lineHeightValue) ? lineHeightValue : fontSize * 1.2;
       setIntroTarget({
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-        scale,
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        fontSize,
+        lineHeight,
       });
       window.clearInterval(timer);
     }, 45);
     return () => window.clearInterval(timer);
-  }, [showLaunchIntro, launchIntroEnabled, pathname]);
+  }, [launchIntroOnChats]);
 
   useEffect(() => {
-    if (!showLaunchIntro) return;
+    if (!launchIntroOnChats) return;
     const timerId = window.setTimeout(() => {
       setShowLaunchIntro(false);
       window.dispatchEvent(new CustomEvent('alga:intro-finished'));
-    }, 1780);
+    }, 1980);
     return () => window.clearTimeout(timerId);
-  }, [showLaunchIntro]);
+  }, [launchIntroOnChats]);
 
   useEffect(() => {
     let active = true;
@@ -452,7 +487,7 @@ export default function App() {
       }}
     >
       <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
-      <LaunchIntro active={showLaunchIntro} target={introTarget} />
+      <LaunchIntro active={launchIntroOnChats} target={introTarget} />
 
       <Suspense
         fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}
