@@ -1065,9 +1065,13 @@ final class Api
         $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
         $stmt->execute([$chatId]);
         $rows = $stmt->fetchAll() ?: [];
-        $payload = array_map(function ($row) use ($userId) {
+        $ownStatus = $this->ownMessagesStatus($chatId, $userId);
+        $incomingStatus = $this->viewerHasUnreadMessages($chatId, $userId) ? 'sent' : 'read';
+
+        $payload = array_map(function ($row) use ($userId, $ownStatus, $incomingStatus) {
             $text = (string)($row['text'] ?? '');
             $isAi = $this->isAiMessageText($text);
+            $authorId = (string)($row['userId'] ?? '');
             return [
                 'id' => $row['id'],
                 'chatId' => $row['chatId'],
@@ -1075,6 +1079,7 @@ final class Api
                 'text' => $text,
                 'createdAt' => isset($row['createdAt']) ? date('c', strtotime((string)$row['createdAt'])) : date('c'),
                 'edited' => (bool)($row['edited'] ?? false),
+                'status' => $authorId === $userId ? $ownStatus : $incomingStatus,
                 'isAi' => $isAi,
                 'reactions' => $this->messageReactionSummary((string)$row['id'], $userId),
             ];
@@ -1170,6 +1175,40 @@ final class Api
         }
     }
 
+    private function viewerHasUnreadMessages(string $chatId, string $viewerId): bool
+    {
+        if ($this->hasChatParticipantColumn('unread_count')) {
+            try {
+                $stmt = $this->db()->prepare(
+                    'SELECT unread_count FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
+                );
+                $stmt->execute([$chatId, $viewerId]);
+                return ((int)$stmt->fetchColumn()) > 0;
+            } catch (\Throwable) {
+                return false;
+            }
+        }
+
+        return $this->unreadCountFromReadState($chatId, $viewerId) > 0;
+    }
+
+    private function ownMessagesStatus(string $chatId, string $authorId): string
+    {
+        if ($this->hasChatParticipantColumn('unread_count')) {
+            try {
+                $stmt = $this->db()->prepare(
+                    'SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id <> ? AND unread_count > 0 LIMIT 1'
+                );
+                $stmt->execute([$chatId, $authorId]);
+                return $stmt->fetchColumn() ? 'delivered' : 'read';
+            } catch (\Throwable) {
+                return 'delivered';
+            }
+        }
+
+        return $this->hasUnreadForPeersByReadState($chatId, $authorId) ? 'delivered' : 'read';
+    }
+
     private function chatParticipants(string $chatId, string $viewerId, string $chatType): array
     {
         if ($chatType === 'saved') {
@@ -1219,18 +1258,9 @@ final class Api
         $status = 'sent';
         $authorId = (string)$m['user_id'];
         if ($authorId === $viewerId) {
-            $status = 'delivered';
-            if ($this->hasChatParticipantColumn('unread_count')) {
-                $unread = $this->db()->prepare(
-                    'SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id <> ? AND unread_count > 0 LIMIT 1'
-                );
-                $unread->execute([$chatId, $viewerId]);
-                $status = $unread->fetchColumn() ? 'delivered' : 'read';
-            } else {
-                $status = $this->hasUnreadForPeersByReadState($chatId, $viewerId)
-                    ? 'delivered'
-                    : 'read';
-            }
+            $status = $this->ownMessagesStatus($chatId, $viewerId);
+        } else {
+            $status = $this->viewerHasUnreadMessages($chatId, $viewerId) ? 'sent' : 'read';
         }
 
         return [
@@ -1612,7 +1642,16 @@ final class Api
     {
         $configured = trim((string)Config::get('CREATOR_USER_ID', ''));
         if ($configured !== '') {
-            return $configured;
+            try {
+                $stmt = $this->db()->prepare('SELECT id FROM users WHERE LOWER(id) = LOWER(?) LIMIT 1');
+                $stmt->execute([$configured]);
+                $found = $stmt->fetchColumn();
+                if ($found) {
+                    return (string)$found;
+                }
+            } catch (\Throwable) {
+                return $configured;
+            }
         }
 
         try {

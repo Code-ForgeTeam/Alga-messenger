@@ -216,8 +216,7 @@ export default function ChatsPage() {
           const subtitle = chat.lastMessageText || rawChat.last_message_text || (chat.type === 'saved' ? 'Сообщения самому себе' : '');
           const date = formatChatDate(chat.lastMessageTime || rawChat.last_message_time || chat.updatedAt || rawChat.updated_at);
           const avatarData = getChatAvatar(chat, user?.id);
-          const unreadCount = Math.max(0, Number(rawChat.unreadCount ?? rawChat.unread_count ?? 0));
-          const hasUnread = unreadCount > 0;
+          const serverUnreadCount = Math.max(0, Number(rawChat.unreadCount ?? rawChat.unread_count ?? 0));
           const lastAuthorId = String(
             rawLastMessage?.userId ??
               rawLastMessage?.user_id ??
@@ -245,7 +244,7 @@ export default function ChatsPage() {
           );
           const ownLastMessage =
             (!!user?.id && !!inferredAuthorId && String(user.id) === inferredAuthorId) ||
-            (!!user?.id && !inferredAuthorId && outgoingFlag && !hasUnread);
+            (!!user?.id && !inferredAuthorId && outgoingFlag && serverUnreadCount === 0);
           const lastMessageStatus = String(
             rawLastMessage?.status ?? localLastMessage?.status ?? rawChat.lastMessageStatus ?? rawChat.last_message_status ?? '',
           ).toLowerCase();
@@ -263,6 +262,13 @@ export default function ChatsPage() {
               rawChat.last_message_read === true ||
               rawChat.last_message_read === 1
             );
+          const statusShowsUnread =
+            !ownLastMessage &&
+            !!subtitle &&
+            !lastMessageStatus.includes('read') &&
+            !lastMessageStatus.includes('seen');
+          const hasUnread = serverUnreadCount > 0 || statusShowsUnread;
+          const unreadCount = hasUnread ? Math.max(serverUnreadCount, statusShowsUnread ? 1 : 0) : 0;
 
           return (
             <ListItemButton
