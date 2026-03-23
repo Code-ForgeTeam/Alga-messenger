@@ -5,6 +5,12 @@ import type { PrivacyRule } from '../lib/types';
 
 type ThemeMode = 'dark' | 'light' | 'custom';
 type FontSize = 'small' | 'medium' | 'large';
+type MediaAutoDownload = {
+  photos: boolean;
+  videos: boolean;
+  files: boolean;
+  audio: boolean;
+};
 
 type PrivacySettings = {
   lastSeen: PrivacyRule;
@@ -28,6 +34,12 @@ interface SettingsState {
   bgEffect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain';
   effectIntensity: number;
   glowMode: boolean;
+  launchIntroEnabled: boolean;
+  chatCompactMode: boolean;
+  storageAutoDownload: {
+    wifi: MediaAutoDownload;
+    cellular: MediaAutoDownload;
+  };
   aiProvider: 'g4f' | 'custom';
   aiApiKey: string;
   setTheme: (theme: ThemeMode) => void;
@@ -37,6 +49,13 @@ interface SettingsState {
   setBgEffect: (effect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain') => void;
   setEffectIntensity: (value: number) => void;
   setGlowMode: (value: boolean) => void;
+  setLaunchIntroEnabled: (value: boolean) => void;
+  setChatCompactMode: (value: boolean) => void;
+  setStorageAutoDownload: (
+    network: 'wifi' | 'cellular',
+    media: keyof MediaAutoDownload,
+    value: boolean,
+  ) => void;
   setAiProvider: (value: 'g4f' | 'custom') => void;
   setAiApiKey: (value: string) => void;
   updatePrivacyRule: (key: keyof Omit<PrivacySettings, 'hideReadTime'>, patch: Partial<PrivacyRule>) => Promise<void>;
@@ -72,6 +91,22 @@ export const useSettingsStore = create<SettingsState>()(
       bgEffect: 'none',
       effectIntensity: 100,
       glowMode: false,
+      launchIntroEnabled: true,
+      chatCompactMode: false,
+      storageAutoDownload: {
+        wifi: {
+          photos: true,
+          videos: true,
+          files: true,
+          audio: true,
+        },
+        cellular: {
+          photos: true,
+          videos: false,
+          files: false,
+          audio: false,
+        },
+      },
       aiProvider: 'g4f',
       aiApiKey: '',
 
@@ -82,6 +117,18 @@ export const useSettingsStore = create<SettingsState>()(
       setBgEffect: (bgEffect) => set({ bgEffect }),
       setEffectIntensity: (effectIntensity) => set({ effectIntensity }),
       setGlowMode: (glowMode) => set({ glowMode }),
+      setLaunchIntroEnabled: (launchIntroEnabled) => set({ launchIntroEnabled }),
+      setChatCompactMode: (chatCompactMode) => set({ chatCompactMode }),
+      setStorageAutoDownload: (network, media, value) =>
+        set((state) => ({
+          storageAutoDownload: {
+            ...state.storageAutoDownload,
+            [network]: {
+              ...state.storageAutoDownload[network],
+              [media]: value,
+            },
+          },
+        })),
       setAiProvider: (aiProvider) => set({ aiProvider }),
       setAiApiKey: (aiApiKey) => set({ aiApiKey }),
 
@@ -146,6 +193,9 @@ export const useSettingsStore = create<SettingsState>()(
         bgEffect: state.bgEffect,
         effectIntensity: state.effectIntensity,
         glowMode: state.glowMode,
+        launchIntroEnabled: state.launchIntroEnabled,
+        chatCompactMode: state.chatCompactMode,
+        storageAutoDownload: state.storageAutoDownload,
         aiProvider: state.aiProvider,
         aiApiKey: state.aiApiKey,
       }),

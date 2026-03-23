@@ -79,6 +79,8 @@ final class Api
         if ($path === '/api/ai/chat' && $method === 'GET') { $this->aiChat(); }
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
+        if ($path === '/api/upload/storage-stats' && $method === 'GET') { $this->uploadStorageStats(); }
+        if ($path === '/api/upload/clear-cache' && $method === 'DELETE') { $this->clearUploadCache(); }
         if ($path === '/api/admin/users/delete' && $method === 'POST') { $this->adminDeleteUser($body); }
 
         if (preg_match('#^/api/messages/chat/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatMessages($m[1]); }
@@ -1988,6 +1990,160 @@ final class Api
         $url = $this->buildPublicUrl($relative);
 
         $this->json(['url' => $url], 201);
+    }
+
+    private function uploadStorageStats(): void
+    {
+        $this->authUserId();
+
+        $publicDir = dirname(__DIR__) . '/public';
+        $uploadsDir = $publicDir . '/uploads';
+        $photosBytes = 0;
+        $videosBytes = 0;
+        $audioBytes = 0;
+        $filesBytes = 0;
+        $cacheBytes = 0;
+
+        $photoExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif', 'avif'];
+        $videoExt = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'];
+        $audioExt = ['mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'];
+
+        foreach ($this->listFilesRecursively($uploadsDir) as $filePath) {
+            $size = filesize($filePath);
+            if (!is_int($size) || $size <= 0) {
+                continue;
+            }
+
+            $normalizedPath = strtolower(str_replace('\\', '/', $filePath));
+            if (
+                strpos($normalizedPath, '/uploads/cache/') !== false ||
+                strpos($normalizedPath, '/uploads/tmp/') !== false
+            ) {
+                $cacheBytes += $size;
+                continue;
+            }
+
+            $ext = strtolower((string)pathinfo($filePath, PATHINFO_EXTENSION));
+            if (in_array($ext, $photoExt, true)) {
+                $photosBytes += $size;
+                continue;
+            }
+            if (in_array($ext, $videoExt, true)) {
+                $videosBytes += $size;
+                continue;
+            }
+            if (in_array($ext, $audioExt, true)) {
+                $audioBytes += $size;
+                continue;
+            }
+
+            $filesBytes += $size;
+        }
+
+        $cacheBytes += $this->directorySize($publicDir . '/cache');
+        $totalBytes = $photosBytes + $videosBytes + $audioBytes + $filesBytes + $cacheBytes;
+
+        $this->json([
+            'photosBytes' => $photosBytes,
+            'videosBytes' => $videosBytes,
+            'audioBytes' => $audioBytes,
+            'filesBytes' => $filesBytes,
+            'cacheBytes' => $cacheBytes,
+            'totalBytes' => $totalBytes,
+        ]);
+    }
+
+    private function clearUploadCache(): void
+    {
+        $this->authUserId();
+
+        $publicDir = dirname(__DIR__) . '/public';
+        $cacheDirs = [
+            $publicDir . '/cache',
+            $publicDir . '/uploads/cache',
+            $publicDir . '/uploads/tmp',
+        ];
+
+        $clearedBytes = 0;
+        foreach ($cacheDirs as $dir) {
+            $clearedBytes += $this->clearDirectoryContents($dir);
+        }
+
+        $this->json([
+            'ok' => true,
+            'clearedBytes' => $clearedBytes,
+        ]);
+    }
+
+    private function listFilesRecursively(string $dir): array
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+
+        $result = [];
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS)
+            );
+            foreach ($iterator as $item) {
+                if ($item->isFile()) {
+                    $result[] = $item->getPathname();
+                }
+            }
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return $result;
+    }
+
+    private function directorySize(string $dir): int
+    {
+        $total = 0;
+        foreach ($this->listFilesRecursively($dir) as $filePath) {
+            $size = filesize($filePath);
+            if (is_int($size) && $size > 0) {
+                $total += $size;
+            }
+        }
+
+        return $total;
+    }
+
+    private function clearDirectoryContents(string $dir): int
+    {
+        if (!is_dir($dir)) {
+            return 0;
+        }
+
+        $cleared = 0;
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST
+            );
+
+            foreach ($iterator as $item) {
+                $path = $item->getPathname();
+                if ($item->isFile()) {
+                    $size = filesize($path);
+                    if (is_int($size) && $size > 0) {
+                        $cleared += $size;
+                    }
+                    @unlink($path);
+                    continue;
+                }
+
+                if ($item->isDir()) {
+                    @rmdir($path);
+                }
+            }
+        } catch (\Throwable) {
+            // keep best-effort cleanups on restricted hosting
+        }
+
+        return $cleared;
     }
 
     private function creatorUserId(): string

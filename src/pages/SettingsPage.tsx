@@ -25,7 +25,7 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -43,6 +43,41 @@ export default function SettingsPage() {
   const push = useSnackbarStore((s) => s.push);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
+  const aboutTapRef = useRef<{ count: number; timer: number | null }>({ count: 0, timer: null });
+  useEffect(
+    () => () => {
+      if (aboutTapRef.current.timer) {
+        window.clearTimeout(aboutTapRef.current.timer);
+      }
+    },
+    [],
+  );
+
+  const onAboutTap = () => {
+    const state = aboutTapRef.current;
+    state.count += 1;
+    if (state.timer) {
+      window.clearTimeout(state.timer);
+    }
+    state.timer = window.setTimeout(() => {
+      state.count = 0;
+      state.timer = null;
+    }, 800);
+
+    if (state.count >= 3) {
+      state.count = 0;
+      if (state.timer) {
+        window.clearTimeout(state.timer);
+        state.timer = null;
+      }
+      window.open('http://code-forge.ru', '_blank', 'noopener,noreferrer');
+      push({ message: 'Открываем code-forge.ru', timeout: 1800, tone: 'success' });
+      return;
+    }
+
+    push({ message: 'Alga v1.0.0', timeout: 1200 });
+  };
+
   return (
     <Box
       sx={{
@@ -55,7 +90,10 @@ export default function SettingsPage() {
     >
       <AppHeader title="Настройки" />
 
-      <Paper elevation={0} sx={{ p: 1.5, mb: 1.2, borderRadius: 3, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}>
+      <Paper
+        elevation={0}
+        sx={{ p: 1.5, mb: 1.2, borderRadius: 3, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}
+      >
         <Box sx={{ textAlign: 'center', pb: 0.5, position: 'relative' }}>
           <IconButton
             onClick={() => navigate('/edit-profile')}
@@ -70,7 +108,14 @@ export default function SettingsPage() {
           </IconButton>
           <Avatar
             src={user?.avatar}
-            sx={{ width: 94, height: 94, mx: 'auto', mb: 1, bgcolor: isDark ? '#2B5F8F' : 'primary.main', cursor: 'pointer' }}
+            sx={{
+              width: 94,
+              height: 94,
+              mx: 'auto',
+              mb: 1,
+              bgcolor: isDark ? '#2B5F8F' : 'primary.main',
+              cursor: 'pointer',
+            }}
             onClick={() => user?.id && navigate(`/user/${user.id}`)}
           >
             {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
@@ -83,7 +128,7 @@ export default function SettingsPage() {
       <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden', mb: 1.2, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}>
         <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>Основные</Typography>
         <List disablePadding>
-          <ListItemButton onClick={() => push({ message: 'Расширенные настройки чатов появятся позже.', timeout: 2200 })} sx={{ py: 1.25 }}>
+          <ListItemButton onClick={() => navigate('/chat-settings')} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><ChatBubbleOutlineRoundedIcon /></ListItemIcon>
             <ListItemText primary="Настройки чатов" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
@@ -120,7 +165,7 @@ export default function SettingsPage() {
               primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }}
             />
           </ListItemButton>
-          <ListItemButton onClick={() => push({ message: 'Alga v1.0.0', timeout: 2200 })} sx={{ py: 1.25 }}>
+          <ListItemButton onClick={onAboutTap} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><InfoOutlinedIcon /></ListItemIcon>
             <ListItemText primary="О приложении" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>

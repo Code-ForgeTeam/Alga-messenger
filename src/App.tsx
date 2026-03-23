@@ -33,6 +33,7 @@ const ChatsPage = lazy(() => import('./pages/ChatsPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const ContactsPage = lazy(() => import('./pages/ContactsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const ChatSettingsPage = lazy(() => import('./pages/ChatSettingsPage'));
 const EditProfilePage = lazy(() => import('./pages/EditProfilePage'));
 const UserProfilePage = lazy(() => import('./pages/UserProfilePage'));
 const GlobalSearchPage = lazy(() => import('./pages/GlobalSearchPage'));
@@ -107,11 +108,26 @@ function BackgroundEffects({
   );
 }
 
-function LaunchIntro({ active }: { active: boolean }) {
+function LaunchIntro({
+  active,
+  target,
+}: {
+  active: boolean;
+  target: { x: number; y: number; scale: number };
+}) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
   if (!active) return null;
+
+  const startShiftX = `calc(50vw - ${target.x}px)`;
+  const startShiftY = `calc(50vh - ${target.y}px)`;
+  const bveTargetX = target.x + 72 * target.scale;
+  const bveTargetY = target.y + 3;
+  const bveStartShiftX = `calc(50vw - ${bveTargetX}px)`;
+  const bveStartShiftY = `calc(50vh + 40px - ${bveTargetY}px)`;
+  const sparkleX = target.x + 78 * target.scale;
+  const sparkleY = target.y - 14;
 
   return (
     <Box
@@ -122,30 +138,20 @@ function LaunchIntro({ active }: { active: boolean }) {
         overflow: 'hidden',
         bgcolor: isDark ? '#061124' : '#F4FBF6',
         '@keyframes introFadeOut': {
-          '0%, 84%': { opacity: 1 },
+          '0%, 88%': { opacity: 1 },
           '100%': { opacity: 0 },
         },
-        '@keyframes logoMove': {
-          '0%': { top: '50%', left: '50%', transform: 'translate(-50%, -50%) scale(1)' },
-          '100%': {
-            top: 'calc(max(env(safe-area-inset-top), 12px) + 35px)',
-            left: 'calc(max(env(safe-area-inset-left), 12px) + 122px)',
-            transform: 'translate(-50%, -50%) scale(0.78)',
-          },
+        '@keyframes algaDock': {
+          '0%': { transform: `translate(${startShiftX}, ${startShiftY}) scale(1.02)`, opacity: 1 },
+          '70%': { transform: 'translate(0, 0) scale(0.84)', opacity: 1 },
+          '100%': { transform: `translate(0, 0) scale(${target.scale})`, opacity: 1 },
         },
-        '@keyframes bveTravel': {
-          '0%': { top: 'calc(50% + 40px)', left: '50%', opacity: 0.92, transform: 'translate(-50%, -50%) scale(1)' },
-          '72%': {
-            top: 'calc(max(env(safe-area-inset-top), 12px) + 37px)',
-            left: 'calc(max(env(safe-area-inset-left), 12px) + 184px)',
-            opacity: 0.92,
-            transform: 'translate(-50%, -50%) scale(0.86)',
-          },
+        '@keyframes bveDock': {
+          '0%': { transform: `translate(${bveStartShiftX}, ${bveStartShiftY}) scale(1)`, opacity: 0.95 },
+          '72%': { transform: 'translate(0, 0) scale(0.86)', opacity: 0.95 },
           '100%': {
-            top: 'calc(max(env(safe-area-inset-top), 12px) + 37px)',
-            left: 'calc(max(env(safe-area-inset-left), 12px) + 192px)',
+            transform: 'translate(0, 0) scale(0.78)',
             opacity: 0,
-            transform: 'translate(-50%, -50%) scale(0.78)',
           },
         },
         '@keyframes sparkle': {
@@ -153,7 +159,7 @@ function LaunchIntro({ active }: { active: boolean }) {
           '42%': { opacity: 1, transform: 'scale(1.12) rotate(24deg)' },
           '100%': { opacity: 0, transform: 'scale(0.1) rotate(52deg)' },
         },
-        animation: 'introFadeOut 1650ms ease forwards',
+        animation: 'introFadeOut 1750ms ease forwards',
       }}
     >
       <Box
@@ -169,10 +175,10 @@ function LaunchIntro({ active }: { active: boolean }) {
       <Box
         sx={{
           position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          animation: 'logoMove 1180ms cubic-bezier(0.2, 0.84, 0.24, 1) 80ms forwards',
+          top: target.y,
+          left: target.x,
+          transform: 'translate(0, 0)',
+          animation: 'algaDock 1260ms cubic-bezier(0.2, 0.84, 0.24, 1) 60ms forwards',
         }}
       >
         <Typography
@@ -183,6 +189,7 @@ function LaunchIntro({ active }: { active: boolean }) {
             letterSpacing: 0.4,
             color: isDark ? '#EAF2FF' : '#0E3C2D',
             textShadow: isDark ? '0 10px 32px rgba(74,139,223,0.42)' : '0 10px 28px rgba(31,163,91,0.35)',
+            transform: 'translate(-50%, -50%)',
           }}
         >
           Alga
@@ -192,14 +199,14 @@ function LaunchIntro({ active }: { active: boolean }) {
       <Typography
         sx={{
           position: 'absolute',
-          top: 'calc(50% + 40px)',
-          left: '50%',
+          top: bveTargetY,
+          left: bveTargetX,
           transform: 'translate(-50%, -50%)',
           fontSize: { xs: 16, sm: 18 },
           fontWeight: 700,
           letterSpacing: 1.8,
           color: isDark ? 'rgba(214,231,255,0.92)' : 'rgba(23,103,63,0.86)',
-          animation: 'bveTravel 1240ms cubic-bezier(0.24, 0.88, 0.28, 1) 120ms forwards',
+          animation: 'bveDock 1310ms cubic-bezier(0.24, 0.88, 0.28, 1) 100ms forwards',
         }}
       >
         BVE
@@ -210,12 +217,12 @@ function LaunchIntro({ active }: { active: boolean }) {
           position: 'absolute',
           width: 18,
           height: 18,
-          left: 'calc(max(env(safe-area-inset-left), 12px) + 202px)',
-          top: 'calc(max(env(safe-area-inset-top), 12px) + 21px)',
+          left: sparkleX,
+          top: sparkleY,
           borderRadius: '50%',
           background: 'radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 72%)',
           opacity: 0,
-          animation: 'sparkle 420ms ease 1220ms forwards',
+          animation: 'sparkle 420ms ease 1260ms forwards',
         }}
       />
     </Box>
@@ -235,13 +242,18 @@ export default function App() {
   const initSocketHandlers = useChatStore((s) => s.initSocketHandlers);
   const loadChats = useChatStore((s) => s.loadChats);
   const loadBanners = useNotificationStore((s) => s.loadBanners);
-  const { bgEffect, effectIntensity, glowMode } = useSettingsStore();
+  const { bgEffect, effectIntensity, glowMode, launchIntroEnabled } = useSettingsStore();
   const { pathname } = useLocation();
   const isChatRoute = pathname.startsWith('/chat/');
 
   const [apkUpdate, setApkUpdate] = useState<ApkUpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
-  const [showLaunchIntro, setShowLaunchIntro] = useState(true);
+  const [showLaunchIntro, setShowLaunchIntro] = useState(launchIntroEnabled);
+  const [introTarget, setIntroTarget] = useState<{ x: number; y: number; scale: number }>({
+    x: 136,
+    y: 48,
+    scale: 0.8,
+  });
 
   useEffect(() => {
     auth.checkAuth();
@@ -269,9 +281,42 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    const timerId = window.setTimeout(() => setShowLaunchIntro(false), 1700);
+    if (!launchIntroEnabled) {
+      setShowLaunchIntro(false);
+    }
+  }, [launchIntroEnabled]);
+
+  useEffect(() => {
+    if (!showLaunchIntro || !launchIntroEnabled) return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      const anchor = document.getElementById('alga-home-anchor');
+      attempts += 1;
+      if (!anchor) {
+        if (attempts > 24) window.clearInterval(timer);
+        return;
+      }
+
+      const rect = anchor.getBoundingClientRect();
+      const scale = Math.max(0.74, Math.min(0.9, rect.height / 56));
+      setIntroTarget({
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        scale,
+      });
+      window.clearInterval(timer);
+    }, 45);
+    return () => window.clearInterval(timer);
+  }, [showLaunchIntro, launchIntroEnabled, pathname]);
+
+  useEffect(() => {
+    if (!showLaunchIntro) return;
+    const timerId = window.setTimeout(() => {
+      setShowLaunchIntro(false);
+      window.dispatchEvent(new CustomEvent('alga:intro-finished'));
+    }, 1780);
     return () => window.clearTimeout(timerId);
-  }, []);
+  }, [showLaunchIntro]);
 
   useEffect(() => {
     let active = true;
@@ -407,7 +452,7 @@ export default function App() {
       }}
     >
       <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
-      <LaunchIntro active={showLaunchIntro} />
+      <LaunchIntro active={showLaunchIntro} target={introTarget} />
 
       <Suspense
         fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}
@@ -419,6 +464,7 @@ export default function App() {
           <Route path="/chat/:chatId" element={<Guard><ChatPage /></Guard>} />
           <Route path="/contacts" element={<Guard><ContactsPage /></Guard>} />
           <Route path="/settings" element={<Guard><SettingsPage /></Guard>} />
+          <Route path="/chat-settings" element={<Guard><ChatSettingsPage /></Guard>} />
           <Route path="/edit-profile" element={<Guard><EditProfilePage /></Guard>} />
           <Route path="/user/:userId" element={<Guard><UserProfilePage /></Guard>} />
           <Route path="/search" element={<Guard><GlobalSearchPage /></Guard>} />

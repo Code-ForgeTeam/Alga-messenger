@@ -71,6 +71,7 @@ export default function ChatsPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const setTheme = useSettingsStore((s) => s.setTheme);
+  const chatCompactMode = useSettingsStore((s) => s.chatCompactMode);
   const navigate = useNavigate();
   const { chats, messages, isLoading, loadChats } = useChatStore();
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
@@ -84,6 +85,7 @@ export default function ChatsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [waveTitleActive, setWaveTitleActive] = useState(false);
   const menuItemSx = {
     borderRadius: 2.5,
     px: 1.2,
@@ -143,6 +145,16 @@ export default function ChatsPage() {
     };
   }, [user?.id, user?.username, user?.fullName, user?.avatar, user?.bio, user?.status, user?.lastSeen, user?.isCreator, updateUser]);
 
+  useEffect(() => {
+    const onIntroFinished = () => {
+      setWaveTitleActive(true);
+      window.setTimeout(() => setWaveTitleActive(false), 1100);
+    };
+
+    window.addEventListener('alga:intro-finished', onIntroFinished as EventListener);
+    return () => window.removeEventListener('alga:intro-finished', onIntroFinished as EventListener);
+  }, []);
+
   const visible = useMemo(() => {
     const needle = q.toLowerCase().trim();
     const base = chats.filter((c) => !c.archived && c.type !== 'ai');
@@ -184,7 +196,38 @@ export default function ChatsPage() {
   return (
     <Box sx={{ p: 1.5, height: '100%', overflow: 'auto', bgcolor: isDark ? 'transparent' : '#FFFFFF' }}>
       <AppHeader
-        title="Alga"
+        title={
+          <Box
+            id="alga-home-anchor"
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
+          >
+            {['A', 'l', 'g', 'a'].map((letter, idx) => (
+              <Box
+                key={`${letter}-${idx}`}
+                component="span"
+                sx={{
+                  display: 'inline-block',
+                  fontWeight: 800,
+                  ...(waveTitleActive
+                    ? {
+                        animation: 'algaWaveIn 620ms ease forwards',
+                        animationDelay: `${idx * 85}ms`,
+                        opacity: 0.35,
+                        transform: 'translateY(6px) scale(0.94)',
+                      }
+                    : {}),
+                  '@keyframes algaWaveIn': {
+                    '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
+                    '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
+                    '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
+                  },
+                }}
+              >
+                {letter}
+              </Box>
+            ))}
+          </Box>
+        }
         showBack={false}
         leftSlot={
           <IconButton onClick={() => setDrawerOpen(true)} sx={{ bgcolor: isDark ? 'rgba(39,57,78,0.75)' : 'rgba(31,163,91,0.12)' }}>
@@ -272,7 +315,7 @@ export default function ChatsPage() {
               sx={{
                 borderBottom: '1px solid',
                 borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E6EBEF',
-                py: 1.2,
+                py: chatCompactMode ? 0.8 : 1.2,
                 borderRadius: 2.4,
                 mb: 0.45,
                 bgcolor: hasUnread
@@ -284,7 +327,15 @@ export default function ChatsPage() {
                     : '#FFFFFF',
               }}
             >
-              <Avatar src={avatarData.src} sx={{ mr: 1.5, width: 56, height: 56, bgcolor: chat.type === 'saved' ? '#D6A21B' : 'primary.main' }}>
+              <Avatar
+                src={avatarData.src}
+                sx={{
+                  mr: 1.5,
+                  width: chatCompactMode ? 48 : 56,
+                  height: chatCompactMode ? 48 : 56,
+                  bgcolor: chat.type === 'saved' ? '#D6A21B' : 'primary.main',
+                }}
+              >
                 {chat.type === 'saved' ? <BookmarkRoundedIcon sx={{ fontSize: 30 }} /> : avatarData.initial}
               </Avatar>
               <ListItemText

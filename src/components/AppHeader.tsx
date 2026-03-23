@@ -4,7 +4,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate } from 'react-router-dom';
 
 interface AppHeaderProps {
-  title: string;
+  title: ReactNode;
   showBack?: boolean;
   leftSlot?: ReactNode;
   rightSlot?: ReactNode;

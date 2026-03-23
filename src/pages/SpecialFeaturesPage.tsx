@@ -9,19 +9,45 @@ export default function SpecialFeaturesPage() {
     effectIntensity,
     bgEffect,
     glowMode,
+    launchIntroEnabled,
     setAiProvider,
     setAiApiKey,
     setEffectIntensity,
     setBgEffect,
     setGlowMode,
+    setLaunchIntroEnabled,
   } = useSettingsStore();
 
   return (
-    <Box sx={{ p: 2, height: '100%', overflowY: 'auto' }}>
+    <Box
+      sx={{
+        px: 1.5,
+        pb: 'max(env(safe-area-inset-bottom), 92px)',
+        height: '100%',
+        overflowY: 'auto',
+      }}
+    >
       <AppHeader title="Спец. возможности" />
 
       <Paper elevation={0} sx={{ p: 2, borderRadius: 3, mb: 1.5 }}>
-        <Typography fontWeight={700} sx={{ mb: 1.2 }}>AI</Typography>
+        <Typography fontWeight={700} sx={{ mb: 1.2 }}>
+          Заставка
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box>
+            <Typography fontWeight={600}>Показывать при запуске</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Анимация Alga → главное меню
+            </Typography>
+          </Box>
+          <Switch checked={launchIntroEnabled} onChange={(e) => setLaunchIntroEnabled(e.target.checked)} />
+        </Box>
+      </Paper>
+
+      <Paper elevation={0} sx={{ p: 2, borderRadius: 3, mb: 1.5 }}>
+        <Typography fontWeight={700} sx={{ mb: 1.2 }}>
+          AI
+        </Typography>
 
         <TextField
           select
@@ -50,7 +76,9 @@ export default function SpecialFeaturesPage() {
       </Paper>
 
       <Paper elevation={0} sx={{ p: 2, borderRadius: 3 }}>
-        <Typography fontWeight={700} sx={{ mb: 1.2 }}>Визуальные эффекты</Typography>
+        <Typography fontWeight={700} sx={{ mb: 1.2 }}>
+          Визуальные эффекты
+        </Typography>
 
         <TextField
           select
