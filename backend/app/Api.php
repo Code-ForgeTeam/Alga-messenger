@@ -11,6 +11,7 @@ final class Api
     private ?array $chatParticipantColumns = null;
     private ?array $userColumns = null;
     private ?bool $messageReactionTableReady = null;
+    private ?bool $chatReadStateTableReady = null;
     private ?bool $pushTokensTableReady = null;
 
     public function __construct()
@@ -112,7 +113,7 @@ final class Api
                 'username' => $u,
                 'fullName' => $n,
                 'avatar' => null,
-                'isCreator' => $this->creatorUserId() === $id,
+                'isCreator' => $this->isCreatorMatch($id),
             ],
         ]);
     }
@@ -158,7 +159,7 @@ final class Api
                 'username' => $user['username'],
                 'fullName' => $user['full_name'],
                 'avatar' => $user['avatar'] ?? null,
-                'isCreator' => $this->creatorUserId() === (string)$user['id'],
+                'isCreator' => $this->isCreatorMatch((string)$user['id']),
             ],
         ]);
     }
@@ -180,7 +181,7 @@ final class Api
             'avatar' => $u['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
-            'isCreator' => $this->creatorUserId() === (string)$u['id'],
+            'isCreator' => $this->isCreatorMatch((string)$u['id']),
         ]]);
     }
 
@@ -367,6 +368,7 @@ final class Api
         $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
         foreach ($allParticipants as $uid) {
             $insertParticipant->execute([$chatId, $uid]);
+            $this->touchChatReadState($chatId, (string)$uid);
         }
 
         $chat = $this->chatByIdForUser($chatId, $ownerId);
@@ -551,6 +553,7 @@ final class Api
                 $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
                 $insertParticipant->execute([$chatId, $userId]);
             }
+            $this->touchChatReadState($chatId, $userId);
             $existing = $chatId;
         }
 
@@ -587,6 +590,7 @@ final class Api
             );
             $incUnread->execute([$chatId, $userId]);
         }
+        $this->touchChatReadState($chatId, $userId);
 
         $updateChat = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
         $updateChat->execute([$chatId]);
@@ -623,6 +627,7 @@ final class Api
             );
             $update->execute([$chatId, $userId]);
         }
+        $this->touchChatReadState($chatId, $userId);
 
         $this->json(['ok' => true]);
     }
@@ -749,6 +754,7 @@ final class Api
                 $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
                 $insertParticipant->execute([$chatId, $userId]);
             }
+            $this->touchChatReadState($chatId, $userId);
             $existing = $chatId;
         }
 
@@ -946,7 +952,7 @@ final class Api
             'avatar' => $u['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
-            'isCreator' => $this->creatorUserId() === (string)$u['id'],
+            'isCreator' => $this->isCreatorMatch((string)$u['id']),
         ]);
     }
 
@@ -1023,7 +1029,7 @@ final class Api
             'avatar' => $row['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
-            'isCreator' => $this->creatorUserId() === (string)$row['id'],
+            'isCreator' => $this->isCreatorMatch((string)$row['id']),
         ]);
     }
 
@@ -1047,7 +1053,7 @@ final class Api
             'avatar' => $row['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
-            'isCreator' => $this->creatorUserId() === (string)$row['id'],
+            'isCreator' => $this->isCreatorMatch((string)$row['id']),
         ]);
     }
 
@@ -1118,7 +1124,7 @@ final class Api
             'pinned' => (bool)$row['pinned'],
             'muted' => (bool)$row['muted'],
             'blocked' => (bool)$row['blocked'],
-            'unreadCount' => (int)$row['unread_count'],
+            'unreadCount' => $this->resolveUnreadCount((string)$row['id'], $viewerId, $row),
             'lastMessage' => $last,
             'lastMessageText' => $last['text'] ?? '',
             'lastMessageTime' => $last['createdAt'] ?? null,
@@ -1126,6 +1132,42 @@ final class Api
             'lastMessageStatus' => $last['status'] ?? null,
             'updatedAt' => isset($row['updated_at']) ? date('c', strtotime((string)$row['updated_at'])) : null,
         ];
+    }
+
+    private function resolveUnreadCount(string $chatId, string $viewerId, array $row): int
+    {
+        if ($this->hasChatParticipantColumn('unread_count') && array_key_exists('unread_count', $row)) {
+            return max(0, (int)$row['unread_count']);
+        }
+
+        return $this->unreadCountFromReadState($chatId, $viewerId);
+    }
+
+    private function unreadCountFromReadState(string $chatId, string $userId): int
+    {
+        if (!$this->ensureChatReadStateTable()) {
+            return 0;
+        }
+
+        try {
+            $stateStmt = $this->db()->prepare(
+                'SELECT last_read_at FROM chat_read_state WHERE chat_id = ? AND user_id = ? LIMIT 1'
+            );
+            $stateStmt->execute([$chatId, $userId]);
+            $lastReadAt = $stateStmt->fetchColumn();
+            if (!$lastReadAt) {
+                $this->touchChatReadState($chatId, $userId);
+                return 0;
+            }
+
+            $countStmt = $this->db()->prepare(
+                'SELECT COUNT(*) FROM messages WHERE chat_id = ? AND user_id <> ? AND created_at > ?'
+            );
+            $countStmt->execute([$chatId, $userId, (string)$lastReadAt]);
+            return max(0, (int)$countStmt->fetchColumn());
+        } catch (\Throwable) {
+            return 0;
+        }
     }
 
     private function chatParticipants(string $chatId, string $viewerId, string $chatType): array
@@ -1184,6 +1226,10 @@ final class Api
                 );
                 $unread->execute([$chatId, $viewerId]);
                 $status = $unread->fetchColumn() ? 'delivered' : 'read';
+            } else {
+                $status = $this->hasUnreadForPeersByReadState($chatId, $viewerId)
+                    ? 'delivered'
+                    : 'read';
             }
         }
 
@@ -1212,6 +1258,86 @@ final class Api
         $stmt->execute([$messageId, $userId]);
         $row = $stmt->fetch();
         return $row ?: null;
+    }
+
+    private function hasUnreadForPeersByReadState(string $chatId, string $authorId): bool
+    {
+        if (!$this->ensureChatReadStateTable()) {
+            return false;
+        }
+
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT 1
+                 FROM chat_participants cp
+                 WHERE cp.chat_id = ? AND cp.user_id <> ?
+                   AND EXISTS (
+                     SELECT 1
+                     FROM messages m
+                     WHERE m.chat_id = cp.chat_id
+                       AND m.user_id = ?
+                       AND m.created_at > COALESCE(
+                         (SELECT rs.last_read_at
+                          FROM chat_read_state rs
+                          WHERE rs.chat_id = cp.chat_id AND rs.user_id = cp.user_id
+                          LIMIT 1),
+                         "1970-01-01 00:00:00"
+                       )
+                   )
+                 LIMIT 1'
+            );
+            $stmt->execute([$chatId, $authorId, $authorId]);
+            return (bool)$stmt->fetchColumn();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function touchChatReadState(string $chatId, string $userId): void
+    {
+        if (!$this->ensureChatReadStateTable()) {
+            return;
+        }
+
+        try {
+            $stmt = $this->db()->prepare(
+                'INSERT INTO chat_read_state (chat_id, user_id, last_read_at)
+                 VALUES (?, ?, CURRENT_TIMESTAMP)
+                 ON DUPLICATE KEY UPDATE
+                   last_read_at = CURRENT_TIMESTAMP,
+                   updated_at = CURRENT_TIMESTAMP'
+            );
+            $stmt->execute([$chatId, $userId]);
+        } catch (\Throwable) {
+            // ignore read state write errors
+        }
+    }
+
+    private function ensureChatReadStateTable(): bool
+    {
+        if ($this->chatReadStateTableReady !== null) {
+            return $this->chatReadStateTableReady;
+        }
+
+        try {
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS chat_read_state (
+                    chat_id CHAR(36) NOT NULL,
+                    user_id CHAR(36) NOT NULL,
+                    last_read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (chat_id, user_id),
+                    KEY idx_chat_read_state_user (user_id),
+                    CONSTRAINT fk_read_state_chat FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_read_state_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->chatReadStateTableReady = true;
+        } catch (\Throwable) {
+            $this->chatReadStateTableReady = false;
+        }
+
+        return $this->chatReadStateTableReady;
     }
 
     private function ensureMessageReactionsTable(): bool
@@ -1490,18 +1616,42 @@ final class Api
         }
 
         try {
-            $stmt = $this->db()->query('SELECT id FROM users ORDER BY created_at ASC LIMIT 1');
+            if ($this->hasUserColumn('created_at')) {
+                $stmt = $this->db()->query('SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1');
+                $first = $stmt->fetchColumn();
+                if ($first) {
+                    return (string)$first;
+                }
+            }
+
+            $stmt = $this->db()->query('SELECT id FROM users ORDER BY id ASC LIMIT 1');
             $first = $stmt->fetchColumn();
             return $first ? (string)$first : '';
         } catch (\Throwable) {
-            return '';
+            try {
+                $stmt = $this->db()->query('SELECT id FROM users LIMIT 1');
+                $first = $stmt->fetchColumn();
+                return $first ? (string)$first : '';
+            } catch (\Throwable) {
+                return '';
+            }
         }
+    }
+
+    private function isCreatorMatch(string $userId): bool
+    {
+        $creatorId = trim($this->creatorUserId());
+        $candidate = trim($userId);
+        if ($creatorId === '' || $candidate === '') {
+            return false;
+        }
+
+        return strtolower($creatorId) === strtolower($candidate);
     }
 
     private function assertCreator(string $userId): void
     {
-        $creatorId = $this->creatorUserId();
-        if ($creatorId === '' || $creatorId !== $userId) {
+        if (!$this->isCreatorMatch($userId)) {
             $this->json(['error' => 'Forbidden'], 403);
         }
     }
@@ -1702,15 +1852,10 @@ final class Api
                 }
             }
         } catch (\Throwable) {
-            // Some shared hosts restrict SHOW COLUMNS; assume modern schema to keep UX features working.
+            // If SHOW COLUMNS is restricted, keep only guaranteed core fields.
             $columns = [
                 'chat_id' => true,
                 'user_id' => true,
-                'archived' => true,
-                'pinned' => true,
-                'muted' => true,
-                'blocked' => true,
-                'unread_count' => true,
             ];
         }
 

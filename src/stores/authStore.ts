@@ -4,6 +4,7 @@ import { connectSocket, disconnectSocket } from '../lib/socket';
 import type { User } from '../lib/types';
 import { useChatStore } from './chatStore';
 import { useContactsStore } from './contactsStore';
+import { useAdminStore } from './adminStore';
 
 interface AuthState {
   user: User | null;
@@ -142,9 +143,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       connectSocket(token);
       set({ user: normalizedUser, token, isAuthenticated: true, banned: false, banReason: '', error: null });
+      useAdminStore.getState().setAdminAccess(Boolean(normalizedUser.isCreator), normalizedUser.id);
     } catch (e: any) {
       if (e.response?.status === 403 && e.response?.data?.error === 'banned') {
         localStorage.removeItem('token');
+        useAdminStore.getState().reset();
         set({
           user: null,
           token: null,
@@ -154,6 +157,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         });
       } else {
         localStorage.removeItem('token');
+        useAdminStore.getState().reset();
         set({ user: null, token: null, isAuthenticated: false });
       }
     }
@@ -177,8 +181,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       connectSocket(token);
       set({ user, token, isAuthenticated: true, isLoading: false, error: null });
+      useAdminStore.getState().setAdminAccess(Boolean(user.isCreator), user.id);
     } catch (e: any) {
       localStorage.removeItem('token');
+      useAdminStore.getState().reset();
       if (e.response?.status === 403 && e.response?.data?.error === 'banned') {
         set({
           isLoading: false,
@@ -214,8 +220,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       connectSocket(token);
       set({ user, token, isAuthenticated: true, isLoading: false, error: null });
+      useAdminStore.getState().setAdminAccess(Boolean(user.isCreator), user.id);
     } catch (e: any) {
       localStorage.removeItem('token');
+      useAdminStore.getState().reset();
       set({
         isLoading: false,
         error: mapAuthError(e.response?.data, 'Ошибка регистрации'),
@@ -229,6 +237,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     disconnectSocket();
     useChatStore.getState().reset();
     useContactsStore.getState().reset();
+    useAdminStore.getState().reset();
     set({ user: null, token: null, isAuthenticated: false, error: null, banned: false, banReason: '' });
   },
 
@@ -244,6 +253,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       set({ user, isLoading: false, error: null });
+      useAdminStore.getState().setAdminAccess(Boolean(user.isCreator), user.id);
     } catch (e: any) {
       set({ isLoading: false, error: e.response?.data?.error ?? 'Profile update failed' });
       throw e;

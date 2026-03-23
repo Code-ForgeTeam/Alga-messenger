@@ -44,6 +44,22 @@ When configured, backend sends real push notifications through Firebase Cloud Me
 
 Run SQL from `sql/beget_init.sql` in your MySQL console.
 
+If your database already existed before, run this patch manually once:
+
+```sql
+ALTER TABLE chat_participants ADD COLUMN unread_count INT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS chat_read_state (
+  chat_id CHAR(36) NOT NULL,
+  user_id CHAR(36) NOT NULL,
+  last_read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (chat_id, user_id),
+  INDEX idx_chat_read_state_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+If MySQL returns `Duplicate column name 'unread_count'`, just continue to the next command.
+
 ## 3) Run with PHP built-in server (for test)
 
 ```bash

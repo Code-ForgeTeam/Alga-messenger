@@ -8,6 +8,74 @@ import { useNotificationStore } from './notificationStore';
 
 const statusCache = new Map<string, Pick<User, 'status' | 'lastSeen'>>();
 
+type ChatRecord = Chat & Record<string, any>;
+
+const normalizeUnread = (value: unknown): number => {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.max(0, Math.trunc(parsed));
+};
+
+const readUnreadCount = (chat?: ChatRecord | null): number =>
+  normalizeUnread(chat?.unreadCount ?? chat?.unread_count ?? 0);
+
+const readLastMessageMeta = (chat?: ChatRecord | null): { id: string; authorId: string; createdAt: string } => {
+  const rawLast = (chat?.lastMessage ?? chat?.last_message ?? {}) as Record<string, any>;
+  const id = String(rawLast.id ?? chat?.lastMessageId ?? chat?.last_message_id ?? '').trim();
+  const authorId = String(
+    rawLast.userId ??
+      rawLast.user_id ??
+      rawLast.senderId ??
+      rawLast.sender_id ??
+      chat?.lastMessageUserId ??
+      chat?.last_message_user_id ??
+      '',
+  ).trim();
+  const createdAt = String(
+    rawLast.createdAt ??
+      rawLast.created_at ??
+      chat?.lastMessageTime ??
+      chat?.last_message_time ??
+      chat?.updatedAt ??
+      chat?.updated_at ??
+      '',
+  ).trim();
+  return { id, authorId, createdAt };
+};
+
+const didLastMessageChange = (previous: ReturnType<typeof readLastMessageMeta>, next: ReturnType<typeof readLastMessageMeta>): boolean =>
+  (!!next.id && next.id !== previous.id) || (!!next.createdAt && next.createdAt !== previous.createdAt);
+
+const resolveUnreadCount = ({
+  nextChat,
+  previousChat,
+  viewerId,
+  currentChatId,
+}: {
+  nextChat: ChatRecord;
+  previousChat?: ChatRecord;
+  viewerId?: string;
+  currentChatId?: string | null;
+}): number => {
+  if (currentChatId && currentChatId === nextChat.id) return 0;
+
+  const fromServer = readUnreadCount(nextChat);
+  if (fromServer > 0) return fromServer;
+
+  if (!previousChat) return 0;
+
+  const previousUnread = readUnreadCount(previousChat);
+  const prevMeta = readLastMessageMeta(previousChat);
+  const nextMeta = readLastMessageMeta(nextChat);
+
+  if (didLastMessageChange(prevMeta, nextMeta)) {
+    const incoming = !!viewerId && !!nextMeta.authorId && nextMeta.authorId !== viewerId;
+    if (incoming) return previousUnread > 0 ? previousUnread + 1 : 1;
+  }
+
+  return previousUnread;
+};
+
 interface ChatState {
   chats: Chat[];
   messages: Record<string, Message[]>;
@@ -99,12 +167,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const myId = useAuthStore.getState().user?.id;
-      useContactsStore.getState().hydrateFromChats(next, myId);
+      const currentChatId = get().currentChatId;
+      const previousById = new Map(
+        (get().chats || []).map((chat) => [chat.id, chat as ChatRecord]),
+      );
+      const merged = next.map((chat) => {
+        const record = chat as ChatRecord;
+        const previousChat = previousById.get(chat.id);
+        const unreadCount = resolveUnreadCount({
+          nextChat: record,
+          previousChat,
+          viewerId: myId,
+          currentChatId,
+        });
+
+        if (readUnreadCount(record) === unreadCount) {
+          return chat;
+        }
+        return { ...chat, unreadCount };
+      });
+
+      useContactsStore.getState().hydrateFromChats(merged, myId);
 
       if (silent) {
-        set({ chats: next });
+        set({ chats: merged });
       } else {
-        set({ chats: next, isLoading: false });
+        set({ chats: merged, isLoading: false });
       }
     } catch {
       if (!silent) set({ isLoading: false });

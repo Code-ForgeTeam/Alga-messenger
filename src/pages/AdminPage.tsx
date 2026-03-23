@@ -18,6 +18,7 @@ import { AppHeader } from '../components/AppHeader';
 import { adminApi } from '../lib/api';
 import { isCreatorUser } from '../lib/creator';
 import { useAuthStore } from '../stores/authStore';
+import { useAdminStore } from '../stores/adminStore';
 import { useChatStore } from '../stores/chatStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
 
@@ -52,6 +53,8 @@ export default function AdminPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const me = useAuthStore((s) => s.user);
+  const canUseAdminTools = useAdminStore((s) => s.canUseAdminTools);
+  const setAdminAccess = useAdminStore((s) => s.setAdminAccess);
   const loadChats = useChatStore((s) => s.loadChats);
   const pushSnackbar = useSnackbarStore((s) => s.push);
 
@@ -62,15 +65,20 @@ export default function AdminPage() {
   const [targetUsername, setTargetUsername] = useState('');
   const [confirmDeleteUserOpen, setConfirmDeleteUserOpen] = useState(false);
 
-  const isCreator = isCreatorUser(me);
+  const isCreator = isCreatorUser(me) || canUseAdminTools;
 
   const refreshOverview = async () => {
-    if (!isCreator) return;
+    if (!me?.id) return;
     setIsLoading(true);
     try {
       const data = await adminApi.getOverview();
+      setAdminAccess(true, me.id);
       setOverview(data || {});
     } catch (error: any) {
+      if (error?.response?.status === 403) {
+        setAdminAccess(false, me.id);
+        return;
+      }
       pushSnackbar({ message: error?.response?.data?.error || 'Не удалось загрузить данные админ-панели', timeout: 2600 });
     } finally {
       setIsLoading(false);
@@ -78,8 +86,9 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
+    if (!me?.id) return;
     void refreshOverview();
-  }, [isCreator]);
+  }, [me?.id]);
 
   const runAction = async () => {
     if (!action) return;

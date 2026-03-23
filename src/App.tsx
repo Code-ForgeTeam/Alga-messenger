@@ -24,6 +24,7 @@ import {
   type ApkUpdateInfo,
 } from './lib/updateChecker';
 import { useAuthStore } from './stores/authStore';
+import { useAdminStore } from './stores/adminStore';
 import { useChatStore } from './stores/chatStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -228,6 +229,9 @@ function Guard({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const auth = useAuthStore();
+  const checkAdminAccess = useAdminStore((s) => s.checkAdminAccess);
+  const setAdminAccess = useAdminStore((s) => s.setAdminAccess);
+  const resetAdminAccess = useAdminStore((s) => s.reset);
   const initSocketHandlers = useChatStore((s) => s.initSocketHandlers);
   const loadChats = useChatStore((s) => s.loadChats);
   const loadBanners = useNotificationStore((s) => s.loadBanners);
@@ -242,6 +246,27 @@ export default function App() {
   useEffect(() => {
     auth.checkAuth();
   }, []);
+
+  useEffect(() => {
+    const userId = auth.user?.id;
+    if (!auth.isAuthenticated || !userId) {
+      resetAdminAccess();
+      return;
+    }
+    if (auth.user?.isCreator) {
+      setAdminAccess(true, userId);
+      return;
+    }
+
+    checkAdminAccess(userId).catch(() => null);
+  }, [
+    auth.isAuthenticated,
+    auth.user?.id,
+    auth.user?.isCreator,
+    checkAdminAccess,
+    resetAdminAccess,
+    setAdminAccess,
+  ]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => setShowLaunchIntro(false), 1700);

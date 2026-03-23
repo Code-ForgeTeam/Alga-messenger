@@ -42,6 +42,17 @@ CREATE TABLE IF NOT EXISTS chat_participants (
   CONSTRAINT fk_cp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS chat_read_state (
+  chat_id       CHAR(36) NOT NULL,
+  user_id       CHAR(36) NOT NULL,
+  last_read_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (chat_id, user_id),
+  INDEX idx_chat_read_state_user (user_id),
+  CONSTRAINT fk_chat_read_state_chat FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+  CONSTRAINT fk_chat_read_state_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS messages (
   id            CHAR(36) PRIMARY KEY,
   chat_id       CHAR(36) NOT NULL,

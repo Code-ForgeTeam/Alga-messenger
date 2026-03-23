@@ -41,6 +41,7 @@ import { AppHeader } from '../components/AppHeader';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { useTheme } from '@mui/material/styles';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAdminStore } from '../stores/adminStore';
 import { userApi } from '../lib/api';
 import type { Chat } from '../lib/types';
 import { isCreatorUser } from '../lib/creator';
@@ -74,7 +75,8 @@ export default function ChatsPage() {
   const { chats, messages, isLoading, loadChats } = useChatStore();
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
   const user = useAuthStore((s) => s.user);
-  const isCreator = isCreatorUser(user);
+  const canUseAdminTools = useAdminStore((s) => s.canUseAdminTools);
+  const isCreator = isCreatorUser(user) || canUseAdminTools;
   const updateUser = useAuthStore((s) => s.updateUser);
   const logout = useAuthStore((s) => s.logout);
   const pushSnackbar = useSnackbarStore((s) => s.push);

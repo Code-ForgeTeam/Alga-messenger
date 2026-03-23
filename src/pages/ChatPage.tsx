@@ -17,6 +17,8 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
+import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { messageApi, uploadApi, userApi } from '../lib/api';
@@ -102,6 +104,13 @@ export default function ChatPage() {
   }, [chatId, loadMessages]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
+  useEffect(() => {
+    if (!chatId || !me?.id || !chatMessages.length) return;
+    const last = chatMessages[chatMessages.length - 1];
+    if (!last || String(last.userId) === String(me.id)) return;
+    markAsRead(chatId).catch(() => null);
+  }, [chatId, chatMessages, me?.id, markAsRead]);
+
   const reactions = useMemo(() => {
     const map: Record<string, { mine?: string; top?: string; total: number }> = {};
     for (const item of chatMessages) {
@@ -461,9 +470,18 @@ export default function ChatPage() {
                   <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'none', WebkitUserSelect: 'none' }}>
                     {renderMessageText(m.text)}
                   </Typography>
-                  <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
-                    {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                  </Typography>
+                  <Box sx={{ mt: 0.2, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.35 }}>
+                    <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
+                      {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                    </Typography>
+                    {m.userId === me?.id && (
+                      m.status === 'read' ? (
+                        <DoneAllIcon sx={{ fontSize: 14, color: isDark ? '#79B8FF' : '#12864A' }} />
+                      ) : m.status === 'error' || m.status === 'sending' ? null : (
+                        <DoneRoundedIcon sx={{ fontSize: 14, color: isDark ? '#AFC1D9' : '#6F7D8A' }} />
+                      )
+                    )}
+                  </Box>
                   {!!reactionGlyph && (
                     <Box
                       sx={{
