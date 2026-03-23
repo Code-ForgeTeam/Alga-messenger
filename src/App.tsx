@@ -126,6 +126,13 @@ const DEFAULT_INTRO_TARGET: IntroTarget = {
   lineHeight: 24,
 };
 
+const INTRO_HOLD_MS = 3000;
+const INTRO_FLY_MS = 1000;
+const INTRO_FADE_MS = 380;
+const INTRO_TOTAL_MS = INTRO_HOLD_MS + INTRO_FLY_MS + INTRO_FADE_MS;
+const INTRO_HOLD_PCT = (INTRO_HOLD_MS / INTRO_TOTAL_MS) * 100;
+const INTRO_FLY_END_PCT = ((INTRO_HOLD_MS + INTRO_FLY_MS) / INTRO_TOTAL_MS) * 100;
+
 function LaunchIntro({
   active,
   target,
@@ -138,16 +145,17 @@ function LaunchIntro({
 
   if (!active) return null;
 
+  const startScale = 2.55;
+  const finalOffsetX = -8;
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 390;
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 844;
-  const startLeft = viewportWidth / 2 - target.width / 2;
-  const startTop = viewportHeight / 2 - target.height / 2;
-  const shiftX = startLeft - target.left;
-  const shiftY = startTop - target.top;
+  const shiftX = viewportWidth / 2 - target.left - (target.width * startScale) / 2;
+  const shiftY = viewportHeight / 2 - target.top - (target.height * startScale) / 2;
   const bveBaseX = viewportWidth / 2;
-  const bveBaseY = viewportHeight / 2 + Math.max(28, target.height * 1.45);
+  const bveBaseY = viewportHeight / 2 + Math.max(26, target.height * 1.6);
   const sparkleX = target.left + target.width - 2;
   const sparkleY = target.top - 6;
+  const sparkleDelay = INTRO_HOLD_MS + INTRO_FLY_MS - 120;
 
   return (
     <Box
@@ -158,32 +166,46 @@ function LaunchIntro({
         overflow: 'hidden',
         bgcolor: isDark ? '#061124' : '#F4FBF6',
         '@keyframes introFadeOut': {
-          '0%, 92%': { opacity: 1 },
+          '0%, 91%': { opacity: 1 },
           '100%': { opacity: 0 },
         },
         '@keyframes algaExactDock': {
-          '0%, 22%': { transform: `translate(${shiftX}px, ${shiftY}px) scale(2.56)`, opacity: 1 },
-          '72%': { transform: 'translate(0px, 0px) scale(1.04)', opacity: 1 },
-          '100%': { transform: 'translate(0px, 0px) scale(1)', opacity: 1 },
+          [`0%, ${INTRO_HOLD_PCT}%`]: {
+            transform: `translate(${shiftX}px, ${shiftY}px) scale(${startScale})`,
+            opacity: 1,
+          },
+          [`${INTRO_FLY_END_PCT}%`]: {
+            transform: `translate(${finalOffsetX}px, 0px) scale(1.04)`,
+            opacity: 1,
+          },
+          '100%': {
+            transform: `translate(${finalOffsetX}px, 0px) scale(1)`,
+            opacity: 1,
+          },
         },
-        '@keyframes bveDustB': {
-          '0%, 26%': { opacity: 0.96, transform: 'translate(-50%, -50%) scale(1)', filter: 'blur(0px)' },
-          '100%': { opacity: 0, transform: 'translate(-180%, -205%) scale(0.08)', filter: 'blur(5px)' },
-        },
-        '@keyframes bveDustV': {
-          '0%, 26%': { opacity: 0.96, transform: 'translate(-50%, -50%) scale(1)', filter: 'blur(0px)' },
-          '100%': { opacity: 0, transform: 'translate(-50%, -260%) scale(0.08)', filter: 'blur(5px)' },
-        },
-        '@keyframes bveDustE': {
-          '0%, 26%': { opacity: 0.96, transform: 'translate(-50%, -50%) scale(1)', filter: 'blur(0px)' },
-          '100%': { opacity: 0, transform: 'translate(80%, -195%) scale(0.08)', filter: 'blur(5px)' },
+        '@keyframes bveVanishCenter': {
+          [`0%, ${INTRO_HOLD_PCT}%`]: {
+            opacity: 0.98,
+            transform: 'translate(-50%, -50%) scale(1)',
+            filter: 'blur(0px)',
+          },
+          [`${Math.min(INTRO_HOLD_PCT + 4, 90)}%`]: {
+            opacity: 0,
+            transform: 'translate(-50%, -50%) scale(0.72)',
+            filter: 'blur(4px)',
+          },
+          '100%': {
+            opacity: 0,
+            transform: 'translate(-50%, -50%) scale(0.72)',
+            filter: 'blur(4px)',
+          },
         },
         '@keyframes sparkle': {
           '0%': { opacity: 0, transform: 'scale(0.2) rotate(0deg)' },
           '42%': { opacity: 1, transform: 'scale(1.12) rotate(24deg)' },
           '100%': { opacity: 0, transform: 'scale(0.1) rotate(52deg)' },
         },
-        animation: 'introFadeOut 1950ms ease forwards',
+        animation: `introFadeOut ${INTRO_TOTAL_MS}ms ease forwards`,
       }}
     >
       <Box
@@ -202,7 +224,7 @@ function LaunchIntro({
           top: target.top,
           left: target.left,
           transform: 'translate(0, 0)',
-          animation: 'algaExactDock 1460ms cubic-bezier(0.2, 0.84, 0.24, 1) 70ms forwards',
+          animation: `algaExactDock ${INTRO_TOTAL_MS}ms cubic-bezier(0.2, 0.84, 0.24, 1) forwards`,
         }}
       >
         <Typography
@@ -232,12 +254,8 @@ function LaunchIntro({
             fontWeight: 700,
             letterSpacing: 1.4,
             color: isDark ? 'rgba(214,231,255,0.94)' : 'rgba(23,103,63,0.88)',
-            animation:
-              idx === 0
-                ? 'bveDustB 700ms cubic-bezier(0.3, 0.8, 0.28, 1) 120ms forwards'
-                : idx === 1
-                  ? 'bveDustV 700ms cubic-bezier(0.3, 0.8, 0.28, 1) 120ms forwards'
-                  : 'bveDustE 700ms cubic-bezier(0.3, 0.8, 0.28, 1) 120ms forwards',
+            ml: idx === 0 ? -1.2 : idx === 1 ? 0 : 1.2,
+            animation: `bveVanishCenter ${INTRO_TOTAL_MS}ms ease forwards`,
           }}
         >
           {letter}
@@ -254,7 +272,7 @@ function LaunchIntro({
           borderRadius: '50%',
           background: 'radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 72%)',
           opacity: 0,
-          animation: 'sparkle 420ms ease 1490ms forwards',
+          animation: `sparkle 420ms ease ${sparkleDelay}ms forwards`,
         }}
       />
     </Box>
@@ -349,7 +367,7 @@ export default function App() {
     const timerId = window.setTimeout(() => {
       setShowLaunchIntro(false);
       window.dispatchEvent(new CustomEvent('alga:intro-finished'));
-    }, 1980);
+    }, INTRO_TOTAL_MS + 20);
     return () => window.clearTimeout(timerId);
   }, [launchIntroOnChats]);
 
