@@ -4,6 +4,7 @@ export interface SnackbarItem {
   id: string;
   message: string;
   timeout: number;
+  tone?: 'default' | 'success' | 'error';
   onUndo?: () => void;
   onExpire?: () => void;
 }

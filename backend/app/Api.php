@@ -119,6 +119,7 @@ final class Api
                 'username' => $u,
                 'fullName' => $n,
                 'avatar' => null,
+                'birthday' => null,
                 'isCreator' => $this->isCreatorMatch($id),
             ],
         ]);
@@ -131,6 +132,9 @@ final class Api
 
         try {
             $select = 'SELECT id, username, full_name, avatar, password_hash';
+            if ($this->hasUserColumn('birth_date')) {
+                $select .= ', birth_date';
+            }
             if ($this->hasUserColumn('is_banned')) {
                 $select .= ', is_banned';
             }
@@ -165,6 +169,7 @@ final class Api
                 'username' => $user['username'],
                 'fullName' => $user['full_name'],
                 'avatar' => $user['avatar'] ?? null,
+                'birthday' => $user['birth_date'] ?? null,
                 'isCreator' => $this->isCreatorMatch((string)$user['id']),
             ],
         ]);
@@ -173,7 +178,13 @@ final class Api
     private function verify(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, avatar, status, last_seen FROM users WHERE id = ? LIMIT 1');
+        $this->ensureUserProfileColumns();
+        $select = 'SELECT id, username, full_name, avatar, status, last_seen';
+        if ($this->hasUserColumn('birth_date')) {
+            $select .= ', birth_date';
+        }
+        $select .= ' FROM users WHERE id = ? LIMIT 1';
+        $stmt = $this->db()->prepare($select);
         $stmt->execute([$userId]);
         $u = $stmt->fetch();
         if (!$u) $this->json(['error' => 'Unauthorized'], 401);
@@ -187,6 +198,7 @@ final class Api
             'avatar' => $u['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
+            'birthday' => $u['birth_date'] ?? null,
             'isCreator' => $this->isCreatorMatch((string)$u['id']),
         ]]);
     }
@@ -1135,7 +1147,13 @@ final class Api
     private function me(): void
     {
         $userId = $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar, status, last_seen FROM users WHERE id = ? LIMIT 1');
+        $this->ensureUserProfileColumns();
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        if ($this->hasUserColumn('birth_date')) {
+            $select .= ', birth_date';
+        }
+        $select .= ' FROM users WHERE id = ? LIMIT 1';
+        $stmt = $this->db()->prepare($select);
         $stmt->execute([$userId]);
         $u = $stmt->fetch();
         if (!$u) {
@@ -1152,6 +1170,7 @@ final class Api
             'avatar' => $u['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
+            'birthday' => $u['birth_date'] ?? null,
             'isCreator' => $this->isCreatorMatch((string)$u['id']),
         ]);
     }
@@ -1159,9 +1178,18 @@ final class Api
     private function updateMe(array $body): void
     {
         $userId = $this->authUserId();
+        $this->ensureUserProfileColumns();
         $fullName = trim((string)($body['fullName'] ?? ''));
         $bio = trim((string)($body['bio'] ?? ''));
         $avatar = trim((string)($body['avatar'] ?? ''));
+        $birthdayRaw = trim((string)($body['birthday'] ?? $body['birthDate'] ?? $body['birth_date'] ?? ''));
+        $birthDate = null;
+        if ($birthdayRaw !== '') {
+            $birthDate = $this->normalizeBirthDateValue($birthdayRaw);
+            if ($birthDate === null) {
+                $this->json(['error' => 'Invalid birthday format'], 400);
+            }
+        }
 
         if ($fullName === '') {
             $stmt = $this->db()->prepare('SELECT full_name FROM users WHERE id = ? LIMIT 1');
@@ -1170,21 +1198,32 @@ final class Api
             $fullName = (string)($row['full_name'] ?? '');
         }
 
-        $stmt = $this->db()->prepare('UPDATE users SET full_name = ?, bio = ?, avatar = ? WHERE id = ?');
-        $stmt->execute([$fullName, $bio === '' ? null : $bio, $avatar === '' ? null : $avatar, $userId]);
+        if ($this->hasUserColumn('birth_date')) {
+            $stmt = $this->db()->prepare('UPDATE users SET full_name = ?, bio = ?, avatar = ?, birth_date = ? WHERE id = ?');
+            $stmt->execute([$fullName, $bio === '' ? null : $bio, $avatar === '' ? null : $avatar, $birthDate, $userId]);
+        } else {
+            $stmt = $this->db()->prepare('UPDATE users SET full_name = ?, bio = ?, avatar = ? WHERE id = ?');
+            $stmt->execute([$fullName, $bio === '' ? null : $bio, $avatar === '' ? null : $avatar, $userId]);
+        }
         $this->me();
     }
 
     private function searchUsers(): void
     {
         $this->authUserId();
+        $this->ensureUserProfileColumns();
         $q = trim((string)($_GET['q'] ?? ''));
         if ($q === '' || strlen($q) < 2) {
             $this->json([]);
         }
 
         $like = '%' . $q . '%';
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar, status, last_seen FROM users WHERE username LIKE ? OR full_name LIKE ? ORDER BY updated_at DESC LIMIT 30');
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        if ($this->hasUserColumn('birth_date')) {
+            $select .= ', birth_date';
+        }
+        $select .= ' FROM users WHERE username LIKE ? OR full_name LIKE ? ORDER BY updated_at DESC LIMIT 30';
+        $stmt = $this->db()->prepare($select);
         $stmt->execute([$like, $like]);
         $rows = $stmt->fetchAll();
         $result = array_map(function ($u) {
@@ -1198,6 +1237,7 @@ final class Api
                 'avatar' => $u['avatar'] ?? null,
                 'status' => $presence['status'],
                 'lastSeen' => $presence['lastSeen'],
+                'birthday' => $u['birth_date'] ?? null,
             ];
         }, $rows ?: []);
 
@@ -1207,12 +1247,18 @@ final class Api
     private function userByUsername(string $username): void
     {
         $this->authUserId();
+        $this->ensureUserProfileColumns();
         $u = trim($username);
         if ($u === '') {
             $this->json(['error' => 'Not found'], 404);
         }
 
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar, status, last_seen FROM users WHERE username = ? LIMIT 1');
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        if ($this->hasUserColumn('birth_date')) {
+            $select .= ', birth_date';
+        }
+        $select .= ' FROM users WHERE username = ? LIMIT 1';
+        $stmt = $this->db()->prepare($select);
         $stmt->execute([$u]);
         $row = $stmt->fetch();
         if (!$row) {
@@ -1229,6 +1275,7 @@ final class Api
             'avatar' => $row['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
+            'birthday' => $row['birth_date'] ?? null,
             'isCreator' => $this->isCreatorMatch((string)$row['id']),
         ]);
     }
@@ -1236,7 +1283,13 @@ final class Api
     private function userById(string $id): void
     {
         $this->authUserId();
-        $stmt = $this->db()->prepare('SELECT id, username, full_name, bio, avatar, status, last_seen FROM users WHERE id = ? LIMIT 1');
+        $this->ensureUserProfileColumns();
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        if ($this->hasUserColumn('birth_date')) {
+            $select .= ', birth_date';
+        }
+        $select .= ' FROM users WHERE id = ? LIMIT 1';
+        $stmt = $this->db()->prepare($select);
         $stmt->execute([$id]);
         $row = $stmt->fetch();
         if (!$row) {
@@ -1253,6 +1306,7 @@ final class Api
             'avatar' => $row['avatar'] ?? null,
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
+            'birthday' => $row['birth_date'] ?? null,
             'isCreator' => $this->isCreatorMatch((string)$row['id']),
         ]);
     }
@@ -1930,9 +1984,8 @@ final class Api
             $this->json(['error' => 'Cannot save file'], 500);
         }
 
-        $base = rtrim((string)Config::get('APP_URL', ''), '/');
         $relative = '/uploads/avatars/' . $fileName;
-        $url = $base !== '' ? ($base . $relative) : $relative;
+        $url = $this->buildPublicUrl($relative);
 
         $this->json(['url' => $url], 201);
     }
@@ -2143,6 +2196,49 @@ final class Api
         return isset($columns[strtolower($column)]);
     }
 
+    private function ensureUserProfileColumns(): void
+    {
+        if ($this->hasUserColumn('birth_date')) {
+            return;
+        }
+
+        try {
+            $this->db()->exec('ALTER TABLE users ADD COLUMN birth_date DATE NULL');
+            $this->userColumns = null;
+        } catch (\Throwable) {
+            // ignore profile schema migration errors on restricted hosting
+        }
+    }
+
+    private function normalizeBirthDateValue(string $raw): ?string
+    {
+        $value = trim($raw);
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m)) {
+            $year = (int)$m[1];
+            $month = (int)$m[2];
+            $day = (int)$m[3];
+        } else {
+            $digits = preg_replace('/\D+/', '', $value) ?? '';
+            if (strlen($digits) !== 8) {
+                return null;
+            }
+            $day = (int)substr($digits, 0, 2);
+            $month = (int)substr($digits, 2, 2);
+            $year = (int)substr($digits, 4, 4);
+        }
+
+        $currentYear = (int)date('Y');
+        if ($year < 1900 || $year > $currentYear || !checkdate($month, $day, $year)) {
+            return null;
+        }
+
+        return sprintf('%04d-%02d-%02d', $year, $month, $day);
+    }
+
     private function ensureUserBanColumns(): bool
     {
         $hasBanned = $this->hasUserColumn('is_banned');
@@ -2260,6 +2356,25 @@ final class Api
     private function startsWith(string $haystack, string $needle): bool
     {
         return substr($haystack, 0, strlen($needle)) === $needle;
+    }
+
+    private function buildPublicUrl(string $relativePath): string
+    {
+        $relative = '/' . ltrim($relativePath, '/');
+        $base = rtrim((string)Config::get('APP_URL', ''), '/');
+
+        $scriptName = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+        $scriptDir = str_replace('\\', '/', dirname($scriptName));
+        if ($scriptDir === '.' || $scriptDir === '/' || $scriptDir === '\\') {
+            $scriptDir = '';
+        }
+
+        if ($base !== '') {
+            $needsScriptDir = $scriptDir !== '' && !preg_match('#' . preg_quote($scriptDir, '#') . '/?$#i', $base);
+            return $base . ($needsScriptDir ? $scriptDir : '') . $relative;
+        }
+
+        return ($scriptDir !== '' ? $scriptDir : '') . $relative;
     }
 
     private function cors(): void

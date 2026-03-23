@@ -65,6 +65,7 @@ const normalizeUser = (payload: any): User | null => {
     status: payload.status ?? undefined,
     lastSeen: payload.lastSeen ?? payload.last_seen ?? undefined,
     badge: payload.badge ?? undefined,
+    birthday: payload.birthday ?? payload.birthDate ?? payload.birth_date ?? payload.dob ?? undefined,
     isCreator:
       typeof payload.isCreator === 'boolean'
         ? payload.isCreator

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   avatar        VARCHAR(1024) NULL,
   bio           TEXT NULL,
+  birth_date    DATE NULL,
   badge         VARCHAR(64) NULL,
   status        ENUM('online','offline','away','hidden') NOT NULL DEFAULT 'offline',
   last_seen     DATETIME NULL,
