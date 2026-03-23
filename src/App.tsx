@@ -169,21 +169,17 @@ function LaunchIntro({
         },
         '@keyframes algaHold': {
           '0%, 100%': {
-            transform: `translate(${shiftX}px, ${shiftY}px) scale(${startScale})`,
+            transform: `translate3d(${shiftX}px, ${shiftY}px, 0) scale(${startScale})`,
             opacity: 1,
           },
         },
         '@keyframes algaFlyToTitle': {
           '0%': {
-            transform: `translate(${shiftX}px, ${shiftY}px) scale(${startScale})`,
-            opacity: 1,
-          },
-          '74%': {
-            transform: `translate(${finalOffsetX + 1.5}px, -0.8px) scale(1.03)`,
+            transform: `translate3d(${shiftX}px, ${shiftY}px, 0) scale(${startScale})`,
             opacity: 1,
           },
           '100%': {
-            transform: `translate(${finalOffsetX}px, 0px) scale(1)`,
+            transform: `translate3d(${finalOffsetX}px, 0px, 0) scale(1)`,
             opacity: 1,
           },
         },
@@ -200,7 +196,7 @@ function LaunchIntro({
           },
           '100%': {
             opacity: 0,
-            transform: 'translate(-50%, -50%) scale(0.68)',
+            transform: 'translate(-50%, -50%) scale(1)',
           },
         },
         '@keyframes sparkle': {
@@ -226,8 +222,8 @@ function LaunchIntro({
           position: 'absolute',
           top: target.top,
           left: target.left,
-          transform: 'translate(0, 0)',
-          animation: `algaHold ${INTRO_HOLD_MS}ms linear 0ms 1 forwards, algaFlyToTitle ${INTRO_FLY_MS}ms cubic-bezier(0.22, 1, 0.36, 1) ${INTRO_HOLD_MS}ms 1 forwards`,
+          transform: 'translate3d(0, 0, 0)',
+          animation: `algaHold ${INTRO_HOLD_MS}ms linear 0ms 1 forwards, algaFlyToTitle ${INTRO_FLY_MS}ms cubic-bezier(0.25, 0.9, 0.3, 1) ${INTRO_HOLD_MS}ms 1 forwards`,
           willChange: 'transform, opacity',
         }}
       >
