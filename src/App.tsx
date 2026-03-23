@@ -130,8 +130,6 @@ const INTRO_HOLD_MS = 3000;
 const INTRO_FLY_MS = 1000;
 const INTRO_FADE_MS = 380;
 const INTRO_TOTAL_MS = INTRO_HOLD_MS + INTRO_FLY_MS + INTRO_FADE_MS;
-const INTRO_HOLD_PCT = (INTRO_HOLD_MS / INTRO_TOTAL_MS) * 100;
-const INTRO_FLY_END_PCT = ((INTRO_HOLD_MS + INTRO_FLY_MS) / INTRO_TOTAL_MS) * 100;
 
 function LaunchIntro({
   active,
@@ -166,16 +164,22 @@ function LaunchIntro({
         overflow: 'hidden',
         bgcolor: isDark ? '#061124' : '#F4FBF6',
         '@keyframes introFadeOut': {
-          '0%, 91%': { opacity: 1 },
+          '0%, 92%': { opacity: 1 },
           '100%': { opacity: 0 },
         },
-        '@keyframes algaExactDock': {
-          [`0%, ${INTRO_HOLD_PCT}%`]: {
+        '@keyframes algaHold': {
+          '0%, 100%': {
             transform: `translate(${shiftX}px, ${shiftY}px) scale(${startScale})`,
             opacity: 1,
           },
-          [`${INTRO_FLY_END_PCT}%`]: {
-            transform: `translate(${finalOffsetX}px, 0px) scale(1.04)`,
+        },
+        '@keyframes algaFlyToTitle': {
+          '0%': {
+            transform: `translate(${shiftX}px, ${shiftY}px) scale(${startScale})`,
+            opacity: 1,
+          },
+          '74%': {
+            transform: `translate(${finalOffsetX + 1.5}px, -0.8px) scale(1.03)`,
             opacity: 1,
           },
           '100%': {
@@ -183,21 +187,20 @@ function LaunchIntro({
             opacity: 1,
           },
         },
-        '@keyframes bveVanishCenter': {
-          [`0%, ${INTRO_HOLD_PCT}%`]: {
+        '@keyframes bveHold': {
+          '0%, 100%': {
             opacity: 0.98,
             transform: 'translate(-50%, -50%) scale(1)',
-            filter: 'blur(0px)',
           },
-          [`${Math.min(INTRO_HOLD_PCT + 4, 90)}%`]: {
-            opacity: 0,
-            transform: 'translate(-50%, -50%) scale(0.72)',
-            filter: 'blur(4px)',
+        },
+        '@keyframes bveFadeCenter': {
+          '0%': {
+            opacity: 0.98,
+            transform: 'translate(-50%, -50%) scale(1)',
           },
           '100%': {
             opacity: 0,
-            transform: 'translate(-50%, -50%) scale(0.72)',
-            filter: 'blur(4px)',
+            transform: 'translate(-50%, -50%) scale(0.68)',
           },
         },
         '@keyframes sparkle': {
@@ -224,7 +227,8 @@ function LaunchIntro({
           top: target.top,
           left: target.left,
           transform: 'translate(0, 0)',
-          animation: `algaExactDock ${INTRO_TOTAL_MS}ms cubic-bezier(0.2, 0.84, 0.24, 1) forwards`,
+          animation: `algaHold ${INTRO_HOLD_MS}ms linear 0ms 1 forwards, algaFlyToTitle ${INTRO_FLY_MS}ms cubic-bezier(0.22, 1, 0.36, 1) ${INTRO_HOLD_MS}ms 1 forwards`,
+          willChange: 'transform, opacity',
         }}
       >
         <Typography
@@ -236,6 +240,8 @@ function LaunchIntro({
             color: theme.palette.text.primary,
             textShadow: isDark ? '0 5px 18px rgba(66,129,219,0.32)' : '0 5px 18px rgba(31,163,91,0.26)',
             transformOrigin: 'left top',
+            backfaceVisibility: 'hidden',
+            WebkitFontSmoothing: 'antialiased',
           }}
         >
           Alga
@@ -255,7 +261,8 @@ function LaunchIntro({
             letterSpacing: 1.4,
             color: isDark ? 'rgba(214,231,255,0.94)' : 'rgba(23,103,63,0.88)',
             ml: idx === 0 ? -1.2 : idx === 1 ? 0 : 1.2,
-            animation: `bveVanishCenter ${INTRO_TOTAL_MS}ms ease forwards`,
+            animation: `bveHold ${INTRO_HOLD_MS}ms linear 0ms 1 forwards, bveFadeCenter 240ms ease-out ${INTRO_HOLD_MS}ms 1 forwards`,
+            willChange: 'transform, opacity',
           }}
         >
           {letter}
