@@ -29,7 +29,7 @@ type AdminOverview = {
   creatorUserId?: string;
 };
 
-type AdminAction = 'clear-chats' | 'clear-messages' | 'reset-users' | null;
+type AdminAction = 'clear-chats' | 'clear-messages' | 'clear-content' | 'reset-users' | null;
 
 const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: string; button: string }> = {
   'clear-chats': {
@@ -41,6 +41,11 @@ const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: str
     title: 'Удалить все сообщения?',
     body: 'Чаты останутся, но вся история сообщений будет удалена.',
     button: 'Очистить сообщения',
+  },
+  'clear-content': {
+    title: 'Очистить весь медиа-контент?',
+    body: 'Будут удалены все фото и файлы из чатов на сервере.',
+    button: 'Очистить контент',
   },
   'reset-users': {
     title: 'Сбросить пользователей?',
@@ -71,6 +76,7 @@ export default function AdminPage() {
     if (!me?.id) return;
     setIsLoading(true);
     try {
+      let result: any = null;
       const data = await adminApi.getOverview();
       setAdminAccess(true, me.id);
       setOverview(data || {});
@@ -94,16 +100,29 @@ export default function AdminPage() {
     if (!action) return;
     setIsBusy(true);
     try {
+      let result: any = null;
       if (action === 'clear-chats') {
-        await adminApi.clearAllChats();
+        result = await adminApi.clearAllChats();
       } else if (action === 'clear-messages') {
-        await adminApi.clearAllMessages();
+        result = await adminApi.clearAllMessages();
+      } else if (action === 'clear-content') {
+        result = await adminApi.clearAllContent();
       } else if (action === 'reset-users') {
-        await adminApi.resetUsersExceptCreator();
+        result = await adminApi.resetUsersExceptCreator();
       }
 
       await loadChats({ silent: true });
       await refreshOverview();
+      if (action === 'clear-content') {
+        const clearedBytes = Number(result?.clearedFilesBytes ?? 0);
+        const clearedMb = clearedBytes > 0 ? Math.round((clearedBytes / (1024 * 1024)) * 10) / 10 : 0;
+        pushSnackbar({
+          message: clearedMb > 0 ? `Контент очищен (${clearedMb} MB)` : 'Контент очищен',
+          timeout: 2600,
+        });
+        setAction(null);
+        return;
+      }
       pushSnackbar({ message: 'Операция выполнена', timeout: 2200 });
       setAction(null);
     } catch (error: any) {
@@ -200,6 +219,9 @@ export default function AdminPage() {
                 <Stack spacing={1}>
                   <Button color="error" variant="outlined" onClick={() => setAction('clear-messages')}>
                     Очистить все сообщения
+                  </Button>
+                  <Button color="error" variant="outlined" onClick={() => setAction('clear-content')}>
+                    Очистить весь контент
                   </Button>
                   <Button color="error" variant="outlined" onClick={() => setAction('clear-chats')}>
                     Очистить все чаты

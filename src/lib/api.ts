@@ -119,6 +119,7 @@ export const adminApi = {
   getOverview: async () => (await api.get('/admin/overview')).data,
   clearAllChats: async () => (await api.post('/admin/clear-chats')).data,
   clearAllMessages: async () => (await api.post('/admin/clear-messages')).data,
+  clearAllContent: async () => (await api.post('/admin/clear-content')).data,
   resetUsersExceptCreator: async () => (await api.post('/admin/reset-users')).data,
   deleteUserByUsername: async (username: string) =>
     (await api.post('/admin/users/delete', { username })).data,

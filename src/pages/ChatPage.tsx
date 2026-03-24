@@ -19,12 +19,14 @@ import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
+import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { messageApi, uploadApi, userApi } from '../lib/api';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
-import type { Message, User } from '../lib/types';
+import type { Attachment, Message, User } from '../lib/types';
 import { useSnackbarStore } from '../stores/snackbarStore';
 
 const formatPresence = (status?: User['status'], lastSeen?: string): string => {
@@ -47,6 +49,13 @@ const formatPresence = (status?: User['status'], lastSeen?: string): string => {
 const QUICK_REACTIONS = ['❤️', '👍', '👎', '🔥'] as const;
 type QuickReaction = (typeof QUICK_REACTIONS)[number];
 const USERNAME_MENTION_RE = /@([A-Za-z0-9_]{3,32})/g;
+
+const formatAttachmentSize = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
+  return `${Math.round(bytes / 104857.6) / 10} MB`;
+};
 
 export default function ChatPage() {
   const { chatId = '' } = useParams();
@@ -83,6 +92,8 @@ export default function ChatPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploaded, setUploaded] = useState<any[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const shouldScrollToBottomRef = useRef(true);
   const mentionCacheRef = useRef<Record<string, string>>({});
 
   const chat = chats.find((c) => c.id === chatId);
@@ -103,7 +114,33 @@ export default function ChatPage() {
     return () => window.clearInterval(timerId);
   }, [chatId, loadMessages]);
 
+  useEffect(() => {
+    shouldScrollToBottomRef.current = true;
+  }, [chatId]);
+
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
+
+  useEffect(() => {
+    if (!chatId || isLoadingMessages || !chatMessages.length) return;
+    if (!shouldScrollToBottomRef.current) return;
+
+    shouldScrollToBottomRef.current = false;
+    const scrollToBottom = () => {
+      const list = messageListRef.current;
+      if (!list) return;
+      list.scrollTop = list.scrollHeight;
+    };
+
+    scrollToBottom();
+    const frameId = window.requestAnimationFrame(scrollToBottom);
+    const timerId = window.setTimeout(scrollToBottom, 120);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timerId);
+    };
+  }, [chatId, chatMessages.length, isLoadingMessages]);
+
   useEffect(() => {
     if (!chatId || !me?.id || !chatMessages.length) return;
     const last = chatMessages[chatMessages.length - 1];
@@ -172,8 +209,17 @@ export default function ChatPage() {
     if (!list?.length) return;
     const arr = Array.from(list);
     setFiles((prev) => [...prev, ...arr]);
-    const uploadedFiles = await uploadApi.uploadFiles(arr);
-    setUploaded((prev) => [...prev, ...uploadedFiles]);
+    try {
+      const uploadedFiles = await uploadApi.uploadFiles(arr);
+      setUploaded((prev) => [...prev, ...(Array.isArray(uploadedFiles) ? uploadedFiles : [])]);
+    } catch {
+      setFiles((prev) => prev.slice(0, Math.max(0, prev.length - arr.length)));
+      pushSnackbar({ message: 'Не удалось загрузить фото', timeout: 2200, tone: 'error' });
+    } finally {
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
+    }
   };
 
   const submit = async () => {
@@ -183,6 +229,25 @@ export default function ChatPage() {
     setFiles([]);
     setUploaded([]);
   };
+
+  const removePendingAttachment = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setUploaded((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const filePreviewUrls = useMemo(
+    () =>
+      files.map((file) => (file.type.startsWith('image/') ? URL.createObjectURL(file) : '')),
+    [files],
+  );
+
+  useEffect(() => {
+    return () => {
+      filePreviewUrls.forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+    };
+  }, [filePreviewUrls]);
 
   const openProfileFromHeader = () => {
     if (!peerUser) return;
@@ -418,7 +483,7 @@ export default function ChatPage() {
         </Box>
       </Popover>
 
-      <Box sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
+      <Box ref={messageListRef} sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
         {isLoadingMessages && chatMessages.length === 0 ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}><CircularProgress /></Box>
         ) : (
@@ -436,6 +501,10 @@ export default function ChatPage() {
             const m = row.value;
             const reaction = reactions[m.id];
             const reactionGlyph = reaction?.mine || reaction?.top;
+            const messageAttachments = Array.isArray((m as any).attachments)
+              ? ((m as any).attachments as Attachment[])
+              : [];
+            const hasText = String(m.text ?? '').trim() !== '';
             return (
               <Box key={row.key} sx={{ mb: 1, display: 'flex', justifyContent: m.userId === me?.id ? 'flex-end' : 'flex-start' }}>
                 <Box
@@ -467,9 +536,76 @@ export default function ChatPage() {
                     touchAction: 'manipulation',
                   }}
                 >
-                  <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'none', WebkitUserSelect: 'none' }}>
-                    {renderMessageText(m.text)}
-                  </Typography>
+                  {!!messageAttachments.length && (
+                    <Box sx={{ display: 'grid', gap: 0.55, mb: hasText ? 0.75 : 0.25 }}>
+                      {messageAttachments.map((attachment, index) => {
+                        const url = String(attachment?.url ?? '').trim();
+                        if (!url) return null;
+                        if (attachment.type === 'image') {
+                          return (
+                            <Box
+                              key={`${m.id}-att-${index}`}
+                              component="img"
+                              src={url}
+                              alt={attachment.name || 'photo'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                window.open(url, '_blank', 'noopener,noreferrer');
+                              }}
+                              sx={{
+                                width: 'min(240px, 64vw)',
+                                maxWidth: '100%',
+                                borderRadius: 2,
+                                display: 'block',
+                                objectFit: 'cover',
+                                cursor: 'pointer',
+                                border: '1px solid',
+                                borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.08)',
+                              }}
+                            />
+                          );
+                        }
+
+                        return (
+                          <ButtonBase
+                            key={`${m.id}-att-${index}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              window.open(url, '_blank', 'noopener,noreferrer');
+                            }}
+                            sx={{
+                              width: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.85,
+                              borderRadius: 2,
+                              px: 1,
+                              py: 0.75,
+                              justifyContent: 'flex-start',
+                              bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+                            }}
+                          >
+                            <InsertDriveFileRoundedIcon sx={{ fontSize: 18, color: isDark ? '#B7C8DD' : '#5E6E7F' }} />
+                            <Box sx={{ minWidth: 0, textAlign: 'left' }}>
+                              <Typography sx={{ fontSize: 13, lineHeight: 1.2 }} noWrap>
+                                {attachment.name || 'Файл'}
+                              </Typography>
+                              {!!attachment.size && (
+                                <Typography variant="caption" sx={{ opacity: 0.72 }}>
+                                  {formatAttachmentSize(Number(attachment.size || 0))}
+                                </Typography>
+                              )}
+                            </Box>
+                          </ButtonBase>
+                        );
+                      })}
+                    </Box>
+                  )}
+                  {hasText && (
+                    <Typography sx={{ fontSize: 16, color: isDark ? '#EAF1FF' : '#1D2A22', whiteSpace: 'pre-wrap', wordBreak: 'break-word', userSelect: 'none', WebkitUserSelect: 'none' }}>
+                      {renderMessageText(m.text)}
+                    </Typography>
+                  )}
                   <Box sx={{ mt: 0.2, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.35 }}>
                     <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                       {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
@@ -512,8 +648,73 @@ export default function ChatPage() {
       </Box>
 
       {!!files.length && (
-        <Box sx={{ px: 1.5, py: 0.8, borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider', display: 'flex', gap: 1, overflowX: 'auto' }}>
-          {files.map((f, i) => <Typography key={`${f.name}-${i}`} variant="caption">{f.name}</Typography>)}
+        <Box
+          sx={{
+            px: 1.2,
+            py: 0.7,
+            borderTop: '1px solid',
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider',
+            display: 'flex',
+            gap: 1,
+            overflowX: 'auto',
+          }}
+        >
+          {files.map((file, index) => {
+            const previewUrl = filePreviewUrls[index];
+            const isImage = !!previewUrl;
+            return (
+              <Box
+                key={`${file.name}-${index}`}
+                sx={{
+                  position: 'relative',
+                  minWidth: isImage ? 70 : 120,
+                  maxWidth: isImage ? 70 : 180,
+                  borderRadius: 1.8,
+                  border: '1px solid',
+                  borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.1)',
+                  overflow: 'hidden',
+                  bgcolor: isDark ? 'rgba(255,255,255,0.06)' : '#F2F5F8',
+                }}
+              >
+                {isImage ? (
+                  <Box
+                    component="img"
+                    src={previewUrl}
+                    alt={file.name}
+                    sx={{
+                      width: 70,
+                      height: 70,
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <Box sx={{ px: 1, py: 0.75, display: 'flex', alignItems: 'center', gap: 0.7 }}>
+                    <InsertDriveFileRoundedIcon sx={{ fontSize: 16, color: isDark ? '#B7C8DD' : '#637687' }} />
+                    <Typography variant="caption" noWrap sx={{ maxWidth: 126 }}>
+                      {file.name}
+                    </Typography>
+                  </Box>
+                )}
+                <IconButton
+                  size="small"
+                  onClick={() => removePendingAttachment(index)}
+                  sx={{
+                    position: 'absolute',
+                    top: 2,
+                    right: 2,
+                    width: 20,
+                    height: 20,
+                    bgcolor: 'rgba(0,0,0,0.58)',
+                    color: '#fff',
+                    '&:hover': { bgcolor: 'rgba(0,0,0,0.68)' },
+                  }}
+                >
+                  <CloseRoundedIcon sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Box>
+            );
+          })}
         </Box>
       )}
 

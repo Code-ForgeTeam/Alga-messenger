@@ -10,6 +10,7 @@ final class Api
     private ?PDO $db = null;
     private ?array $chatParticipantColumns = null;
     private ?array $userColumns = null;
+    private ?bool $attachmentsTableReady = null;
     private ?bool $messageReactionTableReady = null;
     private ?bool $chatReadStateTableReady = null;
     private ?bool $pushTokensTableReady = null;
@@ -41,6 +42,7 @@ final class Api
         if ($path === '/api/admin/overview' && $method === 'GET') { $this->adminOverview(); }
         if ($path === '/api/admin/clear-chats' && $method === 'POST') { $this->adminClearChats(); }
         if ($path === '/api/admin/clear-messages' && $method === 'POST') { $this->adminClearMessages(); }
+        if ($path === '/api/admin/clear-content' && $method === 'POST') { $this->adminClearContent(); }
         if ($path === '/api/admin/reset-users' && $method === 'POST') { $this->adminResetUsers(); }
 
         if ($path === '/api/users/me' && $method === 'GET') { $this->me(); }
@@ -78,6 +80,7 @@ final class Api
         if (preg_match('#^/api/stories/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteStory($m[1]); }
         if ($path === '/api/ai/chat' && $method === 'GET') { $this->aiChat(); }
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
+        if ($path === '/api/upload' && $method === 'POST') { $this->uploadFiles(); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
         if ($path === '/api/upload/storage-stats' && $method === 'GET') { $this->uploadStorageStats(); }
         if ($path === '/api/upload/clear-cache' && $method === 'DELETE') { $this->clearUploadCache(); }
@@ -254,6 +257,7 @@ final class Api
         $userId = $this->authUserId();
         $this->assertCreator($userId);
 
+        $this->deleteAllAttachmentFiles();
         $this->db()->exec('DELETE FROM chats');
         $this->json(['ok' => true]);
     }
@@ -263,6 +267,7 @@ final class Api
         $userId = $this->authUserId();
         $this->assertCreator($userId);
 
+        $this->deleteAllAttachmentFiles();
         $this->db()->exec('DELETE FROM messages');
 
         if ($this->hasChatParticipantColumn('unread_count')) {
@@ -271,6 +276,28 @@ final class Api
 
         $this->db()->exec('UPDATE chats SET updated_at = CURRENT_TIMESTAMP');
         $this->json(['ok' => true]);
+    }
+
+    private function adminClearContent(): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+
+        $publicDir = dirname(__DIR__) . '/public';
+        $clearedFilesBytes = $this->clearDirectoryContents($publicDir . '/uploads/messages');
+
+        if ($this->ensureAttachmentsTable()) {
+            try {
+                $this->db()->exec('DELETE FROM attachments');
+            } catch (\Throwable) {
+                // ignore table cleanup errors on restricted hosting
+            }
+        }
+
+        $this->json([
+            'ok' => true,
+            'clearedFilesBytes' => $clearedFilesBytes,
+        ]);
     }
 
     private function adminResetUsers(): void
@@ -417,6 +444,14 @@ final class Api
         $userId = $this->authUserId();
         $this->assertChatParticipant($chatId, $userId);
 
+        $idsStmt = $this->db()->prepare('SELECT id FROM messages WHERE chat_id = ?');
+        $idsStmt->execute([$chatId]);
+        $messageIds = array_values(array_filter(array_map(
+            fn ($row) => (string)($row['id'] ?? ''),
+            $idsStmt->fetchAll() ?: []
+        )));
+        $this->deleteAttachmentFilesByMessageIds($messageIds);
+
         $stmt = $this->db()->prepare('DELETE FROM messages WHERE chat_id = ?');
         $stmt->execute([$chatId]);
 
@@ -434,6 +469,14 @@ final class Api
         $this->assertChatParticipant($chatId, $userId);
 
         if ($deleteForAll) {
+            $idsStmt = $this->db()->prepare('SELECT id FROM messages WHERE chat_id = ?');
+            $idsStmt->execute([$chatId]);
+            $messageIds = array_values(array_filter(array_map(
+                fn ($row) => (string)($row['id'] ?? ''),
+                $idsStmt->fetchAll() ?: []
+            )));
+            $this->deleteAttachmentFilesByMessageIds($messageIds);
+
             $stmt = $this->db()->prepare('DELETE FROM chats WHERE id = ?');
             $stmt->execute([$chatId]);
             $this->json(['ok' => true, 'deletedForAll' => true]);
@@ -590,7 +633,13 @@ final class Api
         $userId = $this->authUserId();
         $chatId = (string)($body['chatId'] ?? '');
         $text = trim((string)($body['text'] ?? ''));
-        if ($chatId === '' || $text === '') {
+        $attachmentsInput = $body['attachments'] ?? [];
+        if (!is_array($attachmentsInput)) {
+            $attachmentsInput = [];
+        }
+        $attachments = $this->normalizeMessageAttachments($attachmentsInput);
+
+        if ($chatId === '' || ($text === '' && !$attachments)) {
             $this->json(['error' => 'Invalid payload'], 400);
         }
 
@@ -603,6 +652,7 @@ final class Api
         $messageId = $this->uuid();
         $insert = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text) VALUES (?, ?, ?, ?)');
         $insert->execute([$messageId, $chatId, $userId, $text]);
+        $this->saveMessageAttachments($messageId, $attachments);
 
         if ($this->hasChatParticipantColumn('unread_count')) {
             $incUnread = $this->db()->prepare(
@@ -614,13 +664,15 @@ final class Api
 
         $updateChat = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
         $updateChat->execute([$chatId]);
-        $this->sendPushForMessage($chatId, $userId, $text);
+        $pushText = $text !== '' ? $text : 'Фото';
+        $this->sendPushForMessage($chatId, $userId, $pushText);
 
         $message = [
             'id' => $messageId,
             'chatId' => $chatId,
             'userId' => $userId,
             'text' => $text,
+            'attachments' => $this->attachmentPublicPayload($attachments),
             'createdAt' => date('c'),
             'edited' => 0,
             'status' => 'delivered',
@@ -1136,6 +1188,8 @@ final class Api
             $this->json(['error' => 'Delete for all is allowed only for own messages'], 403);
         }
 
+        $this->deleteAttachmentFilesByMessageIds([$messageId]);
+
         // Delete message and refresh chat activity timestamp.
         $del = $this->db()->prepare('DELETE FROM messages WHERE id = ?');
         $del->execute([$messageId]);
@@ -1193,19 +1247,26 @@ final class Api
             }
         }
 
+        $existingStmt = $this->db()->prepare('SELECT full_name, avatar FROM users WHERE id = ? LIMIT 1');
+        $existingStmt->execute([$userId]);
+        $existing = $existingStmt->fetch() ?: [];
+        $previousAvatar = trim((string)($existing['avatar'] ?? ''));
+
         if ($fullName === '') {
-            $stmt = $this->db()->prepare('SELECT full_name FROM users WHERE id = ? LIMIT 1');
-            $stmt->execute([$userId]);
-            $row = $stmt->fetch();
-            $fullName = (string)($row['full_name'] ?? '');
+            $fullName = (string)($existing['full_name'] ?? '');
         }
 
+        $avatarToStore = $avatar === '' ? null : $avatar;
         if ($this->hasUserColumn('birth_date')) {
             $stmt = $this->db()->prepare('UPDATE users SET full_name = ?, bio = ?, avatar = ?, birth_date = ? WHERE id = ?');
-            $stmt->execute([$fullName, $bio === '' ? null : $bio, $avatar === '' ? null : $avatar, $birthDate, $userId]);
+            $stmt->execute([$fullName, $bio === '' ? null : $bio, $avatarToStore, $birthDate, $userId]);
         } else {
             $stmt = $this->db()->prepare('UPDATE users SET full_name = ?, bio = ?, avatar = ? WHERE id = ?');
-            $stmt->execute([$fullName, $bio === '' ? null : $bio, $avatar === '' ? null : $avatar, $userId]);
+            $stmt->execute([$fullName, $bio === '' ? null : $bio, $avatarToStore, $userId]);
+        }
+
+        if ($previousAvatar !== '' && strcasecmp($previousAvatar, (string)($avatarToStore ?? '')) !== 0) {
+            $this->deleteUploadedFileByUrl($previousAvatar, ['/uploads/avatars/']);
         }
         $this->me();
     }
@@ -1321,23 +1382,29 @@ final class Api
         $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
         $stmt->execute([$chatId]);
         $rows = $stmt->fetchAll() ?: [];
+        $attachmentsByMessage = $this->attachmentsByMessageIds(array_values(array_map(
+            fn ($row) => (string)($row['id'] ?? ''),
+            $rows
+        )));
         $ownStatus = $this->ownMessagesStatus($chatId, $userId);
         $incomingStatus = $this->viewerHasUnreadMessages($chatId, $userId) ? 'sent' : 'read';
 
-        $payload = array_map(function ($row) use ($userId, $ownStatus, $incomingStatus) {
+        $payload = array_map(function ($row) use ($userId, $ownStatus, $incomingStatus, $attachmentsByMessage) {
             $text = (string)($row['text'] ?? '');
             $isAi = $this->isAiMessageText($text);
             $authorId = (string)($row['userId'] ?? '');
+            $messageId = (string)($row['id'] ?? '');
             return [
-                'id' => $row['id'],
+                'id' => $messageId,
                 'chatId' => $row['chatId'],
                 'userId' => $row['userId'],
                 'text' => $text,
+                'attachments' => $attachmentsByMessage[$messageId] ?? [],
                 'createdAt' => isset($row['createdAt']) ? date('c', strtotime((string)$row['createdAt'])) : date('c'),
                 'edited' => (bool)($row['edited'] ?? false),
                 'status' => $authorId === $userId ? $ownStatus : $incomingStatus,
                 'isAi' => $isAi,
-                'reactions' => $this->messageReactionSummary((string)$row['id'], $userId),
+                'reactions' => $this->messageReactionSummary($messageId, $userId),
             ];
         }, $rows);
 
@@ -1567,6 +1634,8 @@ final class Api
         if (!$m) {
             return null;
         }
+        $messageId = (string)$m['id'];
+        $attachmentsByMessage = $this->attachmentsByMessageIds([$messageId]);
 
         $status = 'sent';
         $authorId = (string)$m['user_id'];
@@ -1577,16 +1646,150 @@ final class Api
         }
 
         return [
-            'id' => $m['id'],
+            'id' => $messageId,
             'chatId' => $m['chat_id'],
             'userId' => $m['user_id'],
             'text' => $m['text'],
+            'attachments' => $attachmentsByMessage[$messageId] ?? [],
             'createdAt' => date('c', strtotime((string)$m['created_at'])),
             'edited' => (bool)$m['edited'],
             'status' => $status,
             'isAi' => $this->isAiMessageText((string)($m['text'] ?? '')),
-            'reactions' => $this->messageReactionSummary((string)$m['id'], $viewerId),
+            'reactions' => $this->messageReactionSummary($messageId, $viewerId),
         ];
+    }
+
+    private function normalizeMessageAttachments(array $attachments): array
+    {
+        $result = [];
+        foreach ($attachments as $item) {
+            if (!is_array($item)) continue;
+            $normalized = $this->normalizeMessageAttachment($item);
+            if ($normalized) {
+                $result[] = $normalized;
+            }
+        }
+        return $result;
+    }
+
+    private function normalizeMessageAttachment(array $item): ?array
+    {
+        $url = trim((string)($item['url'] ?? ''));
+        if ($url === '') {
+            return null;
+        }
+
+        $relative = $this->extractUploadsRelativePath($url);
+        if ($relative === null || !$this->startsWith($relative, '/uploads/messages/')) {
+            return null;
+        }
+
+        $fullPath = dirname(__DIR__) . '/public' . $relative;
+        if (!is_file($fullPath)) {
+            return null;
+        }
+
+        $id = trim((string)($item['id'] ?? ''));
+        if ($id === '') {
+            $id = $this->uuid();
+        }
+
+        $name = trim((string)($item['name'] ?? ''));
+        if ($name === '') {
+            $name = basename($fullPath);
+        }
+
+        $size = (int)($item['size'] ?? 0);
+        if ($size <= 0) {
+            $detectedSize = filesize($fullPath);
+            $size = is_int($detectedSize) && $detectedSize > 0 ? $detectedSize : 0;
+        }
+
+        $type = trim((string)($item['type'] ?? ''));
+        if ($type === '') {
+            $type = $this->attachmentTypeFromPath($fullPath);
+        }
+
+        return [
+            'id' => $id,
+            'name' => $name,
+            'url' => $this->buildPublicUrl($relative),
+            'type' => $type !== '' ? $type : 'file',
+            'size' => max(0, $size),
+        ];
+    }
+
+    private function saveMessageAttachments(string $messageId, array $attachments): void
+    {
+        if (!$attachments || !$this->ensureAttachmentsTable()) {
+            return;
+        }
+
+        $stmt = $this->db()->prepare(
+            'INSERT INTO attachments (id, message_id, name, url, type, size) VALUES (?, ?, ?, ?, ?, ?)'
+        );
+
+        foreach ($attachments as $attachment) {
+            try {
+                $stmt->execute([
+                    (string)($attachment['id'] ?? $this->uuid()),
+                    $messageId,
+                    (string)($attachment['name'] ?? 'file'),
+                    (string)($attachment['url'] ?? ''),
+                    (string)($attachment['type'] ?? 'file'),
+                    (int)($attachment['size'] ?? 0),
+                ]);
+            } catch (\Throwable) {
+                // keep message even if one attachment failed to persist
+            }
+        }
+    }
+
+    private function attachmentPublicPayload(array $attachments): array
+    {
+        return array_map(
+            fn ($item) => [
+                'id' => (string)($item['id'] ?? ''),
+                'name' => (string)($item['name'] ?? ''),
+                'url' => (string)($item['url'] ?? ''),
+                'type' => (string)($item['type'] ?? 'file'),
+                'size' => (int)($item['size'] ?? 0),
+            ],
+            $attachments
+        );
+    }
+
+    private function attachmentsByMessageIds(array $messageIds): array
+    {
+        $ids = array_values(array_filter(array_map('strval', $messageIds), fn ($id) => $id !== ''));
+        if (!$ids || !$this->ensureAttachmentsTable()) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db()->prepare(
+            "SELECT id, message_id, name, url, type, size FROM attachments WHERE message_id IN ({$placeholders}) ORDER BY id ASC"
+        );
+        $stmt->execute($ids);
+        $rows = $stmt->fetchAll() ?: [];
+
+        $grouped = [];
+        foreach ($rows as $row) {
+            $messageId = (string)($row['message_id'] ?? '');
+            if ($messageId === '') continue;
+            if (!isset($grouped[$messageId])) {
+                $grouped[$messageId] = [];
+            }
+            $grouped[$messageId][] = [
+                'id' => (string)($row['id'] ?? ''),
+                'name' => (string)($row['name'] ?? ''),
+                'url' => (string)($row['url'] ?? ''),
+                'type' => (string)($row['type'] ?? 'file'),
+                'size' => (int)($row['size'] ?? 0),
+            ];
+        }
+
+        return $grouped;
     }
 
     private function findMessageForParticipant(string $messageId, string $userId): ?array
@@ -1681,6 +1884,33 @@ final class Api
         }
 
         return $this->chatReadStateTableReady;
+    }
+
+    private function ensureAttachmentsTable(): bool
+    {
+        if ($this->attachmentsTableReady !== null) {
+            return $this->attachmentsTableReady;
+        }
+
+        try {
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS attachments (
+                    id CHAR(36) PRIMARY KEY,
+                    message_id CHAR(36) NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    url VARCHAR(2048) NOT NULL,
+                    type VARCHAR(64) NOT NULL,
+                    size INT NOT NULL DEFAULT 0,
+                    KEY idx_attachments_message (message_id),
+                    CONSTRAINT fk_att_msg FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->attachmentsTableReady = true;
+        } catch (\Throwable) {
+            $this->attachmentsTableReady = false;
+        }
+
+        return $this->attachmentsTableReady;
     }
 
     private function ensureMessageReactionsTable(): bool
@@ -1940,9 +2170,145 @@ final class Api
         return $this->storyTablesReady;
     }
 
-    private function uploadAvatar(): void
+    private function uploadFiles(): void
     {
         $this->authUserId();
+
+        if (!isset($_FILES['files']) || !is_array($_FILES['files'])) {
+            $this->json(['error' => 'Files are required'], 400);
+        }
+
+        $files = $this->normalizeUploadedFiles($_FILES['files']);
+        if (!$files) {
+            $this->json(['error' => 'Files are required'], 400);
+        }
+
+        $uploadDir = dirname(__DIR__) . '/public/uploads/messages';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            $this->json(['error' => 'Cannot create upload directory'], 500);
+        }
+
+        $maxSize = 20 * 1024 * 1024;
+        $mimeToExt = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            'image/gif' => 'gif',
+            'image/heic' => 'heic',
+            'image/heif' => 'heif',
+            'video/mp4' => 'mp4',
+            'video/quicktime' => 'mov',
+            'video/webm' => 'webm',
+            'audio/mpeg' => 'mp3',
+            'audio/mp4' => 'm4a',
+            'audio/aac' => 'aac',
+            'audio/ogg' => 'ogg',
+            'application/pdf' => 'pdf',
+            'text/plain' => 'txt',
+            'application/zip' => 'zip',
+            'application/x-zip-compressed' => 'zip',
+        ];
+
+        $result = [];
+        foreach ($files as $file) {
+            if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                continue;
+            }
+
+            $tmp = (string)($file['tmp_name'] ?? '');
+            if ($tmp === '' || !is_uploaded_file($tmp)) {
+                continue;
+            }
+
+            $size = (int)($file['size'] ?? 0);
+            if ($size <= 0 || $size > $maxSize) {
+                continue;
+            }
+
+            $mime = (string)(mime_content_type($tmp) ?: '');
+            $ext = $mimeToExt[$mime] ?? '';
+            if ($ext === '') {
+                $originalExt = strtolower((string)pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+                if (preg_match('/^[a-z0-9]{1,8}$/', $originalExt)) {
+                    $ext = $originalExt;
+                }
+            }
+            if ($ext === '') {
+                continue;
+            }
+
+            $id = $this->uuid();
+            $fileName = $id . '.' . $ext;
+            $dest = $uploadDir . '/' . $fileName;
+            if (!move_uploaded_file($tmp, $dest)) {
+                continue;
+            }
+
+            $relative = '/uploads/messages/' . $fileName;
+            $result[] = [
+                'id' => $id,
+                'name' => (string)($file['name'] ?? $fileName),
+                'url' => $this->buildPublicUrl($relative),
+                'type' => $this->attachmentTypeFromMime($mime, $ext),
+                'size' => $size,
+            ];
+        }
+
+        if (!$result) {
+            $this->json(['error' => 'No valid files uploaded'], 400);
+        }
+
+        $this->json(['files' => $result], 201);
+    }
+
+    private function normalizeUploadedFiles(array $raw): array
+    {
+        $names = $raw['name'] ?? null;
+        if (!is_array($names)) {
+            return [$raw];
+        }
+
+        $files = [];
+        $count = count($names);
+        for ($i = 0; $i < $count; $i++) {
+            $files[] = [
+                'name' => $raw['name'][$i] ?? '',
+                'type' => $raw['type'][$i] ?? '',
+                'tmp_name' => $raw['tmp_name'][$i] ?? '',
+                'error' => $raw['error'][$i] ?? UPLOAD_ERR_NO_FILE,
+                'size' => $raw['size'][$i] ?? 0,
+            ];
+        }
+
+        return $files;
+    }
+
+    private function attachmentTypeFromMime(string $mime, string $ext): string
+    {
+        $normalizedMime = strtolower(trim($mime));
+        if ($this->startsWith($normalizedMime, 'image/')) return 'image';
+        if ($this->startsWith($normalizedMime, 'video/')) return 'video';
+        if ($this->startsWith($normalizedMime, 'audio/')) return 'audio';
+
+        $normalizedExt = strtolower(trim($ext));
+        if (in_array($normalizedExt, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'bmp', 'avif'], true)) return 'image';
+        if (in_array($normalizedExt, ['mp4', 'mov', 'mkv', 'webm', 'm4v', 'avi'], true)) return 'video';
+        if (in_array($normalizedExt, ['mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'], true)) return 'audio';
+        return 'file';
+    }
+
+    private function uploadAvatar(): void
+    {
+        $userId = $this->authUserId();
+
+        $previousAvatar = '';
+        try {
+            $stmt = $this->db()->prepare('SELECT avatar FROM users WHERE id = ? LIMIT 1');
+            $stmt->execute([$userId]);
+            $previousAvatar = trim((string)($stmt->fetchColumn() ?: ''));
+        } catch (\Throwable) {
+            $previousAvatar = '';
+        }
 
         if (!isset($_FILES['avatar']) || !is_array($_FILES['avatar'])) {
             $this->json(['error' => 'Avatar file is required'], 400);
@@ -1988,6 +2354,20 @@ final class Api
 
         $relative = '/uploads/avatars/' . $fileName;
         $url = $this->buildPublicUrl($relative);
+
+        try {
+            $update = $this->db()->prepare('UPDATE users SET avatar = ? WHERE id = ?');
+            $update->execute([$url, $userId]);
+        } catch (\Throwable) {
+            if (is_file($dest)) {
+                @unlink($dest);
+            }
+            $this->json(['error' => 'Cannot update user avatar'], 500);
+        }
+
+        if ($previousAvatar !== '' && strcasecmp($previousAvatar, $url) !== 0) {
+            $this->deleteUploadedFileByUrl($previousAvatar, ['/uploads/avatars/']);
+        }
 
         $this->json(['url' => $url], 201);
     }
@@ -2144,6 +2524,110 @@ final class Api
         }
 
         return $cleared;
+    }
+
+    private function deleteAllAttachmentFiles(): int
+    {
+        if (!$this->ensureAttachmentsTable()) {
+            return 0;
+        }
+
+        try {
+            $stmt = $this->db()->query('SELECT url FROM attachments');
+            $rows = $stmt->fetchAll() ?: [];
+        } catch (\Throwable) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach ($rows as $row) {
+            $url = trim((string)($row['url'] ?? ''));
+            if ($url === '') continue;
+            $this->deleteUploadedFileByUrl($url, ['/uploads/messages/']);
+            $deleted++;
+        }
+
+        return $deleted;
+    }
+
+    private function deleteAttachmentFilesByMessageIds(array $messageIds): int
+    {
+        $ids = array_values(array_filter(array_map('strval', $messageIds), fn ($id) => $id !== ''));
+        if (!$ids || !$this->ensureAttachmentsTable()) {
+            return 0;
+        }
+
+        try {
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $stmt = $this->db()->prepare("SELECT url FROM attachments WHERE message_id IN ({$placeholders})");
+            $stmt->execute($ids);
+            $rows = $stmt->fetchAll() ?: [];
+        } catch (\Throwable) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach ($rows as $row) {
+            $url = trim((string)($row['url'] ?? ''));
+            if ($url === '') continue;
+            $this->deleteUploadedFileByUrl($url, ['/uploads/messages/']);
+            $deleted++;
+        }
+
+        return $deleted;
+    }
+
+    private function extractUploadsRelativePath(string $url): ?string
+    {
+        $path = parse_url($url, PHP_URL_PATH);
+        if (!is_string($path) || trim($path) === '') {
+            return null;
+        }
+
+        $normalized = '/' . ltrim(str_replace('\\', '/', $path), '/');
+        $position = strpos($normalized, '/uploads/');
+        if ($position === false) {
+            return null;
+        }
+
+        $relative = substr($normalized, $position);
+        if (!is_string($relative) || $relative === '' || strpos($relative, '..') !== false) {
+            return null;
+        }
+
+        return $relative;
+    }
+
+    private function deleteUploadedFileByUrl(string $url, array $allowedPrefixes = []): void
+    {
+        $relative = $this->extractUploadsRelativePath($url);
+        if ($relative === null) {
+            return;
+        }
+
+        if ($allowedPrefixes) {
+            $allowed = false;
+            foreach ($allowedPrefixes as $prefix) {
+                if ($this->startsWith($relative, $prefix)) {
+                    $allowed = true;
+                    break;
+                }
+            }
+            if (!$allowed) {
+                return;
+            }
+        }
+
+        $fullPath = dirname(__DIR__) . '/public' . $relative;
+        if (is_file($fullPath)) {
+            @unlink($fullPath);
+        }
+    }
+
+    private function attachmentTypeFromPath(string $path): string
+    {
+        $ext = strtolower((string)pathinfo($path, PATHINFO_EXTENSION));
+        return $this->attachmentTypeFromMime('', $ext);
     }
 
     private function creatorUserId(): string

@@ -33,7 +33,9 @@ import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
+import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
 import { useNavigate } from 'react-router-dom';
+import { useRef } from 'react';
 import { useChatStore } from '../stores/chatStore';
 import { useContactsStore } from '../stores/contactsStore';
 import { useAuthStore } from '../stores/authStore';
@@ -73,7 +75,16 @@ export default function ChatsPage() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const chatCompactMode = useSettingsStore((s) => s.chatCompactMode);
   const navigate = useNavigate();
-  const { chats, messages, isLoading, loadChats } = useChatStore();
+  const {
+    chats,
+    messages,
+    isLoading,
+    loadChats,
+    archiveChat,
+    unarchiveChat,
+    pinChat,
+    deleteChat,
+  } = useChatStore();
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
   const user = useAuthStore((s) => s.user);
   const canUseAdminTools = useAdminStore((s) => s.canUseAdminTools);
@@ -83,9 +94,12 @@ export default function ChatsPage() {
   const pushSnackbar = useSnackbarStore((s) => s.push);
   const [q, setQ] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [chatActionsAnchor, setChatActionsAnchor] = useState<null | HTMLElement>(null);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [waveTitleActive, setWaveTitleActive] = useState(false);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const holdTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef<string | null>(null);
   const menuItemSx = {
     borderRadius: 2.5,
     px: 1.2,
@@ -168,6 +182,74 @@ export default function ChatsPage() {
     });
   }, [chats, q, getContactByUserId, user?.id]);
 
+  const selectedChat = useMemo(
+    () => (selectedChatId ? chats.find((item) => item.id === selectedChatId) || null : null),
+    [chats, selectedChatId],
+  );
+
+  useEffect(() => {
+    if (!selectedChatId) return;
+    if (!visible.some((chat) => chat.id === selectedChatId)) {
+      setSelectedChatId(null);
+      setChatActionsAnchor(null);
+    }
+  }, [visible, selectedChatId]);
+
+  const clearHoldTimer = () => {
+    if (holdTimerRef.current !== null) {
+      window.clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearHoldTimer(), []);
+
+  const startChatLongPress = (chatId: string) => {
+    clearHoldTimer();
+    longPressTriggeredRef.current = null;
+    holdTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = chatId;
+      setSelectedChatId(chatId);
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(16);
+      }
+    }, 3000);
+  };
+
+  const handleChatClick = (chatId: string) => {
+    if (longPressTriggeredRef.current === chatId) {
+      longPressTriggeredRef.current = null;
+      return;
+    }
+    if (selectedChatId) {
+      setSelectedChatId(selectedChatId === chatId ? null : chatId);
+      return;
+    }
+    navigate(`/chat/${chatId}`);
+  };
+
+  const runSelectedChatAction = async (actionType: 'pin' | 'archive' | 'delete') => {
+    const target = selectedChat;
+    if (!target) return;
+    try {
+      if (actionType === 'pin') {
+        await pinChat(target.id);
+      } else if (actionType === 'archive') {
+        if (target.archived) {
+          await unarchiveChat(target.id);
+        } else {
+          await archiveChat(target.id);
+        }
+      } else {
+        await deleteChat(target.id);
+      }
+      setSelectedChatId(null);
+      setChatActionsAnchor(null);
+    } catch {
+      pushSnackbar({ message: 'Не удалось выполнить действие с чатом', timeout: 2200, tone: 'error' });
+    }
+  };
+
   const openSavedFromDrawer = async () => {
     setDrawerOpen(false);
     try {
@@ -238,7 +320,16 @@ export default function ChatsPage() {
             </Box>
           </IconButton>
         }
-        rightSlot={<IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}><MoreVertIcon /></IconButton>}
+        rightSlot={
+          selectedChat ? (
+            <IconButton
+              onClick={(e) => setChatActionsAnchor(e.currentTarget)}
+              sx={{ bgcolor: isDark ? 'rgba(143,177,213,0.2)' : 'rgba(31,163,91,0.12)' }}
+            >
+              <MoreVertIcon />
+            </IconButton>
+          ) : null
+        }
       />
 
       <TextField
@@ -256,7 +347,6 @@ export default function ChatsPage() {
           const rawChat = chat as Chat & Record<string, any>;
           const rawLastMessage = (rawChat.lastMessage ?? rawChat.last_message) as Record<string, any> | undefined;
           const name = getChatName(chat, user?.id);
-          const subtitle = chat.lastMessageText || rawChat.last_message_text || (chat.type === 'saved' ? 'Сообщения самому себе' : '');
           const date = formatChatDate(chat.lastMessageTime || rawChat.last_message_time || chat.updatedAt || rawChat.updated_at);
           const avatarData = getChatAvatar(chat, user?.id);
           const serverUnreadCount = Math.max(0, Number(rawChat.unreadCount ?? rawChat.unread_count ?? 0));
@@ -270,6 +360,20 @@ export default function ChatsPage() {
               '',
           );
           const localLastMessage = (messages[chat.id] || [])[Math.max((messages[chat.id] || []).length - 1, 0)];
+          const rawLastAttachments = Array.isArray(rawLastMessage?.attachments) ? rawLastMessage.attachments : [];
+          const localLastAttachments = Array.isArray((localLastMessage as any)?.attachments)
+            ? ((localLastMessage as any).attachments as any[])
+            : [];
+          const attachmentHint = [...rawLastAttachments, ...localLastAttachments].some((item) => item?.type === 'image')
+            ? 'Фото'
+            : [...rawLastAttachments, ...localLastAttachments].length > 0
+              ? 'Вложение'
+              : '';
+          const subtitle =
+            chat.lastMessageText ||
+            rawChat.last_message_text ||
+            attachmentHint ||
+            (chat.type === 'saved' ? 'Сообщения самому себе' : '');
           const inferredAuthorId =
             lastAuthorId ||
             String(
@@ -307,24 +411,37 @@ export default function ChatsPage() {
             );
           const hasUnread = chat.type !== 'saved' && serverUnreadCount > 0;
           const unreadCount = hasUnread ? serverUnreadCount : 0;
+          const isSelected = selectedChatId === chat.id;
 
           return (
             <ListItemButton
               key={chat.id}
-              onClick={() => navigate(`/chat/${chat.id}`)}
+              onClick={() => handleChatClick(chat.id)}
+              onContextMenu={(event) => event.preventDefault()}
+              onPointerDown={(event) => {
+                if (event.pointerType === 'mouse' && event.button !== 0) return;
+                startChatLongPress(chat.id);
+              }}
+              onPointerUp={clearHoldTimer}
+              onPointerLeave={clearHoldTimer}
+              onPointerCancel={clearHoldTimer}
               sx={{
                 borderBottom: '1px solid',
                 borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E6EBEF',
                 py: chatCompactMode ? 0.8 : 1.2,
                 borderRadius: 2.4,
                 mb: 0.45,
-                bgcolor: hasUnread
+                bgcolor: isSelected
                   ? isDark
-                    ? 'rgba(63,117,166,0.28)'
-                    : 'rgba(31,163,91,0.13)'
-                  : isDark
-                    ? 'transparent'
-                    : '#FFFFFF',
+                    ? 'rgba(92,136,181,0.36)'
+                    : 'rgba(31,163,91,0.2)'
+                  : hasUnread
+                    ? isDark
+                      ? 'rgba(63,117,166,0.28)'
+                      : 'rgba(31,163,91,0.13)'
+                    : isDark
+                      ? 'transparent'
+                      : '#FFFFFF',
               }}
             >
               <Avatar
@@ -343,7 +460,12 @@ export default function ChatsPage() {
                 secondary={<Typography color="text.secondary" noWrap>{subtitle}</Typography>}
               />
               <Box sx={{ textAlign: 'right' }}>
-                <Typography variant="body2" color="text.secondary">{date}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                  {!!chat.pinned && (
+                    <PushPinRoundedIcon sx={{ fontSize: 15, color: isDark ? '#A8CBF0' : '#1A8F51' }} />
+                  )}
+                  <Typography variant="body2" color="text.secondary">{date}</Typography>
+                </Box>
                 {hasUnread ? (
                   <Box
                     sx={{
@@ -519,10 +641,33 @@ export default function ChatsPage() {
         </Box>
       </Drawer>
 
-      <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
-        <MenuItem onClick={() => { pushSnackbar({ message: 'Функция будет добавлена позже.', timeout: 2200 }); setMenuAnchor(null); }}>
-          Создать папку чатов
+      <Menu anchorEl={chatActionsAnchor} open={!!chatActionsAnchor} onClose={() => setChatActionsAnchor(null)}>
+        <MenuItem
+          onClick={() => {
+            void runSelectedChatAction('pin');
+          }}
+        >
+          {selectedChat?.pinned ? 'Открепить' : 'Закрепить'}
         </MenuItem>
+        {selectedChat?.type !== 'saved' && (
+          <MenuItem
+            onClick={() => {
+              void runSelectedChatAction('archive');
+            }}
+          >
+            {selectedChat?.archived ? 'Вернуть из архива' : 'В архив'}
+          </MenuItem>
+        )}
+        {selectedChat?.type !== 'saved' && (
+          <MenuItem
+            sx={{ color: 'error.main' }}
+            onClick={() => {
+              void runSelectedChatAction('delete');
+            }}
+          >
+            Удалить чат
+          </MenuItem>
+        )}
       </Menu>
 
       <Dialog open={showLogoutDialog} onClose={() => setShowLogoutDialog(false)} fullWidth maxWidth="xs">

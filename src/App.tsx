@@ -126,9 +126,9 @@ const DEFAULT_INTRO_TARGET: IntroTarget = {
   lineHeight: 24,
 };
 
-const INTRO_HOLD_MS = 3000;
-const INTRO_FLY_MS = 1000;
-const INTRO_FADE_MS = 380;
+const INTRO_HOLD_MS = 900;
+const INTRO_FLY_MS = 760;
+const INTRO_FADE_MS = 200;
 const INTRO_TOTAL_MS = INTRO_HOLD_MS + INTRO_FLY_MS + INTRO_FADE_MS;
 
 function LaunchIntro({
@@ -143,14 +143,14 @@ function LaunchIntro({
 
   if (!active) return null;
 
-  const startScale = 2.4;
+  const startScale = 1.8;
   const finalOffsetX = -6;
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 390;
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 844;
-  const finalCenterX = target.left + target.width / 2 + finalOffsetX;
-  const finalCenterY = target.top + target.height / 2;
-  const deltaX = viewportWidth / 2 - finalCenterX;
-  const deltaY = viewportHeight / 2 - finalCenterY;
+  const finalCenterX = Math.round(target.left + target.width / 2 + finalOffsetX);
+  const finalCenterY = Math.round(target.top + target.height / 2);
+  const deltaX = Math.round(viewportWidth / 2 - finalCenterX);
+  const deltaY = Math.round(viewportHeight / 2 - finalCenterY);
   const bveOffsetY = Math.max(36, target.height * 1.65);
   const algaStartTransform = `translate3d(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px), 0) scale(${startScale})`;
   const algaEndTransform = 'translate3d(-50%, -50%, 0) scale(1)';
@@ -215,9 +215,10 @@ function LaunchIntro({
           fontWeight: 800,
           letterSpacing: 0,
           color: theme.palette.text.primary,
-          textShadow: isDark ? '0 4px 12px rgba(66,129,219,0.22)' : '0 4px 12px rgba(31,163,91,0.18)',
+          textShadow: 'none',
           backfaceVisibility: 'hidden',
-          WebkitFontSmoothing: 'antialiased',
+          WebkitFontSmoothing: 'subpixel-antialiased',
+          textRendering: 'geometricPrecision',
         }}
       >
         Alga
