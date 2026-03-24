@@ -69,6 +69,11 @@ export default function AdminPage() {
   const [action, setAction] = useState<AdminAction>(null);
   const [targetUsername, setTargetUsername] = useState('');
   const [confirmDeleteUserOpen, setConfirmDeleteUserOpen] = useState(false);
+  const [eventTemplate, setEventTemplate] = useState<'update' | 'custom'>('update');
+  const [eventTitle, setEventTitle] = useState('Доступно обновление');
+  const [eventMessage, setEventMessage] = useState('');
+  const [eventDurationSec, setEventDurationSec] = useState('5');
+  const [isEventBusy, setIsEventBusy] = useState(false);
 
   const isCreator = isCreatorUser(me) || canUseAdminTools;
 
@@ -76,7 +81,6 @@ export default function AdminPage() {
     if (!me?.id) return;
     setIsLoading(true);
     try {
-      let result: any = null;
       const data = await adminApi.getOverview();
       setAdminAccess(true, me.id);
       setOverview(data || {});
@@ -153,6 +157,40 @@ export default function AdminPage() {
     }
   };
 
+  const sendEvent = async () => {
+    const title = eventTitle.trim();
+    const message = eventMessage.trim();
+    if (eventTemplate === 'custom' && title === '' && message === '') {
+      pushSnackbar({ message: 'Заполните заголовок или текст ивента', timeout: 2400, tone: 'error' });
+      return;
+    }
+
+    const seconds = Number(eventDurationSec);
+    const durationMs = Number.isFinite(seconds) ? Math.max(2, Math.min(15, Math.round(seconds))) * 1000 : 5000;
+
+    setIsEventBusy(true);
+    try {
+      await adminApi.createEvent({
+        template: eventTemplate,
+        title,
+        message,
+        durationMs,
+        showOnce: true,
+      });
+      pushSnackbar({ message: 'Ивент отправлен', timeout: 2200, tone: 'success' });
+      if (eventTemplate === 'custom') {
+        setEventTitle('');
+      } else {
+        setEventTitle('Доступно обновление');
+      }
+      setEventMessage('');
+    } catch (error: any) {
+      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось отправить ивент', timeout: 2600, tone: 'error' });
+    } finally {
+      setIsEventBusy(false);
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -201,6 +239,70 @@ export default function AdminPage() {
                     <Typography variant="caption" color="text.secondary">Сообщения</Typography>
                     <Typography sx={{ fontWeight: 800 }}>{overview.messages ?? 0}</Typography>
                   </Paper>
+                </Stack>
+              </Paper>
+
+              <Paper
+                elevation={0}
+                sx={{
+                  mt: 1.4,
+                  p: 1.4,
+                  borderRadius: 3,
+                  border: '1px solid',
+                  borderColor: isDark ? 'rgba(129,187,243,0.3)' : 'rgba(31,163,91,0.22)',
+                  bgcolor: isDark ? 'rgba(17,40,62,0.72)' : 'rgba(242,251,246,0.96)',
+                }}
+              >
+                <Typography sx={{ fontWeight: 800, mb: 1 }}>Ивент</Typography>
+                <Stack spacing={1}>
+                  <Stack direction="row" spacing={1}>
+                    <Button
+                      size="small"
+                      variant={eventTemplate === 'update' ? 'contained' : 'outlined'}
+                      onClick={() => {
+                        setEventTemplate('update');
+                        setEventTitle('Доступно обновление');
+                      }}
+                    >
+                      Доступно обновление
+                    </Button>
+                    <Button
+                      size="small"
+                      variant={eventTemplate === 'custom' ? 'contained' : 'outlined'}
+                      onClick={() => {
+                        setEventTemplate('custom');
+                      }}
+                    >
+                      Кастом
+                    </Button>
+                  </Stack>
+
+                  <TextField
+                    size="small"
+                    label="Заголовок"
+                    value={eventTitle}
+                    onChange={(e) => setEventTitle(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    multiline
+                    minRows={2}
+                    label="Текст уведомления"
+                    value={eventMessage}
+                    onChange={(e) => setEventMessage(e.target.value)}
+                  />
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="Время показа (сек)"
+                    value={eventDurationSec}
+                    onChange={(e) => setEventDurationSec(e.target.value)}
+                    inputProps={{ min: 2, max: 15, step: 1 }}
+                  />
+
+                  <Button variant="contained" onClick={sendEvent} disabled={isEventBusy}>
+                    {isEventBusy ? 'Отправка...' : 'Отправить ивент'}
+                  </Button>
                 </Stack>
               </Paper>
 

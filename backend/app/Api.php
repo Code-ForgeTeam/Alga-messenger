@@ -15,6 +15,7 @@ final class Api
     private ?bool $chatReadStateTableReady = null;
     private ?bool $pushTokensTableReady = null;
     private ?bool $storyTablesReady = null;
+    private ?bool $notificationsTablesReady = null;
 
     public function __construct()
     {
@@ -44,10 +45,12 @@ final class Api
         if ($path === '/api/admin/clear-messages' && $method === 'POST') { $this->adminClearMessages(); }
         if ($path === '/api/admin/clear-content' && $method === 'POST') { $this->adminClearContent(); }
         if ($path === '/api/admin/reset-users' && $method === 'POST') { $this->adminResetUsers(); }
+        if ($path === '/api/admin/events' && $method === 'POST') { $this->adminCreateEvent($body); }
 
         if ($path === '/api/users/me' && $method === 'GET') { $this->me(); }
         if ($path === '/api/users/me' && $method === 'PUT') { $this->updateMe($body); }
         if ($path === '/api/users/search' && $method === 'GET') { $this->searchUsers(); }
+        if ($path === '/api/notifications' && $method === 'GET') { $this->activeNotifications(); }
 
         if (preg_match('#^/api/users/by-username/([^/]+)$#', $path, $m) && $method === 'GET') {
             $this->userByUsername(urldecode($m[1]));
@@ -90,6 +93,7 @@ final class Api
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteMessage($m[1], $body); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reaction$#', $path, $m) && $method === 'POST') { $this->setMessageReaction($m[1], $body); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reaction$#', $path, $m) && $method === 'DELETE') { $this->removeMessageReaction($m[1]); }
+        if (preg_match('#^/api/notifications/([a-zA-Z0-9\-]+)/dismiss$#', $path, $m) && $method === 'POST') { $this->dismissNotification($m[1]); }
 
         $this->json(['error' => 'Not found', 'path' => $path], 404);
     }
@@ -378,6 +382,182 @@ final class Api
         ]);
     }
 
+    private function adminCreateEvent(array $body): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+
+        if (!$this->ensureNotificationsTables()) {
+            $this->json(['error' => 'Notification storage is unavailable'], 500);
+        }
+
+        $template = strtolower(trim((string)($body['template'] ?? 'custom')));
+        $title = trim((string)($body['title'] ?? ''));
+        $message = trim((string)($body['message'] ?? ''));
+        if ($template === 'update' && $title === '') {
+            $title = 'Доступно обновление';
+        }
+        if ($template === 'update' && $message === '') {
+            $message = 'Установите последнюю версию приложения.';
+        }
+        if ($title === '' && $message === '') {
+            $this->json(['error' => 'Event title or message is required'], 400);
+        }
+
+        $durationMs = (int)($body['durationMs'] ?? 5000);
+        $durationMs = max(2000, min(15000, $durationMs));
+        $showOnce = !isset($body['showOnce']) ? true : (bool)$body['showOnce'];
+        $expiresHours = (int)($body['expiresHours'] ?? 72);
+        $expiresHours = max(1, min(24 * 30, $expiresHours));
+        $expiresAt = date('Y-m-d H:i:s', time() + ($expiresHours * 3600));
+
+        $bgColor = $this->normalizeNotificationColor((string)($body['bgColor'] ?? ''));
+        $textColor = $this->normalizeNotificationColor((string)($body['textColor'] ?? ''));
+
+        $id = $this->uuid();
+        $stmt = $this->db()->prepare(
+            'INSERT INTO notifications (id, title, message, bg_color, text_color, duration_ms, show_once, active, created_by, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)'
+        );
+        $stmt->execute([
+            $id,
+            $title === '' ? null : $title,
+            $message === '' ? null : $message,
+            $bgColor,
+            $textColor,
+            $durationMs,
+            $showOnce ? 1 : 0,
+            $userId,
+            $expiresAt,
+        ]);
+
+        $this->json([
+            'ok' => true,
+            'event' => [
+                'id' => $id,
+                'title' => $title === '' ? null : $title,
+                'message' => $message === '' ? null : $message,
+                'bgColor' => $bgColor,
+                'textColor' => $textColor,
+                'durationMs' => $durationMs,
+                'showOnce' => $showOnce,
+            ],
+        ], 201);
+    }
+
+    private function activeNotifications(): void
+    {
+        $userId = $this->authUserId();
+        if (!$this->ensureNotificationsTables()) {
+            $this->json([]);
+        }
+
+        $stmt = $this->db()->prepare(
+            'SELECT n.id, n.title, n.message, n.bg_color, n.text_color, n.duration_ms, n.show_once
+             FROM notifications n
+             WHERE n.active = 1
+               AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP)
+               AND (
+                 n.show_once = 0
+                 OR NOT EXISTS (
+                   SELECT 1 FROM notification_dismissals d
+                   WHERE d.notification_id = n.id AND d.user_id = ?
+                 )
+               )
+             ORDER BY n.created_at DESC
+             LIMIT 20'
+        );
+        $stmt->execute([$userId]);
+        $rows = $stmt->fetchAll() ?: [];
+
+        $items = array_map(function ($row) {
+            return [
+                'id' => (string)($row['id'] ?? ''),
+                'title' => $row['title'] ?? null,
+                'message' => $row['message'] ?? null,
+                'bgColor' => $row['bg_color'] ?? null,
+                'textColor' => $row['text_color'] ?? null,
+                'durationMs' => max(2000, min(15000, (int)($row['duration_ms'] ?? 5000))),
+                'dismissable' => true,
+                'showOnce' => !empty($row['show_once']),
+            ];
+        }, $rows);
+
+        $this->json($items);
+    }
+
+    private function dismissNotification(string $notificationId): void
+    {
+        $userId = $this->authUserId();
+        $id = trim($notificationId);
+        if ($id === '') {
+            $this->json(['ok' => true]);
+        }
+        if (!$this->ensureNotificationsTables()) {
+            $this->json(['ok' => true]);
+        }
+
+        $stmt = $this->db()->prepare(
+            'INSERT INTO notification_dismissals (notification_id, user_id, dismissed_at)
+             VALUES (?, ?, CURRENT_TIMESTAMP)
+             ON DUPLICATE KEY UPDATE dismissed_at = CURRENT_TIMESTAMP'
+        );
+        $stmt->execute([$id, $userId]);
+        $this->json(['ok' => true]);
+    }
+
+    private function ensureNotificationsTables(): bool
+    {
+        if ($this->notificationsTablesReady !== null) {
+            return $this->notificationsTablesReady;
+        }
+
+        try {
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS notifications (
+                    id CHAR(36) PRIMARY KEY,
+                    title VARCHAR(255) NULL,
+                    message TEXT NULL,
+                    bg_color VARCHAR(32) NULL,
+                    text_color VARCHAR(32) NULL,
+                    duration_ms INT NOT NULL DEFAULT 5000,
+                    show_once TINYINT(1) NOT NULL DEFAULT 1,
+                    active TINYINT(1) NOT NULL DEFAULT 1,
+                    created_by CHAR(36) NULL,
+                    expires_at DATETIME NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    KEY idx_notifications_active_created (active, created_at),
+                    KEY idx_notifications_expires (expires_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS notification_dismissals (
+                    notification_id CHAR(36) NOT NULL,
+                    user_id CHAR(36) NOT NULL,
+                    dismissed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (notification_id, user_id),
+                    KEY idx_notification_dismissals_user (user_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->notificationsTablesReady = true;
+        } catch (\Throwable) {
+            $this->notificationsTablesReady = false;
+        }
+
+        return $this->notificationsTablesReady;
+    }
+
+    private function normalizeNotificationColor(string $raw): ?string
+    {
+        $value = trim($raw);
+        if ($value === '') return null;
+        if (!preg_match('/^#?[0-9a-f]{6}$/i', $value)) {
+            return null;
+        }
+        return '#' . strtoupper(ltrim($value, '#'));
+    }
+
     private function createChat(array $body): void
     {
         $ownerId = $this->authUserId();
@@ -638,6 +818,7 @@ final class Api
             $attachmentsInput = [];
         }
         $attachments = $this->normalizeMessageAttachments($attachmentsInput);
+        $replyToIdRaw = trim((string)($body['replyToId'] ?? $body['reply_to_id'] ?? ''));
 
         if ($chatId === '' || ($text === '' && !$attachments)) {
             $this->json(['error' => 'Invalid payload'], 400);
@@ -649,9 +830,31 @@ final class Api
             $this->json(['error' => 'Forbidden'], 403);
         }
 
+        $replyToId = null;
+        $replyTo = null;
+        if ($replyToIdRaw !== '') {
+            $replyTo = $this->replyPreviewForChatMessage($chatId, $replyToIdRaw);
+            if ($replyTo === null) {
+                $this->json(['error' => 'Reply message not found'], 400);
+            }
+            $replyToId = (string)$replyTo['id'];
+        }
+
         $messageId = $this->uuid();
-        $insert = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text) VALUES (?, ?, ?, ?)');
-        $insert->execute([$messageId, $chatId, $userId, $text]);
+        $inserted = false;
+        if ($replyToId !== null) {
+            try {
+                $insertReply = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text, reply_to_id) VALUES (?, ?, ?, ?, ?)');
+                $insertReply->execute([$messageId, $chatId, $userId, $text, $replyToId]);
+                $inserted = true;
+            } catch (\Throwable) {
+                $replyTo = null;
+            }
+        }
+        if (!$inserted) {
+            $insert = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text) VALUES (?, ?, ?, ?)');
+            $insert->execute([$messageId, $chatId, $userId, $text]);
+        }
         $this->saveMessageAttachments($messageId, $attachments);
 
         if ($this->hasChatParticipantColumn('unread_count')) {
@@ -673,6 +876,7 @@ final class Api
             'userId' => $userId,
             'text' => $text,
             'attachments' => $this->attachmentPublicPayload($attachments),
+            'replyTo' => $replyTo,
             'createdAt' => date('c'),
             'edited' => 0,
             'status' => 'delivered',
@@ -1379,27 +1583,44 @@ final class Api
         $userId = $this->authUserId();
         $this->assertChatParticipant($chatId, $userId);
 
-        $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
-        $stmt->execute([$chatId]);
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited, reply_to_id as replyToId
+                 FROM messages
+                 WHERE chat_id = ?
+                 ORDER BY created_at ASC
+                 LIMIT 200'
+            );
+            $stmt->execute([$chatId]);
+        } catch (\Throwable) {
+            $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
+            $stmt->execute([$chatId]);
+        }
         $rows = $stmt->fetchAll() ?: [];
         $attachmentsByMessage = $this->attachmentsByMessageIds(array_values(array_map(
             fn ($row) => (string)($row['id'] ?? ''),
             $rows
         )));
+        $replyMap = $this->replyPreviewMap(array_values(array_unique(array_filter(array_map(
+            fn ($row) => trim((string)($row['replyToId'] ?? '')),
+            $rows
+        )))));
         $ownStatus = $this->ownMessagesStatus($chatId, $userId);
         $incomingStatus = $this->viewerHasUnreadMessages($chatId, $userId) ? 'sent' : 'read';
 
-        $payload = array_map(function ($row) use ($userId, $ownStatus, $incomingStatus, $attachmentsByMessage) {
+        $payload = array_map(function ($row) use ($userId, $ownStatus, $incomingStatus, $attachmentsByMessage, $replyMap) {
             $text = (string)($row['text'] ?? '');
             $isAi = $this->isAiMessageText($text);
             $authorId = (string)($row['userId'] ?? '');
             $messageId = (string)($row['id'] ?? '');
+            $replyToId = trim((string)($row['replyToId'] ?? ''));
             return [
                 'id' => $messageId,
                 'chatId' => $row['chatId'],
                 'userId' => $row['userId'],
                 'text' => $text,
                 'attachments' => $attachmentsByMessage[$messageId] ?? [],
+                'replyTo' => $replyToId !== '' ? ($replyMap[$replyToId] ?? null) : null,
                 'createdAt' => isset($row['createdAt']) ? date('c', strtotime((string)$row['createdAt'])) : date('c'),
                 'edited' => (bool)($row['edited'] ?? false),
                 'status' => $authorId === $userId ? $ownStatus : $incomingStatus,
@@ -1622,20 +1843,33 @@ final class Api
 
     private function chatLastMessage(string $chatId, string $viewerId): ?array
     {
-        $stmt = $this->db()->prepare(
-            'SELECT id, chat_id, user_id, text, created_at, edited
-             FROM messages
-             WHERE chat_id = ?
-             ORDER BY created_at DESC
-             LIMIT 1'
-        );
-        $stmt->execute([$chatId]);
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT id, chat_id, user_id, text, created_at, edited, reply_to_id
+                 FROM messages
+                 WHERE chat_id = ?
+                 ORDER BY created_at DESC
+                 LIMIT 1'
+            );
+            $stmt->execute([$chatId]);
+        } catch (\Throwable) {
+            $stmt = $this->db()->prepare(
+                'SELECT id, chat_id, user_id, text, created_at, edited
+                 FROM messages
+                 WHERE chat_id = ?
+                 ORDER BY created_at DESC
+                 LIMIT 1'
+            );
+            $stmt->execute([$chatId]);
+        }
         $m = $stmt->fetch();
         if (!$m) {
             return null;
         }
         $messageId = (string)$m['id'];
         $attachmentsByMessage = $this->attachmentsByMessageIds([$messageId]);
+        $replyToId = trim((string)($m['reply_to_id'] ?? ''));
+        $replyMap = $replyToId !== '' ? $this->replyPreviewMap([$replyToId]) : [];
 
         $status = 'sent';
         $authorId = (string)$m['user_id'];
@@ -1651,6 +1885,7 @@ final class Api
             'userId' => $m['user_id'],
             'text' => $m['text'],
             'attachments' => $attachmentsByMessage[$messageId] ?? [],
+            'replyTo' => $replyToId !== '' ? ($replyMap[$replyToId] ?? null) : null,
             'createdAt' => date('c', strtotime((string)$m['created_at'])),
             'edited' => (bool)$m['edited'],
             'status' => $status,
@@ -1790,6 +2025,70 @@ final class Api
         }
 
         return $grouped;
+    }
+
+    private function replyPreviewForChatMessage(string $chatId, string $replyToId): ?array
+    {
+        $replyId = trim($replyToId);
+        if ($replyId === '') {
+            return null;
+        }
+        $map = $this->replyPreviewMap([$replyId], $chatId);
+        return $map[$replyId] ?? null;
+    }
+
+    private function replyPreviewMap(array $messageIds, ?string $chatId = null): array
+    {
+        $ids = array_values(array_filter(array_map('strval', $messageIds), fn ($id) => trim($id) !== ''));
+        if (!$ids) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $params = $ids;
+        $sql = "SELECT m.id, m.text, u.full_name
+                FROM messages m
+                LEFT JOIN users u ON u.id = m.user_id
+                WHERE m.id IN ({$placeholders})";
+        if ($chatId !== null && trim($chatId) !== '') {
+            $sql .= ' AND m.chat_id = ?';
+            $params[] = trim($chatId);
+        }
+
+        try {
+            $stmt = $this->db()->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll() ?: [];
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($rows as $row) {
+            $id = trim((string)($row['id'] ?? ''));
+            if ($id === '') continue;
+
+            $text = trim((string)($row['text'] ?? ''));
+            if ($text === '') {
+                $text = 'Вложение';
+            }
+            if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+                if (mb_strlen($text) > 160) {
+                    $text = mb_substr($text, 0, 157) . '...';
+                }
+            } elseif (strlen($text) > 160) {
+                $text = substr($text, 0, 157) . '...';
+            }
+
+            $fullName = trim((string)($row['full_name'] ?? ''));
+            $map[$id] = [
+                'id' => $id,
+                'text' => $text,
+                'fullName' => $fullName !== '' ? $fullName : null,
+            ];
+        }
+
+        return $map;
     }
 
     private function findMessageForParticipant(string $messageId, string $userId): ?array

@@ -86,6 +86,7 @@ export interface NotificationBanner {
   id: string;
   title?: string;
   message?: string;
+  durationMs?: number;
   icon?: string;
   bgColor?: string;
   textColor?: string;

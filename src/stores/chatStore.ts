@@ -310,6 +310,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
+    const me = useAuthStore.getState().user;
+    const replySource = replyToId
+      ? (get().messages[chatId] || []).find((message) => message.id === replyToId)
+      : undefined;
+    const replyPreview = replySource
+      ? {
+          id: replySource.id,
+          text:
+            String(replySource.text || '').trim() !== ''
+              ? replySource.text
+              : Array.isArray(replySource.attachments) && replySource.attachments.length > 0
+                ? 'Вложение'
+                : 'Сообщение',
+          fullName:
+            replySource.userId === me?.id
+              ? me?.fullName
+              : chat?.participants?.find((participant) => participant.id === replySource.userId)?.fullName,
+        }
+      : undefined;
+    const optimisticPreviewText = normalizedText.trim() !== '' ? normalizedText : attachments.length > 0 ? 'Фото' : '';
+
     const tempId = `temp-${Date.now()}-${Math.random()}`;
     const optimistic: Message = {
       id: tempId,
@@ -317,6 +338,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       userId,
       text: normalizedText,
       attachments: attachments as any,
+      replyTo: replyPreview,
       status: 'sending',
       createdAt: new Date().toISOString(),
       tempId,
@@ -326,7 +348,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: { ...state.messages, [chatId]: [...(state.messages[chatId] || []), optimistic] },
       chats: state.chats.map((c) =>
         c.id === chatId
-          ? { ...c, lastMessage: optimistic, lastMessageText: normalizedText, lastMessageTime: optimistic.createdAt }
+          ? { ...c, lastMessage: optimistic, lastMessageText: optimisticPreviewText, lastMessageTime: optimistic.createdAt }
           : c,
       ),
     }));

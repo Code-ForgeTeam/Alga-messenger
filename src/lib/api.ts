@@ -120,6 +120,16 @@ export const adminApi = {
   clearAllChats: async () => (await api.post('/admin/clear-chats')).data,
   clearAllMessages: async () => (await api.post('/admin/clear-messages')).data,
   clearAllContent: async () => (await api.post('/admin/clear-content')).data,
+  createEvent: async (payload: {
+    template?: 'update' | 'custom';
+    title?: string;
+    message?: string;
+    durationMs?: number;
+    showOnce?: boolean;
+    bgColor?: string;
+    textColor?: string;
+    expiresHours?: number;
+  }) => (await api.post('/admin/events', payload)).data,
   resetUsersExceptCreator: async () => (await api.post('/admin/reset-users')).data,
   deleteUserByUsername: async (username: string) =>
     (await api.post('/admin/users/delete', { username })).data,

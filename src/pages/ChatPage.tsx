@@ -91,10 +91,19 @@ export default function ChatPage() {
   const [reactionMessageId, setReactionMessageId] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [uploaded, setUploaded] = useState<any[]>([]);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollToBottomRef = useRef(true);
   const mentionCacheRef = useRef<Record<string, string>>({});
+  const edgeSwipeRef = useRef<{ active: boolean; startX: number; startY: number; swiped: boolean }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    swiped: false,
+  });
+  const messageGestureRef = useRef<{ messageId: string; startX: number; startY: number; swipeDone: boolean } | null>(null);
+  const reactionTimerRef = useRef<number | null>(null);
 
   const chat = chats.find((c) => c.id === chatId);
 
@@ -224,10 +233,11 @@ export default function ChatPage() {
 
   const submit = async () => {
     if (!text.trim() && !uploaded.length) return;
-    await sendMessage(chatId, text, uploaded);
+    await sendMessage(chatId, text, uploaded, replyToMessage?.id);
     setText('');
     setFiles([]);
     setUploaded([]);
+    setReplyToMessage(null);
   };
 
   const removePendingAttachment = (index: number) => {
@@ -248,6 +258,118 @@ export default function ChatPage() {
       });
     };
   }, [filePreviewUrls]);
+
+  const clearReactionTimer = () => {
+    if (reactionTimerRef.current !== null) {
+      window.clearTimeout(reactionTimerRef.current);
+      reactionTimerRef.current = null;
+    }
+  };
+
+  const clearMessageGesture = () => {
+    messageGestureRef.current = null;
+    clearReactionTimer();
+  };
+
+  const getReplyPreviewText = (message: Pick<Message, 'text' | 'attachments'>): string => {
+    const rawText = String(message.text ?? '').trim();
+    if (rawText !== '') return rawText;
+    if (Array.isArray(message.attachments) && message.attachments.length > 0) {
+      const hasImage = message.attachments.some((item) => item?.type === 'image');
+      return hasImage ? 'Фото' : 'Вложение';
+    }
+    return 'Сообщение';
+  };
+
+  const markMessageForReply = (message: Message) => {
+    setReplyToMessage(message);
+    setMsgMenuAnchor(null);
+    setSelectedMessage(null);
+  };
+
+  const handleRootPointerDown = (event: any) => {
+    if (event.pointerType === 'mouse') {
+      edgeSwipeRef.current.active = false;
+      return;
+    }
+    if (event.clientX <= 24) {
+      edgeSwipeRef.current = {
+        active: true,
+        startX: event.clientX,
+        startY: event.clientY,
+        swiped: false,
+      };
+      return;
+    }
+    edgeSwipeRef.current.active = false;
+  };
+
+  const handleRootPointerMove = (event: any) => {
+    const state = edgeSwipeRef.current;
+    if (!state.active || state.swiped) return;
+
+    const dx = event.clientX - state.startX;
+    const dy = Math.abs(event.clientY - state.startY);
+    if (dy > 52 || dx < -8) {
+      state.active = false;
+      return;
+    }
+
+    if (dx > 88 && dy < 42) {
+      state.swiped = true;
+      state.active = false;
+      navigate(-1);
+    }
+  };
+
+  const resetRootSwipe = () => {
+    edgeSwipeRef.current.active = false;
+    edgeSwipeRef.current.swiped = false;
+  };
+
+  const handleMessagePointerDown = (event: any, message: Message) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.pointerType !== 'mouse') event.preventDefault();
+
+    const target = event.currentTarget as HTMLElement;
+    messageGestureRef.current = {
+      messageId: message.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      swipeDone: false,
+    };
+
+    clearReactionTimer();
+    reactionTimerRef.current = window.setTimeout(() => {
+      const gesture = messageGestureRef.current;
+      if (!gesture || gesture.messageId !== message.id || gesture.swipeDone) return;
+      openReactionPicker(message, target);
+    }, 450);
+  };
+
+  const handleMessagePointerMove = (event: any, message: Message) => {
+    const state = messageGestureRef.current;
+    if (!state || state.messageId !== message.id || state.swipeDone) return;
+    if (state.startX <= 26) return;
+
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+
+    if (Math.abs(dx) > 12 || Math.abs(dy) > 10) {
+      clearReactionTimer();
+    }
+
+    if (dx > 72 && Math.abs(dy) < 34) {
+      state.swipeDone = true;
+      clearReactionTimer();
+      setReplyToMessage(message);
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(10);
+      }
+    }
+  };
+
+  useEffect(() => () => clearMessageGesture(), []);
 
   const openProfileFromHeader = () => {
     if (!peerUser) return;
@@ -365,7 +487,14 @@ export default function ChatPage() {
   }
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: isDark ? '#0A1A32' : '#FFFFFF', color: isDark ? '#EAF1FF' : 'text.primary' }}>
+    <Box
+      sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: isDark ? '#0A1A32' : '#FFFFFF', color: isDark ? '#EAF1FF' : 'text.primary' }}
+      onPointerDown={handleRootPointerDown}
+      onPointerMove={handleRootPointerMove}
+      onPointerUp={resetRootSwipe}
+      onPointerCancel={resetRootSwipe}
+      onPointerLeave={resetRootSwipe}
+    >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 'max(env(safe-area-inset-left), 8px)', pr: 'max(env(safe-area-inset-right), 8px)', pt: 'max(env(safe-area-inset-top), 12px)', pb: 1, borderBottom: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider', bgcolor: isDark ? 'rgba(20,33,52,0.88)' : '#FFFFFF' }}>
         <IconButton onClick={() => navigate(-1)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><ArrowBackIcon /></IconButton>
 
@@ -412,6 +541,18 @@ export default function ChatPage() {
       </Menu>
 
       <Menu anchorEl={msgMenuAnchor} open={!!msgMenuAnchor} onClose={() => { setMsgMenuAnchor(null); setSelectedMessage(null); }}>
+        <MenuItem
+          onClick={() => {
+            if (selectedMessage) {
+              markMessageForReply(selectedMessage);
+            } else {
+              setMsgMenuAnchor(null);
+              setSelectedMessage(null);
+            }
+          }}
+        >
+          Отметить для ответа
+        </MenuItem>
         <MenuItem
           onClick={() => {
             if (selectedMessage) deleteMessage(chatId, selectedMessage.id, false);
@@ -513,17 +654,11 @@ export default function ChatPage() {
                     setSelectedMessage(m);
                     setMsgMenuAnchor(e.currentTarget);
                   }}
-                  onPointerDown={(e) => {
-                    if (e.pointerType !== 'mouse') e.preventDefault();
-                    const target = e.currentTarget as HTMLElement;
-                    const timer = window.setTimeout(() => {
-                      openReactionPicker(m, target);
-                    }, 450);
-                    const clear = () => window.clearTimeout(timer);
-                    target.addEventListener('pointerup', clear, { once: true });
-                    target.addEventListener('pointerleave', clear, { once: true });
-                    target.addEventListener('pointercancel', clear, { once: true });
-                  }}
+                  onPointerDown={(event) => handleMessagePointerDown(event, m)}
+                  onPointerMove={(event) => handleMessagePointerMove(event, m)}
+                  onPointerUp={clearMessageGesture}
+                  onPointerLeave={clearMessageGesture}
+                  onPointerCancel={clearMessageGesture}
                   sx={{
                     px: 1.5,
                     py: 0.95,
@@ -536,6 +671,26 @@ export default function ChatPage() {
                     touchAction: 'manipulation',
                   }}
                 >
+                  {!!m.replyTo && (
+                    <Box
+                      sx={{
+                        mb: 0.55,
+                        px: 0.8,
+                        py: 0.55,
+                        borderRadius: 1.4,
+                        borderLeft: '3px solid',
+                        borderLeftColor: isDark ? '#79B8FF' : '#1FA35B',
+                        bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, lineHeight: 1.1 }}>
+                        {m.replyTo.fullName || 'Ответ'}
+                      </Typography>
+                      <Typography variant="caption" noWrap sx={{ opacity: 0.82 }}>
+                        {String(m.replyTo.text || 'Сообщение')}
+                      </Typography>
+                    </Box>
+                  )}
                   {!!messageAttachments.length && (
                     <Box sx={{ display: 'grid', gap: 0.55, mb: hasText ? 0.75 : 0.25 }}>
                       {messageAttachments.map((attachment, index) => {
@@ -715,6 +870,41 @@ export default function ChatPage() {
               </Box>
             );
           })}
+        </Box>
+      )}
+
+      {!!replyToMessage && (
+        <Box
+          sx={{
+            px: 1.1,
+            py: 0.55,
+            borderTop: '1px solid',
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.8,
+            bgcolor: isDark ? 'rgba(16,29,46,0.95)' : '#FAFBFC',
+          }}
+        >
+          <Box
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              borderLeft: '3px solid',
+              borderLeftColor: isDark ? '#79B8FF' : '#1FA35B',
+              pl: 0.9,
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 700, lineHeight: 1.15, display: 'block' }}>
+              Ответ на сообщение
+            </Typography>
+            <Typography variant="caption" noWrap sx={{ opacity: 0.82 }}>
+              {getReplyPreviewText(replyToMessage)}
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setReplyToMessage(null)} sx={{ color: isDark ? '#AFC1D9' : '#708090' }}>
+            <CloseRoundedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
         </Box>
       )}
 
