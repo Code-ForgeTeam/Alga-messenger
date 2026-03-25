@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, Paper, Stack, Typography } from '@mui/material';
+import { Box, Button, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
 import TerminalRoundedIcon from '@mui/icons-material/TerminalRounded';
@@ -25,6 +25,7 @@ import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import SpeedRoundedIcon from '@mui/icons-material/SpeedRounded';
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
 import PrecisionManufacturingRoundedIcon from '@mui/icons-material/PrecisionManufacturingRounded';
+import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded';
 import { AppHeader } from '../components/AppHeader';
 
 type TileFace =
@@ -270,6 +271,13 @@ export default function GamePage() {
     }
   };
 
+  const resetWins = () => {
+    setWins(0);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(WINS_KEY, '0');
+    }
+  };
+
   const startNewGame = () => {
     clearHintTimer();
     setTiles(buildNewBoard());
@@ -428,7 +436,21 @@ export default function GamePage() {
           </Paper>
           <Paper sx={{ px: 1.2, py: 0.8, borderRadius: 2 }}>
             <Typography variant="caption" color="text.secondary">Победы</Typography>
-            <Typography sx={{ fontWeight: 800 }}>{wins}</Typography>
+            <Stack direction="row" spacing={0.2} sx={{ alignItems: 'center' }}>
+              <Typography sx={{ fontWeight: 800 }}>{wins}</Typography>
+              <IconButton
+                size="small"
+                onClick={resetWins}
+                aria-label="Сбросить победы"
+                sx={{
+                  color: '#E34A4A',
+                  p: 0.35,
+                  ml: 0.1,
+                }}
+              >
+                <DeleteForeverRoundedIcon fontSize="small" />
+              </IconButton>
+            </Stack>
           </Paper>
           <Paper sx={{ px: 1.2, py: 0.8, borderRadius: 2 }}>
             <Typography variant="caption" color="text.secondary">Перемешка</Typography>
