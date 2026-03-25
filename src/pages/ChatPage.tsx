@@ -677,6 +677,8 @@ export default function ChatPage() {
                         mb: 0.55,
                         px: 0.8,
                         py: 0.55,
+                        minWidth: 0,
+                        maxWidth: '100%',
                         borderRadius: 1.4,
                         borderLeft: '3px solid',
                         borderLeftColor: isDark ? '#79B8FF' : '#1FA35B',
@@ -686,7 +688,20 @@ export default function ChatPage() {
                       <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, lineHeight: 1.1 }}>
                         {m.replyTo.fullName || 'Ответ'}
                       </Typography>
-                      <Typography variant="caption" noWrap sx={{ opacity: 0.82 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          opacity: 0.82,
+                          display: '-webkit-box',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflowWrap: 'anywhere',
+                          wordBreak: 'break-word',
+                          maxWidth: '100%',
+                        }}
+                      >
                         {String(m.replyTo.text || 'Сообщение')}
                       </Typography>
                     </Box>
@@ -898,7 +913,19 @@ export default function ChatPage() {
             <Typography variant="caption" sx={{ fontWeight: 700, lineHeight: 1.15, display: 'block' }}>
               Ответ на сообщение
             </Typography>
-            <Typography variant="caption" noWrap sx={{ opacity: 0.82 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                opacity: 0.82,
+                display: '-webkit-box',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+              }}
+            >
               {getReplyPreviewText(replyToMessage)}
             </Typography>
           </Box>
@@ -920,7 +947,20 @@ export default function ChatPage() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Сообщение..."
-          sx={{ '& .MuiOutlinedInput-root': { borderRadius: 99, bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#F3F5F7', color: isDark ? '#fff' : '#1D2A22' } }}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              borderRadius: 99,
+              bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#F3F5F7',
+              color: isDark ? '#fff' : '#1D2A22',
+            },
+            '& .MuiInputBase-inputMultiline': {
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+              overflowX: 'hidden',
+              lineHeight: 1.35,
+            },
+          }}
         />
         <IconButton onClick={submit} disabled={!text.trim() && !uploaded.length} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><SendRoundedIcon /></IconButton>
       </Box>

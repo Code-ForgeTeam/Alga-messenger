@@ -62,14 +62,15 @@ function BackgroundEffects({
 
   const config =
     effect === 'snow'
-      ? { symbol: '\u2744', count: 28, color: 'primary.main', sizeBase: 10 }
+      ? { symbols: ['\u2744'], count: 28, color: 'primary.main', sizeBase: 10, drift: 8, durationBase: 6 }
       : effect === 'leaves'
-        ? { symbol: '\u273F', count: 20, color: 'primary.light', sizeBase: 13 }
+        ? { symbols: ['\ud83c\udf43', '\ud83c\udf42', '\ud83c\udf41'], count: 18, color: '#5FA35C', sizeBase: 15, drift: 20, durationBase: 7 }
         : effect === 'flowers'
-          ? { symbol: '\u273E', count: 18, color: 'primary.light', sizeBase: 14 }
-          : { symbol: '\u2022', count: 34, color: '#7EB6E8', sizeBase: 12 };
+          ? { symbols: ['\u273f', '\u2740', '\u2741'], count: 18, color: '#D66CA2', sizeBase: 14, drift: 13, durationBase: 6.2 }
+          : { symbols: ['\u2022'], count: 34, color: '#7EB6E8', sizeBase: 12, drift: 6, durationBase: 5.4 };
 
   const count = Math.max(8, Math.round((config.count * intensity) / 100));
+  const finalRotate = effect === 'leaves' ? 26 : effect === 'flowers' ? -12 : 0;
 
   return (
     <Box
@@ -82,7 +83,10 @@ function BackgroundEffects({
         '@keyframes fall': {
           '0%': { transform: 'translateY(-12vh) translateX(0)', opacity: 0 },
           '20%': { opacity: 0.65 },
-          '100%': { transform: 'translateY(110vh) translateX(8px)', opacity: 0 },
+          '100%': {
+            transform: `translateY(110vh) translateX(${config.drift}px) rotate(${finalRotate}deg)`,
+            opacity: 0,
+          },
         },
       }}
     >
@@ -96,12 +100,12 @@ function BackgroundEffects({
             fontSize: `${config.sizeBase + (i % 4) * 4}px`,
             color: config.color,
             opacity: 0.55,
-            animation: `fall ${6 + (i % 7)}s linear infinite`,
+            animation: `fall ${config.durationBase + (i % 7)}s linear infinite`,
             animationDelay: `${(i % 10) * 0.5}s`,
             filter: effect === 'rain' ? 'blur(0.2px)' : 'none',
           }}
         >
-          {config.symbol}
+          {config.symbols[i % config.symbols.length]}
         </Box>
       ))}
     </Box>
@@ -126,6 +130,7 @@ const DEFAULT_INTRO_TARGET: IntroTarget = {
   lineHeight: 24,
 };
 
+const AUTH_BOOT_MIN_MS = 360;
 const INTRO_HOLD_MS = 900;
 const INTRO_FLY_MS = 760;
 const INTRO_FADE_MS = 200;
@@ -244,6 +249,54 @@ function LaunchIntro({
   );
 }
 
+function QuietBootLoader() {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  return (
+    <Box
+      sx={{
+        position: 'relative',
+        zIndex: 2,
+        height: '100%',
+        display: 'grid',
+        placeItems: 'center',
+        '@keyframes bootBreath': {
+          '0%, 100%': { opacity: 0.9, transform: 'translateY(0) scale(1)' },
+          '50%': { opacity: 1, transform: 'translateY(-2px) scale(1.015)' },
+        },
+      }}
+    >
+      <Box sx={{ textAlign: 'center', animation: 'bootBreath 1.8s ease-in-out infinite' }}>
+        <Typography
+          sx={{
+            fontWeight: 800,
+            fontSize: 34,
+            lineHeight: 1,
+            color: isDark ? '#EAF1FF' : '#1A3A2A',
+          }}
+        >
+          Alga
+        </Typography>
+        <Typography
+          sx={{
+            mt: 0.65,
+            fontWeight: 700,
+            fontSize: 14,
+            letterSpacing: 1.6,
+            color: isDark ? 'rgba(214,231,255,0.82)' : 'rgba(23,103,63,0.78)',
+          }}
+        >
+          BVE
+        </Typography>
+        <Box sx={{ mt: 1.8, display: 'flex', justifyContent: 'center' }}>
+          <CircularProgress size={18} thickness={4.6} />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
 function Guard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/auth" replace />;
@@ -264,13 +317,33 @@ export default function App() {
   const [apkUpdate, setApkUpdate] = useState<ApkUpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
   const [showLaunchIntro, setShowLaunchIntro] = useState(launchIntroEnabled);
+  const [authBootstrapping, setAuthBootstrapping] = useState(true);
   const [introTarget, setIntroTarget] = useState<IntroTarget>(DEFAULT_INTRO_TARGET);
   const [introTargetReady, setIntroTargetReady] = useState(false);
   const launchIntroOnChats = showLaunchIntro && launchIntroEnabled && pathname === '/chats';
   const launchIntroActive = launchIntroOnChats && introTargetReady;
 
   useEffect(() => {
-    auth.checkAuth();
+    let disposed = false;
+    let timeoutId: number | null = null;
+    const startedAt = Date.now();
+
+    void auth.checkAuth().finally(() => {
+      const elapsed = Date.now() - startedAt;
+      const waitMs = Math.max(0, AUTH_BOOT_MIN_MS - elapsed);
+      timeoutId = window.setTimeout(() => {
+        if (!disposed) {
+          setAuthBootstrapping(false);
+        }
+      }, waitMs);
+    });
+
+    return () => {
+      disposed = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -477,6 +550,22 @@ export default function App() {
           <Typography variant="h5" sx={{ mb: 1 }}>Аккаунт заблокирован</Typography>
           <Typography color="text.secondary">{auth.banReason || 'Свяжитесь с администратором.'}</Typography>
         </Box>
+      </Box>
+    );
+  }
+
+  if (authBootstrapping) {
+    return (
+      <Box
+        className={glowMode ? 'glow-mode' : ''}
+        sx={{
+          height: '100dvh',
+          overflow: 'hidden',
+          backgroundColor: 'background.default',
+        }}
+      >
+        <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
+        <QuietBootLoader />
       </Box>
     );
   }

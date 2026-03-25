@@ -244,7 +244,7 @@ final class Api
         $this->assertCreator($userId);
 
         $users = (int)$this->db()->query('SELECT COUNT(*) FROM users')->fetchColumn();
-        $chats = (int)$this->db()->query('SELECT COUNT(*) FROM chats')->fetchColumn();
+        $chats = (int)$this->db()->query("SELECT COUNT(*) FROM chats WHERE COALESCE(type, 'private') <> 'saved'")->fetchColumn();
         $messages = (int)$this->db()->query('SELECT COUNT(*) FROM messages')->fetchColumn();
 
         $this->json([

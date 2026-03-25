@@ -183,7 +183,17 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'alga:settings',
-      version: 1,
+      version: 2,
+      migrate: (persistedState, version) => {
+        if (!persistedState || typeof persistedState !== 'object') return persistedState;
+        if (version < 2 && (persistedState as any).bgEffect === 'leaves') {
+          return {
+            ...(persistedState as Record<string, unknown>),
+            bgEffect: 'flowers',
+          };
+        }
+        return persistedState;
+      },
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         theme: state.theme,
