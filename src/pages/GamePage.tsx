@@ -391,7 +391,7 @@ export default function GamePage() {
         bgcolor: isDark ? '#0D1A2E' : '#FFFFFF',
       }}
     >
-      <AppHeader title="Игра: Mahjong Titan" />
+      <AppHeader title="Игра: Pyrga Titan" />
 
       <Paper
         elevation={0}
@@ -403,7 +403,7 @@ export default function GamePage() {
           bgcolor: isDark ? 'rgba(17,33,50,0.78)' : '#F7FBF8',
         }}
       >
-        <Typography sx={{ fontWeight: 800, mb: 0.45 }}>Mahjong Titan (Vita-стиль)</Typography>
+        <Typography sx={{ fontWeight: 800, mb: 0.45 }}>Pyrga Titan</Typography>
         <Typography variant="body2" color="text.secondary">
           Бери свободные плитки в 4 ячейки. Если в ячейках совпала пара, она сразу исчезает.
           Перемешка ограничена, чтобы партия ощущалась ровной и честной.
