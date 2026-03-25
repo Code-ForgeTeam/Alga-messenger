@@ -606,7 +606,7 @@ export default function ChatsPage() {
                   <ListItemIcon><PsychologyRoundedIcon /></ListItemIcon><ListItemText primary="AI чат" />
                 </ListItemButton>
                 <ListItemButton sx={menuItemSx} onClick={() => { navigate('/game'); setDrawerOpen(false); }}>
-                  <ListItemIcon><SportsEsportsRoundedIcon /></ListItemIcon><ListItemText primary="Pyrga Titan" />
+                  <ListItemIcon><SportsEsportsRoundedIcon /></ListItemIcon><ListItemText primary="Игра" />
                 </ListItemButton>
                 {isCreator && (
                   <ListItemButton sx={menuItemSx} onClick={() => { navigate('/admin'); setDrawerOpen(false); }}>
