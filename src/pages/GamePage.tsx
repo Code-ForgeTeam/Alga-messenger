@@ -1,11 +1,61 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
+import TerminalRoundedIcon from '@mui/icons-material/TerminalRounded';
+import MemoryRoundedIcon from '@mui/icons-material/MemoryRounded';
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
+import BugReportRoundedIcon from '@mui/icons-material/BugReportRounded';
+import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
+import CloudRoundedIcon from '@mui/icons-material/CloudRounded';
+import ApiRoundedIcon from '@mui/icons-material/ApiRounded';
+import DataObjectRoundedIcon from '@mui/icons-material/DataObjectRounded';
+import DnsRoundedIcon from '@mui/icons-material/DnsRounded';
+import LanRoundedIcon from '@mui/icons-material/LanRounded';
+import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
+import RouterRoundedIcon from '@mui/icons-material/RouterRounded';
+import HubRoundedIcon from '@mui/icons-material/HubRounded';
+import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
+import BuildRoundedIcon from '@mui/icons-material/BuildRounded';
+import DeveloperBoardRoundedIcon from '@mui/icons-material/DeveloperBoardRounded';
+import IntegrationInstructionsRoundedIcon from '@mui/icons-material/IntegrationInstructionsRounded';
+import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
+import KeyRoundedIcon from '@mui/icons-material/KeyRounded';
+import LockRoundedIcon from '@mui/icons-material/LockRounded';
+import SpeedRoundedIcon from '@mui/icons-material/SpeedRounded';
+import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
+import PrecisionManufacturingRoundedIcon from '@mui/icons-material/PrecisionManufacturingRounded';
 import { AppHeader } from '../components/AppHeader';
+
+type TileFace =
+  | 'code'
+  | 'terminal'
+  | 'memory'
+  | 'storage'
+  | 'bug'
+  | 'security'
+  | 'cloud'
+  | 'api'
+  | 'data'
+  | 'dns'
+  | 'lan'
+  | 'bot'
+  | 'router'
+  | 'hub'
+  | 'rocket'
+  | 'build'
+  | 'board'
+  | 'integrate'
+  | 'mind'
+  | 'key'
+  | 'lock'
+  | 'speed'
+  | 'magic'
+  | 'chip';
 
 type Tile = {
   id: string;
-  face: string;
+  face: TileFace;
   row: number;
   col: number;
   removed: boolean;
@@ -17,11 +67,38 @@ const TILE_COUNT = ROWS * COLS;
 const BEST_TIME_KEY = 'alga.mahjong.best-time-sec.v1';
 const WINS_KEY = 'alga.mahjong.wins.v1';
 
-const TILE_FACES = [
-  'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8',
-  'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8',
-  'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8',
+const TILE_FACES: TileFace[] = [
+  'code', 'terminal', 'memory', 'storage', 'bug', 'security', 'cloud', 'api',
+  'data', 'dns', 'lan', 'bot', 'router', 'hub', 'rocket', 'build',
+  'board', 'integrate', 'mind', 'key', 'lock', 'speed', 'magic', 'chip',
 ];
+
+const FACE_ICON_MAP: Record<TileFace, { Icon: typeof CodeRoundedIcon; color: string }> = {
+  code: { Icon: CodeRoundedIcon, color: '#246BCE' },
+  terminal: { Icon: TerminalRoundedIcon, color: '#1F7A4A' },
+  memory: { Icon: MemoryRoundedIcon, color: '#8D4CBF' },
+  storage: { Icon: StorageRoundedIcon, color: '#0F8BAA' },
+  bug: { Icon: BugReportRoundedIcon, color: '#D06724' },
+  security: { Icon: SecurityRoundedIcon, color: '#2664B8' },
+  cloud: { Icon: CloudRoundedIcon, color: '#1D93D3' },
+  api: { Icon: ApiRoundedIcon, color: '#2F8B62' },
+  data: { Icon: DataObjectRoundedIcon, color: '#6845A3' },
+  dns: { Icon: DnsRoundedIcon, color: '#468E6D' },
+  lan: { Icon: LanRoundedIcon, color: '#007FA4' },
+  bot: { Icon: SmartToyRoundedIcon, color: '#7562C4' },
+  router: { Icon: RouterRoundedIcon, color: '#4D7A98' },
+  hub: { Icon: HubRoundedIcon, color: '#3C8A8A' },
+  rocket: { Icon: RocketLaunchRoundedIcon, color: '#CA6A22' },
+  build: { Icon: BuildRoundedIcon, color: '#9A5B2E' },
+  board: { Icon: DeveloperBoardRoundedIcon, color: '#225E91' },
+  integrate: { Icon: IntegrationInstructionsRoundedIcon, color: '#1A7A73' },
+  mind: { Icon: PsychologyRoundedIcon, color: '#7B52C0' },
+  key: { Icon: KeyRoundedIcon, color: '#A57920' },
+  lock: { Icon: LockRoundedIcon, color: '#44637E' },
+  speed: { Icon: SpeedRoundedIcon, color: '#2D8F6A' },
+  magic: { Icon: AutoFixHighRoundedIcon, color: '#B35AA4' },
+  chip: { Icon: PrecisionManufacturingRoundedIcon, color: '#5777A4' },
+};
 
 const shuffle = <T,>(items: T[]): T[] => {
   const copy = [...items];
@@ -287,6 +364,8 @@ export default function GamePage() {
             const isSelected = selectedId === tile.id;
             const isHinted = !!hintPair && (hintPair[0] === tile.id || hintPair[1] === tile.id);
             const free = !!freeById.get(tile.id);
+            const faceConfig = FACE_ICON_MAP[tile.face];
+            const TileIcon = faceConfig.Icon;
             return (
               <Box
                 key={tile.id}
@@ -316,9 +395,6 @@ export default function GamePage() {
                         ? 'linear-gradient(160deg, #D4DEE9, #C8D5E2)'
                         : 'linear-gradient(160deg, #EEF1EF, #E3E8E5)',
                   color: tile.removed ? 'transparent' : '#1A2A39',
-                  fontSize: { xs: 12, sm: 13 },
-                  fontWeight: 800,
-                  letterSpacing: 0.3,
                   cursor: tile.removed ? 'default' : 'pointer',
                   opacity: tile.removed ? 0 : 1,
                   boxShadow: tile.removed
@@ -330,7 +406,16 @@ export default function GamePage() {
                   '&:active': { transform: tile.removed ? 'none' : 'scale(0.96)' },
                 }}
               >
-                {tile.removed ? '' : tile.face}
+                {!tile.removed && (
+                  <TileIcon
+                    sx={{
+                      fontSize: { xs: 19, sm: 22 },
+                      color: faceConfig.color,
+                      opacity: free ? 1 : 0.72,
+                      filter: free ? 'none' : 'saturate(0.75)',
+                    }}
+                  />
+                )}
               </Box>
             );
           })}
