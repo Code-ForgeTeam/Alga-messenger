@@ -468,6 +468,15 @@ export default function App() {
 
   useEffect(() => {
     if (!auth.isAuthenticated) return;
+    if (typeof window === 'undefined') return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => null);
+    }
+  }, [auth.isAuthenticated]);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated) return;
 
     let disposed = false;
     let removeRegistration: (() => void) | null = null;

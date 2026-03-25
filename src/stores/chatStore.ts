@@ -5,6 +5,7 @@ import type { Chat, Message, User } from '../lib/types';
 import { useAuthStore } from './authStore';
 import { useContactsStore } from './contactsStore';
 import { useNotificationStore } from './notificationStore';
+import { useSnackbarStore } from './snackbarStore';
 
 const statusCache = new Map<string, Pick<User, 'status' | 'lastSeen'>>();
 
@@ -91,6 +92,56 @@ const resolveUnreadCount = ({
   }
 
   return 0;
+};
+
+const notifiedMessageIdsSet = new Set<string>();
+const notifiedMessageIdsQueue: string[] = [];
+
+const rememberNotifiedMessageId = (messageId: string): boolean => {
+  const normalized = String(messageId || '').trim();
+  if (!normalized) return false;
+  if (notifiedMessageIdsSet.has(normalized)) return false;
+  notifiedMessageIdsSet.add(normalized);
+  notifiedMessageIdsQueue.push(normalized);
+  if (notifiedMessageIdsQueue.length > 500) {
+    const oldest = notifiedMessageIdsQueue.shift();
+    if (oldest) notifiedMessageIdsSet.delete(oldest);
+  }
+  return true;
+};
+
+const messagePreviewText = (message: Message): string => {
+  const text = String(message.text || '').trim();
+  if (text) {
+    return text.length > 140 ? `${text.slice(0, 137)}...` : text;
+  }
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (attachments.some((item) => item?.type === 'image')) return 'Фото';
+  if (attachments.some((item) => item?.type === 'video')) return 'Видео';
+  if (attachments.some((item) => item?.type === 'audio')) return 'Аудио';
+  if (attachments.length > 0) return 'Вложение';
+  return 'Новое сообщение';
+};
+
+const messageNotificationTitle = (chat: Chat | undefined, viewerId?: string): string => {
+  if (!chat) return 'Новый чат';
+  if (chat.type === 'saved') return 'Избранное';
+  const title = String(chat.name || '').trim();
+  if (title) return title;
+  const peer = chat.participants?.find((participant) => participant.id !== viewerId) || chat.participants?.[0];
+  return String(peer?.fullName || '').trim() || (peer?.username ? `@${peer.username}` : 'Новый чат');
+};
+
+const showSystemMessageNotification = (title: string, body: string, chatId: string): void => {
+  if (typeof window === 'undefined') return;
+  if (!('Notification' in window)) return;
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
+  if (Notification.permission !== 'granted') return;
+  try {
+    new Notification(title, { body, tag: `alga-chat-${chatId}` });
+  } catch {
+    // ignore notification permission/runtime issues
+  }
 };
 
 interface ChatState {
@@ -470,6 +521,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   handleNewMessage: (message) => {
     const me = useAuthStore.getState().user?.id;
+    const stateBefore = get();
+    const existingList = stateBefore.messages[message.chatId] || [];
+    const alreadyHaveMessage = existingList.some((item) => item.id === message.id);
+    const chat = stateBefore.chats.find((item) => item.id === message.chatId);
+    const chatType = String(chat?.type || '').toLowerCase();
+    const incoming = !!me && message.userId !== me;
+    const shouldNotifyIncoming =
+      incoming &&
+      chatType !== 'saved' &&
+      chatType !== 'ai' &&
+      stateBefore.currentChatId !== message.chatId &&
+      !alreadyHaveMessage &&
+      rememberNotifiedMessageId(message.id);
+
     set((state) => {
       const list = state.messages[message.chatId] || [];
       const tempIdx = list.findIndex((m) => m.id === message.tempId);
@@ -510,6 +575,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       return { messages: { ...state.messages, [message.chatId]: next }, chats };
     });
+
+    if (shouldNotifyIncoming) {
+      const title = messageNotificationTitle(chat, me);
+      const preview = messagePreviewText(message);
+      useSnackbarStore.getState().push({
+        message: `${title}: ${preview}`,
+        timeout: 3200,
+      });
+      showSystemMessageNotification(title, preview, message.chatId);
+    }
   },
 
   handleMessageEdited: ({ messageId, text, editedAt }) =>

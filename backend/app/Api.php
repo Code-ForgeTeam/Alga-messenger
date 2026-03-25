@@ -46,6 +46,7 @@ final class Api
         if ($path === '/api/admin/clear-content' && $method === 'POST') { $this->adminClearContent(); }
         if ($path === '/api/admin/reset-users' && $method === 'POST') { $this->adminResetUsers(); }
         if ($path === '/api/admin/events' && $method === 'POST') { $this->adminCreateEvent($body); }
+        if ($path === '/api/admin/events/reset' && $method === 'POST') { $this->adminResetEvents(); }
 
         if ($path === '/api/users/me' && $method === 'GET') { $this->me(); }
         if ($path === '/api/users/me' && $method === 'PUT') { $this->updateMe($body); }
@@ -398,6 +399,10 @@ final class Api
         if ($template === 'update' && $message === '') {
             $message = 'Установите последнюю версию приложения.';
         }
+        if ($template === 'update') {
+            $title = 'Доступно обновление';
+            $message = 'Обновление на сайте';
+        }
         if ($title === '' && $message === '') {
             $this->json(['error' => 'Event title or message is required'], 400);
         }
@@ -472,6 +477,29 @@ final class Api
         ], 201);
     }
 
+    private function adminResetEvents(): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+
+        $disabledCount = 0;
+        if ($this->ensureNotificationsTables()) {
+            try {
+                $stmt = $this->db()->prepare('UPDATE notifications SET active = 0 WHERE active = 1');
+                $stmt->execute();
+                $disabledCount = (int)$stmt->rowCount();
+            } catch (\Throwable) {
+                // fallback below
+            }
+        }
+
+        $fallbackDisabled = $this->deactivateNotificationsFallback();
+        $this->json([
+            'ok' => true,
+            'disabled' => $disabledCount + $fallbackDisabled,
+        ]);
+    }
+
     private function activeNotifications(): void
     {
         $userId = $this->authUserId();
@@ -482,12 +510,9 @@ final class Api
                      FROM notifications n
                      WHERE n.active = 1
                        AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP)
-                       AND (
-                         n.show_once = 0
-                         OR NOT EXISTS (
-                           SELECT 1 FROM notification_dismissals d
-                           WHERE d.notification_id = n.id AND d.user_id = ?
-                         )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM notification_dismissals d
+                         WHERE d.notification_id = n.id AND d.user_id = ?
                        )
                      ORDER BY n.created_at DESC
                      LIMIT 20'
@@ -733,7 +758,7 @@ final class Api
             }
 
             $dismissedBy = is_array($row['dismissedBy'] ?? null) ? $row['dismissedBy'] : [];
-            if (!empty($row['showOnce']) && in_array($userId, $dismissedBy, true)) {
+            if (in_array($userId, $dismissedBy, true)) {
                 continue;
             }
 
@@ -795,6 +820,29 @@ final class Api
         if ($changed) {
             $this->writeNotificationsFallback($rows);
         }
+    }
+
+    private function deactivateNotificationsFallback(): int
+    {
+        $rows = $this->readNotificationsFallback();
+        if (!$rows) {
+            return 0;
+        }
+
+        $disabled = 0;
+        foreach ($rows as &$row) {
+            if (!empty($row['active'])) {
+                $row['active'] = false;
+                $disabled++;
+            }
+        }
+        unset($row);
+
+        if ($disabled > 0) {
+            $this->writeNotificationsFallback($rows);
+        }
+
+        return $disabled;
     }
 
     private function createChat(array $body): void

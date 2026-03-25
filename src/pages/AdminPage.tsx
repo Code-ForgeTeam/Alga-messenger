@@ -34,7 +34,7 @@ type AdminAction = 'clear-chats' | 'clear-messages' | 'clear-content' | 'reset-u
 const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: string; button: string }> = {
   'clear-chats': {
     title: 'Очистить все чаты?',
-    body: 'Будут удалены все чаты и вложенные сообщения для всех пользователей.',
+    body: 'Будут удалены все чаты и вложения для всех пользователей.',
     button: 'Очистить чаты',
   },
   'clear-messages': {
@@ -54,6 +54,9 @@ const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: str
   },
 };
 
+const UPDATE_EVENT_TITLE = 'Доступно обновление';
+const UPDATE_EVENT_MESSAGE = 'Обновление на сайте';
+
 export default function AdminPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -69,9 +72,10 @@ export default function AdminPage() {
   const [action, setAction] = useState<AdminAction>(null);
   const [targetUsername, setTargetUsername] = useState('');
   const [confirmDeleteUserOpen, setConfirmDeleteUserOpen] = useState(false);
+
   const [eventTemplate, setEventTemplate] = useState<'update' | 'custom'>('update');
-  const [eventTitle, setEventTitle] = useState('Доступно обновление');
-  const [eventMessage, setEventMessage] = useState('');
+  const [eventTitle, setEventTitle] = useState(UPDATE_EVENT_TITLE);
+  const [eventMessage, setEventMessage] = useState(UPDATE_EVENT_MESSAGE);
   const [eventDurationSec, setEventDurationSec] = useState('5');
   const [isEventBusy, setIsEventBusy] = useState(false);
 
@@ -89,7 +93,11 @@ export default function AdminPage() {
         setAdminAccess(false, me.id);
         return;
       }
-      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось загрузить данные админ-панели', timeout: 2600 });
+      pushSnackbar({
+        message: error?.response?.data?.error || 'Не удалось загрузить данные админ-панели',
+        timeout: 2600,
+        tone: 'error',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -117,20 +125,27 @@ export default function AdminPage() {
 
       await loadChats({ silent: true });
       await refreshOverview();
+
       if (action === 'clear-content') {
         const clearedBytes = Number(result?.clearedFilesBytes ?? 0);
         const clearedMb = clearedBytes > 0 ? Math.round((clearedBytes / (1024 * 1024)) * 10) / 10 : 0;
         pushSnackbar({
           message: clearedMb > 0 ? `Контент очищен (${clearedMb} MB)` : 'Контент очищен',
           timeout: 2600,
+          tone: 'success',
         });
         setAction(null);
         return;
       }
-      pushSnackbar({ message: 'Операция выполнена', timeout: 2200 });
+
+      pushSnackbar({ message: 'Операция выполнена', timeout: 2200, tone: 'success' });
       setAction(null);
     } catch (error: any) {
-      pushSnackbar({ message: error?.response?.data?.error || 'Операция не выполнена', timeout: 2600 });
+      pushSnackbar({
+        message: error?.response?.data?.error || 'Операция не выполнена',
+        timeout: 2600,
+        tone: 'error',
+      });
     } finally {
       setIsBusy(false);
     }
@@ -139,29 +154,37 @@ export default function AdminPage() {
   const deleteByUsername = async () => {
     const username = targetUsername.replace('@', '').trim();
     if (!username) {
-      pushSnackbar({ message: 'Введите username', timeout: 2200 });
+      pushSnackbar({ message: 'Введите username', timeout: 2200, tone: 'error' });
       return;
     }
     setIsBusy(true);
     try {
       await adminApi.deleteUserByUsername(username);
-      pushSnackbar({ message: `Пользователь @${username} удалён`, timeout: 2300 });
+      pushSnackbar({ message: `Пользователь @${username} удалён`, timeout: 2300, tone: 'success' });
       setTargetUsername('');
       setConfirmDeleteUserOpen(false);
       await loadChats({ silent: true });
       await refreshOverview();
     } catch (error: any) {
-      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось удалить пользователя', timeout: 2600 });
+      pushSnackbar({
+        message: error?.response?.data?.error || 'Не удалось удалить пользователя',
+        timeout: 2600,
+        tone: 'error',
+      });
     } finally {
       setIsBusy(false);
     }
   };
 
   const sendEvent = async () => {
-    const title = eventTitle.trim();
-    const message = eventMessage.trim();
+    const title = eventTemplate === 'update' ? UPDATE_EVENT_TITLE : eventTitle.trim();
+    const message = eventTemplate === 'update' ? UPDATE_EVENT_MESSAGE : eventMessage.trim();
     if (eventTemplate === 'custom' && title === '' && message === '') {
-      pushSnackbar({ message: 'Заполните заголовок или текст ивента', timeout: 2400, tone: 'error' });
+      pushSnackbar({
+        message: 'Заполните заголовок или текст ивента',
+        timeout: 2400,
+        tone: 'error',
+      });
       return;
     }
 
@@ -180,12 +203,38 @@ export default function AdminPage() {
       pushSnackbar({ message: 'Ивент отправлен', timeout: 2200, tone: 'success' });
       if (eventTemplate === 'custom') {
         setEventTitle('');
+        setEventMessage('');
       } else {
-        setEventTitle('Доступно обновление');
+        setEventTitle(UPDATE_EVENT_TITLE);
+        setEventMessage(UPDATE_EVENT_MESSAGE);
       }
-      setEventMessage('');
     } catch (error: any) {
-      pushSnackbar({ message: error?.response?.data?.error || 'Не удалось отправить ивент', timeout: 2600, tone: 'error' });
+      pushSnackbar({
+        message: error?.response?.data?.error || 'Не удалось отправить ивент',
+        timeout: 2600,
+        tone: 'error',
+      });
+    } finally {
+      setIsEventBusy(false);
+    }
+  };
+
+  const resetEvents = async () => {
+    setIsEventBusy(true);
+    try {
+      const response = await adminApi.resetEvents();
+      const disabled = Number(response?.disabled ?? 0);
+      pushSnackbar({
+        message: disabled > 0 ? `Ивенты сброшены: ${disabled}` : 'Ивенты сброшены',
+        timeout: 2200,
+        tone: 'success',
+      });
+    } catch (error: any) {
+      pushSnackbar({
+        message: error?.response?.data?.error || 'Не удалось сбросить ивенты',
+        timeout: 2600,
+        tone: 'error',
+      });
     } finally {
       setIsEventBusy(false);
     }
@@ -246,7 +295,7 @@ export default function AdminPage() {
                 elevation={0}
                 sx={{
                   mt: 1.4,
-                  p: 1.4,
+                  p: 1.5,
                   borderRadius: 3,
                   border: '1px solid',
                   borderColor: isDark ? 'rgba(129,187,243,0.3)' : 'rgba(31,163,91,0.22)',
@@ -254,15 +303,17 @@ export default function AdminPage() {
                 }}
               >
                 <Typography sx={{ fontWeight: 800, mb: 1 }}>Ивент</Typography>
-                <Stack spacing={1}>
-                  <Stack direction="row" spacing={1}>
+                <Stack spacing={1.1}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8}>
                     <Button
                       size="small"
                       variant={eventTemplate === 'update' ? 'contained' : 'outlined'}
                       onClick={() => {
                         setEventTemplate('update');
-                        setEventTitle('Доступно обновление');
+                        setEventTitle(UPDATE_EVENT_TITLE);
+                        setEventMessage(UPDATE_EVENT_MESSAGE);
                       }}
+                      sx={{ flex: 1 }}
                     >
                       Доступно обновление
                     </Button>
@@ -271,26 +322,52 @@ export default function AdminPage() {
                       variant={eventTemplate === 'custom' ? 'contained' : 'outlined'}
                       onClick={() => {
                         setEventTemplate('custom');
+                        if (eventTitle === UPDATE_EVENT_TITLE && eventMessage === UPDATE_EVENT_MESSAGE) {
+                          setEventTitle('');
+                          setEventMessage('');
+                        }
                       }}
+                      sx={{ flex: 1 }}
                     >
                       Кастом
                     </Button>
                   </Stack>
 
-                  <TextField
-                    size="small"
-                    label="Заголовок"
-                    value={eventTitle}
-                    onChange={(e) => setEventTitle(e.target.value)}
-                  />
-                  <TextField
-                    size="small"
-                    multiline
-                    minRows={2}
-                    label="Текст уведомления"
-                    value={eventMessage}
-                    onChange={(e) => setEventMessage(e.target.value)}
-                  />
+                  {eventTemplate === 'update' ? (
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 1,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: isDark ? 'rgba(150,184,219,0.28)' : 'rgba(31,163,91,0.22)',
+                        bgcolor: isDark ? 'rgba(20,38,57,0.7)' : 'rgba(255,255,255,0.88)',
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Заголовок</Typography>
+                      <Typography sx={{ fontWeight: 700, mb: 0.55 }}>{UPDATE_EVENT_TITLE}</Typography>
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Текст</Typography>
+                      <Typography sx={{ fontWeight: 500 }}>{UPDATE_EVENT_MESSAGE}</Typography>
+                    </Paper>
+                  ) : (
+                    <>
+                      <TextField
+                        size="small"
+                        label="Заголовок"
+                        value={eventTitle}
+                        onChange={(e) => setEventTitle(e.target.value)}
+                      />
+                      <TextField
+                        size="small"
+                        multiline
+                        minRows={2}
+                        label="Текст уведомления"
+                        value={eventMessage}
+                        onChange={(e) => setEventMessage(e.target.value)}
+                      />
+                    </>
+                  )}
+
                   <TextField
                     size="small"
                     type="number"
@@ -300,9 +377,20 @@ export default function AdminPage() {
                     inputProps={{ min: 2, max: 15, step: 1 }}
                   />
 
-                  <Button variant="contained" onClick={sendEvent} disabled={isEventBusy}>
-                    {isEventBusy ? 'Отправка...' : 'Отправить ивент'}
-                  </Button>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8}>
+                    <Button sx={{ flex: 1 }} variant="contained" onClick={sendEvent} disabled={isEventBusy}>
+                      {isEventBusy ? 'Отправка...' : 'Отправить ивент'}
+                    </Button>
+                    <Button
+                      sx={{ flex: 1 }}
+                      variant="outlined"
+                      color="inherit"
+                      onClick={resetEvents}
+                      disabled={isEventBusy}
+                    >
+                      Сбросить ивенты
+                    </Button>
+                  </Stack>
                 </Stack>
               </Paper>
 
@@ -359,7 +447,7 @@ export default function AdminPage() {
                     variant="contained"
                     onClick={() => {
                       if (!targetUsername.replace('@', '').trim()) {
-                        pushSnackbar({ message: 'Введите username', timeout: 2200 });
+                        pushSnackbar({ message: 'Введите username', timeout: 2200, tone: 'error' });
                         return;
                       }
                       setConfirmDeleteUserOpen(true);
