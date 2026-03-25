@@ -4,9 +4,14 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   IconButton,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -15,6 +20,7 @@ import { chatApi, userApi } from '../lib/api';
 import type { Chat, User } from '../lib/types';
 import { useAuthStore } from '../stores/authStore';
 import { useChatStore } from '../stores/chatStore';
+import { useContactsStore } from '../stores/contactsStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { AppHeader } from '../components/AppHeader';
 
@@ -53,11 +59,18 @@ export default function UserProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<'message' | 'block' | 'delete' | null>(null);
+  const [editLocalNameOpen, setEditLocalNameOpen] = useState(false);
+  const [localNameDraft, setLocalNameDraft] = useState('');
 
   const navigate = useNavigate();
   const pushSnackbar = useSnackbarStore((s) => s.push);
   const myUser = useAuthStore((s) => s.user);
   const { chats, createChat, deleteChat, loadChats } = useChatStore();
+  const addContact = useContactsStore((s) => s.addContact);
+  const removeContact = useContactsStore((s) => s.removeContact);
+  const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
+  const renameContact = useContactsStore((s) => s.renameContact);
+  const resetContactName = useContactsStore((s) => s.resetContactName);
 
   const incomingChatId = searchParams.get('chatId') || '';
 
@@ -91,6 +104,13 @@ export default function UserProfilePage() {
 
   const resolvedChatId = incomingChatId || privateChat?.id || '';
   const isBlocked = !!privateChat?.blocked;
+  const contactEntry = useMemo(() => getContactByUserId(userId), [getContactByUserId, userId]);
+  const displayName = (contactEntry?.displayName || user?.fullName || user?.username || '').trim();
+  const defaultDisplayName = (user?.fullName || (user?.username ? `@${user.username}` : 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ')).trim();
+  const isLocalNameCustomized =
+    !!contactEntry &&
+    contactEntry.displayName.trim() !== '' &&
+    contactEntry.displayName.trim() !== defaultDisplayName;
 
   const ensurePrivateChat = async (): Promise<Chat> => {
     if (incomingChatId) {
@@ -151,6 +171,59 @@ export default function UserProfilePage() {
     }
   };
 
+  const openEditLocalName = () => {
+    if (!user || isSelfProfile) return;
+    setLocalNameDraft((contactEntry?.displayName || user.fullName || user.username || '').trim());
+    setEditLocalNameOpen(true);
+  };
+
+  const saveLocalName = () => {
+    if (!user || isSelfProfile) return;
+    const nextName = localNameDraft.trim();
+    if (!nextName) {
+      pushSnackbar({ message: 'Р’РІРµРґРёС‚Рµ РёРјСЏ РєРѕРЅС‚Р°РєС‚Р°', timeout: 2200, tone: 'error' });
+      return;
+    }
+
+    const hadContact = !!contactEntry;
+    const previousName = contactEntry?.displayName || '';
+    const previousContactId = contactEntry?.id || '';
+
+    if (hadContact) {
+      renameContact(previousContactId, nextName);
+    } else {
+      addContact(user, nextName);
+    }
+    setEditLocalNameOpen(false);
+
+    pushSnackbar({
+      message: 'Р›РѕРєР°Р»СЊРЅРѕРµ РёРјСЏ РѕР±РЅРѕРІР»РµРЅРѕ',
+      timeout: 4200,
+      tone: 'success',
+      onUndo: () => {
+        if (hadContact) {
+          renameContact(previousContactId, previousName);
+          return;
+        }
+        const created = useContactsStore.getState().getContactByUserId(user.id);
+        if (created) {
+          removeContact(created.id);
+        }
+      },
+    });
+  };
+
+  const clearLocalName = () => {
+    if (!contactEntry || isSelfProfile) return;
+    const previousName = contactEntry.displayName;
+    resetContactName(contactEntry.id);
+    pushSnackbar({
+      message: 'Р›РѕРєР°Р»СЊРЅРѕРµ РёРјСЏ СЃР±СЂРѕС€РµРЅРѕ',
+      timeout: 4200,
+      onUndo: () => renameContact(contactEntry.id, previousName),
+    });
+  };
+
   if (loading) {
     return (
       <Box sx={{ p: 3, display: 'grid', placeItems: 'center' }}>
@@ -193,7 +266,7 @@ export default function UserProfilePage() {
         </Box>
 
         <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          {user.fullName || user.username}
+          {displayName || user.fullName || user.username}
         </Typography>
         <Typography color="text.secondary">@{user.username}</Typography>
         <Typography sx={{ mt: 0.5 }} color={user.status === 'online' ? 'success.main' : 'text.secondary'}>
@@ -222,6 +295,14 @@ export default function UserProfilePage() {
           <Button variant="contained" onClick={openChat} disabled={actionLoading !== null}>
             {actionLoading === 'message' ? 'Открываем чат...' : 'Написать сообщение'}
           </Button>
+          <Button variant="outlined" onClick={openEditLocalName} disabled={actionLoading !== null}>
+            {contactEntry ? 'Изменить имя локально' : 'Сохранить имя контакта'}
+          </Button>
+          {isLocalNameCustomized && (
+            <Button variant="text" color="inherit" onClick={clearLocalName} disabled={actionLoading !== null}>
+              Сбросить локальное имя
+            </Button>
+          )}
           <Button color={isBlocked ? 'success' : 'warning'} variant="outlined" onClick={toggleBlockUser} disabled={actionLoading !== null}>
             {actionLoading === 'block'
               ? 'Сохраняем...'
@@ -236,6 +317,25 @@ export default function UserProfilePage() {
       ) : (
         <Box sx={{ mt: 3.2 }} />
       )}
+
+      <Dialog open={editLocalNameOpen} onClose={() => setEditLocalNameOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Локальное имя контакта</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Имя"
+            value={localNameDraft}
+            onChange={(event) => setLocalNameDraft(event.target.value)}
+            sx={{ mt: 0.5 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditLocalNameOpen(false)}>Отмена</Button>
+          <Button variant="contained" onClick={saveLocalName}>Сохранить</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -387,9 +387,7 @@ final class Api
         $userId = $this->authUserId();
         $this->assertCreator($userId);
 
-        if (!$this->ensureNotificationsTables()) {
-            $this->json(['error' => 'Notification storage is unavailable'], 500);
-        }
+        $canUseDb = $this->ensureNotificationsTables();
 
         $template = strtolower(trim((string)($body['template'] ?? 'custom')));
         $title = trim((string)($body['title'] ?? ''));
@@ -415,28 +413,57 @@ final class Api
         $textColor = $this->normalizeNotificationColor((string)($body['textColor'] ?? ''));
 
         $id = $this->uuid();
-        $stmt = $this->db()->prepare(
-            'INSERT INTO notifications (id, title, message, bg_color, text_color, duration_ms, show_once, active, created_by, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)'
-        );
-        $stmt->execute([
-            $id,
-            $title === '' ? null : $title,
-            $message === '' ? null : $message,
-            $bgColor,
-            $textColor,
-            $durationMs,
-            $showOnce ? 1 : 0,
-            $userId,
-            $expiresAt,
-        ]);
+        $titleValue = $title === '' ? null : $title;
+        $messageValue = $message === '' ? null : $message;
+
+        $stored = false;
+        if ($canUseDb) {
+            try {
+                $stmt = $this->db()->prepare(
+                    'INSERT INTO notifications (id, title, message, bg_color, text_color, duration_ms, show_once, active, created_by, expires_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)'
+                );
+                $stmt->execute([
+                    $id,
+                    $titleValue,
+                    $messageValue,
+                    $bgColor,
+                    $textColor,
+                    $durationMs,
+                    $showOnce ? 1 : 0,
+                    $userId,
+                    $expiresAt,
+                ]);
+                $stored = true;
+            } catch (\Throwable) {
+                $stored = false;
+            }
+        }
+
+        if (!$stored) {
+            $stored = $this->appendNotificationFallback([
+                'id' => $id,
+                'title' => $titleValue,
+                'message' => $messageValue,
+                'bgColor' => $bgColor,
+                'textColor' => $textColor,
+                'durationMs' => $durationMs,
+                'showOnce' => $showOnce,
+                'active' => true,
+                'expiresAt' => $expiresAt,
+            ]);
+        }
+
+        if (!$stored) {
+            $this->json(['error' => 'Не удалось сохранить ивент'], 500);
+        }
 
         $this->json([
             'ok' => true,
             'event' => [
                 'id' => $id,
-                'title' => $title === '' ? null : $title,
-                'message' => $message === '' ? null : $message,
+                'title' => $titleValue,
+                'message' => $messageValue,
                 'bgColor' => $bgColor,
                 'textColor' => $textColor,
                 'durationMs' => $durationMs,
@@ -448,42 +475,46 @@ final class Api
     private function activeNotifications(): void
     {
         $userId = $this->authUserId();
-        if (!$this->ensureNotificationsTables()) {
-            $this->json([]);
+        if ($this->ensureNotificationsTables()) {
+            try {
+                $stmt = $this->db()->prepare(
+                    'SELECT n.id, n.title, n.message, n.bg_color, n.text_color, n.duration_ms, n.show_once
+                     FROM notifications n
+                     WHERE n.active = 1
+                       AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP)
+                       AND (
+                         n.show_once = 0
+                         OR NOT EXISTS (
+                           SELECT 1 FROM notification_dismissals d
+                           WHERE d.notification_id = n.id AND d.user_id = ?
+                         )
+                       )
+                     ORDER BY n.created_at DESC
+                     LIMIT 20'
+                );
+                $stmt->execute([$userId]);
+                $rows = $stmt->fetchAll() ?: [];
+
+                $items = array_map(function ($row) {
+                    return [
+                        'id' => (string)($row['id'] ?? ''),
+                        'title' => $row['title'] ?? null,
+                        'message' => $row['message'] ?? null,
+                        'bgColor' => $row['bg_color'] ?? null,
+                        'textColor' => $row['text_color'] ?? null,
+                        'durationMs' => max(2000, min(15000, (int)($row['duration_ms'] ?? 5000))),
+                        'dismissable' => true,
+                        'showOnce' => !empty($row['show_once']),
+                    ];
+                }, $rows);
+
+                $this->json($items);
+            } catch (\Throwable) {
+                // fallback below
+            }
         }
 
-        $stmt = $this->db()->prepare(
-            'SELECT n.id, n.title, n.message, n.bg_color, n.text_color, n.duration_ms, n.show_once
-             FROM notifications n
-             WHERE n.active = 1
-               AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP)
-               AND (
-                 n.show_once = 0
-                 OR NOT EXISTS (
-                   SELECT 1 FROM notification_dismissals d
-                   WHERE d.notification_id = n.id AND d.user_id = ?
-                 )
-               )
-             ORDER BY n.created_at DESC
-             LIMIT 20'
-        );
-        $stmt->execute([$userId]);
-        $rows = $stmt->fetchAll() ?: [];
-
-        $items = array_map(function ($row) {
-            return [
-                'id' => (string)($row['id'] ?? ''),
-                'title' => $row['title'] ?? null,
-                'message' => $row['message'] ?? null,
-                'bgColor' => $row['bg_color'] ?? null,
-                'textColor' => $row['text_color'] ?? null,
-                'durationMs' => max(2000, min(15000, (int)($row['duration_ms'] ?? 5000))),
-                'dismissable' => true,
-                'showOnce' => !empty($row['show_once']),
-            ];
-        }, $rows);
-
-        $this->json($items);
+        $this->json($this->activeNotificationsFallback($userId));
     }
 
     private function dismissNotification(string $notificationId): void
@@ -494,15 +525,20 @@ final class Api
             $this->json(['ok' => true]);
         }
         if (!$this->ensureNotificationsTables()) {
+            $this->dismissNotificationFallback($id, $userId);
             $this->json(['ok' => true]);
         }
 
-        $stmt = $this->db()->prepare(
-            'INSERT INTO notification_dismissals (notification_id, user_id, dismissed_at)
-             VALUES (?, ?, CURRENT_TIMESTAMP)
-             ON DUPLICATE KEY UPDATE dismissed_at = CURRENT_TIMESTAMP'
-        );
-        $stmt->execute([$id, $userId]);
+        try {
+            $stmt = $this->db()->prepare(
+                'INSERT INTO notification_dismissals (notification_id, user_id, dismissed_at)
+                 VALUES (?, ?, CURRENT_TIMESTAMP)
+                 ON DUPLICATE KEY UPDATE dismissed_at = CURRENT_TIMESTAMP'
+            );
+            $stmt->execute([$id, $userId]);
+        } catch (\Throwable) {
+            $this->dismissNotificationFallback($id, $userId);
+        }
         $this->json(['ok' => true]);
     }
 
@@ -556,6 +592,209 @@ final class Api
             return null;
         }
         return '#' . strtoupper(ltrim($value, '#'));
+    }
+
+    private function notificationsFallbackPath(): string
+    {
+        $dir = dirname(__DIR__) . '/public/uploads/cache';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        return $dir . '/notifications_fallback.json';
+    }
+
+    private function readNotificationsFallback(): array
+    {
+        $path = $this->notificationsFallbackPath();
+        if (!is_file($path)) {
+            return [];
+        }
+
+        $raw = @file_get_contents($path);
+        if (!is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($decoded as $row) {
+            $normalized = $this->normalizeFallbackNotificationRow($row);
+            if ($normalized !== null) {
+                $rows[] = $normalized;
+            }
+        }
+        return $rows;
+    }
+
+    private function writeNotificationsFallback(array $rows): bool
+    {
+        $path = $this->notificationsFallbackPath();
+        $encoded = json_encode(array_values($rows), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        if ($encoded === false) {
+            return false;
+        }
+        return @file_put_contents($path, $encoded, LOCK_EX) !== false;
+    }
+
+    private function normalizeFallbackNotificationRow($row): ?array
+    {
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $id = trim((string)($row['id'] ?? ''));
+        if ($id === '') {
+            return null;
+        }
+
+        $dismissedByRaw = $row['dismissedBy'] ?? [];
+        if (!is_array($dismissedByRaw)) {
+            $dismissedByRaw = [];
+        }
+        $dismissedBy = array_values(array_unique(array_filter(array_map(
+            fn ($value) => trim((string)$value),
+            $dismissedByRaw
+        ))));
+
+        $durationMs = max(2000, min(15000, (int)($row['durationMs'] ?? 5000)));
+        $createdAt = trim((string)($row['createdAt'] ?? ''));
+        if ($createdAt === '') {
+            $createdAt = date('c');
+        }
+
+        $expiresAt = trim((string)($row['expiresAt'] ?? ''));
+        return [
+            'id' => $id,
+            'title' => $row['title'] ?? null,
+            'message' => $row['message'] ?? null,
+            'bgColor' => $this->normalizeNotificationColor((string)($row['bgColor'] ?? '')),
+            'textColor' => $this->normalizeNotificationColor((string)($row['textColor'] ?? '')),
+            'durationMs' => $durationMs,
+            'showOnce' => !empty($row['showOnce']),
+            'active' => !array_key_exists('active', $row) || !empty($row['active']),
+            'expiresAt' => $expiresAt === '' ? null : $expiresAt,
+            'createdAt' => $createdAt,
+            'dismissedBy' => $dismissedBy,
+        ];
+    }
+
+    private function appendNotificationFallback(array $payload): bool
+    {
+        $rows = $this->readNotificationsFallback();
+        $normalized = $this->normalizeFallbackNotificationRow([
+            'id' => (string)($payload['id'] ?? $this->uuid()),
+            'title' => $payload['title'] ?? null,
+            'message' => $payload['message'] ?? null,
+            'bgColor' => $payload['bgColor'] ?? null,
+            'textColor' => $payload['textColor'] ?? null,
+            'durationMs' => $payload['durationMs'] ?? 5000,
+            'showOnce' => $payload['showOnce'] ?? true,
+            'active' => $payload['active'] ?? true,
+            'expiresAt' => $payload['expiresAt'] ?? null,
+            'createdAt' => date('c'),
+            'dismissedBy' => [],
+        ]);
+
+        if ($normalized === null) {
+            return false;
+        }
+
+        $rows[] = $normalized;
+        return $this->writeNotificationsFallback($rows);
+    }
+
+    private function activeNotificationsFallback(string $userId): array
+    {
+        $rows = $this->readNotificationsFallback();
+        if (!$rows) {
+            return [];
+        }
+
+        $now = time();
+        $remaining = [];
+        $items = [];
+
+        foreach ($rows as $row) {
+            $expiresAt = $row['expiresAt'] ?? null;
+            if (is_string($expiresAt) && $expiresAt !== '') {
+                $expiresTs = strtotime($expiresAt);
+                if ($expiresTs !== false && $expiresTs <= $now) {
+                    continue;
+                }
+            }
+
+            $remaining[] = $row;
+            if (empty($row['active'])) {
+                continue;
+            }
+
+            $dismissedBy = is_array($row['dismissedBy'] ?? null) ? $row['dismissedBy'] : [];
+            if (!empty($row['showOnce']) && in_array($userId, $dismissedBy, true)) {
+                continue;
+            }
+
+            $items[] = [
+                'id' => (string)$row['id'],
+                'title' => $row['title'] ?? null,
+                'message' => $row['message'] ?? null,
+                'bgColor' => $row['bgColor'] ?? null,
+                'textColor' => $row['textColor'] ?? null,
+                'durationMs' => max(2000, min(15000, (int)($row['durationMs'] ?? 5000))),
+                'dismissable' => true,
+                'showOnce' => !empty($row['showOnce']),
+                'createdAt' => $row['createdAt'] ?? null,
+            ];
+        }
+
+        if (count($remaining) !== count($rows)) {
+            $this->writeNotificationsFallback($remaining);
+        }
+
+        usort($items, function (array $a, array $b): int {
+            $left = strtotime((string)($a['createdAt'] ?? '')) ?: 0;
+            $right = strtotime((string)($b['createdAt'] ?? '')) ?: 0;
+            return $right <=> $left;
+        });
+
+        return array_slice(array_map(function (array $item) {
+            unset($item['createdAt']);
+            return $item;
+        }, $items), 0, 20);
+    }
+
+    private function dismissNotificationFallback(string $notificationId, string $userId): void
+    {
+        $id = trim($notificationId);
+        if ($id === '') {
+            return;
+        }
+
+        $rows = $this->readNotificationsFallback();
+        if (!$rows) {
+            return;
+        }
+
+        $changed = false;
+        foreach ($rows as &$row) {
+            if ((string)($row['id'] ?? '') !== $id) {
+                continue;
+            }
+            $dismissedBy = is_array($row['dismissedBy'] ?? null) ? $row['dismissedBy'] : [];
+            if (!in_array($userId, $dismissedBy, true)) {
+                $dismissedBy[] = $userId;
+                $row['dismissedBy'] = $dismissedBy;
+                $changed = true;
+            }
+        }
+        unset($row);
+
+        if ($changed) {
+            $this->writeNotificationsFallback($rows);
+        }
     }
 
     private function createChat(array $body): void
@@ -2487,7 +2726,7 @@ final class Api
             $this->json(['error' => 'Cannot create upload directory'], 500);
         }
 
-        $maxSize = 20 * 1024 * 1024;
+        $maxSize = 64 * 1024 * 1024;
         $mimeToExt = [
             'image/jpeg' => 'jpg',
             'image/png' => 'png',
@@ -2498,6 +2737,11 @@ final class Api
             'video/mp4' => 'mp4',
             'video/quicktime' => 'mov',
             'video/webm' => 'webm',
+            'video/x-msvideo' => 'avi',
+            'video/x-matroska' => 'mkv',
+            'video/x-m4v' => 'm4v',
+            'video/3gpp' => '3gp',
+            'video/3gpp2' => '3g2',
             'audio/mpeg' => 'mp3',
             'audio/mp4' => 'm4a',
             'audio/aac' => 'aac',

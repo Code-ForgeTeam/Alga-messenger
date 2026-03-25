@@ -5,6 +5,7 @@ import {
   Button,
   ButtonBase,
   CircularProgress,
+  Dialog,
   IconButton,
   Menu,
   MenuItem,
@@ -26,6 +27,7 @@ import { useTheme } from '@mui/material/styles';
 import { messageApi, uploadApi, userApi } from '../lib/api';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
+import { useContactsStore } from '../stores/contactsStore';
 import type { Attachment, Message, User } from '../lib/types';
 import { useSnackbarStore } from '../stores/snackbarStore';
 
@@ -80,6 +82,7 @@ export default function ChatPage() {
   } = useChatStore();
 
   const me = useAuthStore((s) => s.user);
+  const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
   const pushSnackbar = useSnackbarStore((s) => s.push);
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -92,9 +95,10 @@ export default function ChatPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploaded, setUploaded] = useState<any[]>([]);
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
-  const shouldScrollToBottomRef = useRef(true);
+  const lastRenderedMessageIdRef = useRef<string>('');
   const mentionCacheRef = useRef<Record<string, string>>({});
   const edgeSwipeRef = useRef<{ active: boolean; startX: number; startY: number; swiped: boolean }>({
     active: false,
@@ -124,16 +128,18 @@ export default function ChatPage() {
   }, [chatId, loadMessages]);
 
   useEffect(() => {
-    shouldScrollToBottomRef.current = true;
+    lastRenderedMessageIdRef.current = '';
   }, [chatId]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
 
   useEffect(() => {
     if (!chatId || isLoadingMessages || !chatMessages.length) return;
-    if (!shouldScrollToBottomRef.current) return;
+    const lastMessageId = String(chatMessages[chatMessages.length - 1]?.id || '').trim();
+    if (!lastMessageId) return;
+    if (lastRenderedMessageIdRef.current === lastMessageId) return;
 
-    shouldScrollToBottomRef.current = false;
+    lastRenderedMessageIdRef.current = lastMessageId;
     const scrollToBottom = () => {
       const list = messageListRef.current;
       if (!list) return;
@@ -148,7 +154,7 @@ export default function ChatPage() {
       window.cancelAnimationFrame(frameId);
       window.clearTimeout(timerId);
     };
-  }, [chatId, chatMessages.length, isLoadingMessages]);
+  }, [chatId, chatMessages, isLoadingMessages]);
 
   useEffect(() => {
     if (!chatId || !me?.id || !chatMessages.length) return;
@@ -200,8 +206,10 @@ export default function ChatPage() {
     if (!chat) return 'Чат';
     if (chat.type === 'saved') return 'Избранное';
     if (chat.name?.trim()) return chat.name.trim();
+    const localDisplayName = peerUser ? getContactByUserId(peerUser.id)?.displayName : '';
+    if (localDisplayName) return localDisplayName;
     return peerUser?.fullName || (peerUser?.username ? `@${peerUser.username}` : 'Чат');
-  }, [chat, peerUser]);
+  }, [chat, getContactByUserId, peerUser]);
 
   const avatarSrc = useMemo(() => {
     return chat?.avatar || peerUser?.avatar;
@@ -276,6 +284,8 @@ export default function ChatPage() {
     if (rawText !== '') return rawText;
     if (Array.isArray(message.attachments) && message.attachments.length > 0) {
       const hasImage = message.attachments.some((item) => item?.type === 'image');
+      const hasVideo = message.attachments.some((item) => item?.type === 'video');
+      if (!hasImage && hasVideo) return 'Видео';
       return hasImage ? 'Фото' : 'Вложение';
     }
     return 'Сообщение';
@@ -624,6 +634,55 @@ export default function ChatPage() {
         </Box>
       </Popover>
 
+      <Dialog
+        open={!!previewAttachment}
+        onClose={() => setPreviewAttachment(null)}
+        fullWidth
+        maxWidth="md"
+      >
+        <Box
+          sx={{
+            bgcolor: '#000',
+            minHeight: 240,
+            maxHeight: '85dvh',
+            display: 'grid',
+            placeItems: 'center',
+            position: 'relative',
+          }}
+        >
+          {previewAttachment?.type === 'video' ? (
+            <Box
+              component="video"
+              src={String(previewAttachment?.url || '')}
+              controls
+              autoPlay
+              playsInline
+              sx={{ width: '100%', maxHeight: '85dvh', bgcolor: '#000' }}
+            />
+          ) : (
+            <Box
+              component="img"
+              src={String(previewAttachment?.url || '')}
+              alt={previewAttachment?.name || 'photo'}
+              sx={{ width: '100%', maxHeight: '85dvh', objectFit: 'contain' }}
+            />
+          )}
+          <IconButton
+            onClick={() => setPreviewAttachment(null)}
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              color: '#fff',
+              bgcolor: 'rgba(0,0,0,0.45)',
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.62)' },
+            }}
+          >
+            <CloseRoundedIcon />
+          </IconButton>
+        </Box>
+      </Dialog>
+
       <Box ref={messageListRef} sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
         {isLoadingMessages && chatMessages.length === 0 ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}><CircularProgress /></Box>
@@ -720,7 +779,7 @@ export default function ChatPage() {
                               alt={attachment.name || 'photo'}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                window.open(url, '_blank', 'noopener,noreferrer');
+                                setPreviewAttachment(attachment);
                               }}
                               sx={{
                                 width: 'min(240px, 64vw)',
@@ -733,6 +792,60 @@ export default function ChatPage() {
                                 borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.08)',
                               }}
                             />
+                          );
+                        }
+
+                        if (attachment.type === 'video') {
+                          return (
+                            <Box
+                              key={`${m.id}-att-${index}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setPreviewAttachment(attachment);
+                              }}
+                              sx={{
+                                width: 'min(240px, 64vw)',
+                                maxWidth: '100%',
+                                borderRadius: 2,
+                                overflow: 'hidden',
+                                position: 'relative',
+                                cursor: 'pointer',
+                                border: '1px solid',
+                                borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.08)',
+                                bgcolor: '#000',
+                              }}
+                            >
+                              <Box
+                                component="video"
+                                src={url}
+                                muted
+                                playsInline
+                                preload="metadata"
+                                sx={{
+                                  width: '100%',
+                                  maxHeight: 220,
+                                  display: 'block',
+                                  objectFit: 'cover',
+                                }}
+                              />
+                              <Box
+                                sx={{
+                                  position: 'absolute',
+                                  right: 8,
+                                  bottom: 8,
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: '50%',
+                                  display: 'grid',
+                                  placeItems: 'center',
+                                  fontSize: 16,
+                                  color: '#fff',
+                                  bgcolor: 'rgba(0,0,0,0.5)',
+                                }}
+                              >
+                                ▶
+                              </Box>
+                            </Box>
                           );
                         }
 
@@ -936,7 +1049,14 @@ export default function ChatPage() {
       )}
 
       <Box sx={{ px: 1, pt: 1, pb: 'max(env(safe-area-inset-bottom), 8px)', display: 'flex', gap: 1, alignItems: 'center', bgcolor: isDark ? 'rgba(14,29,47,0.95)' : '#FFFFFF', borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider' }}>
-        <input ref={inputRef} type="file" multiple style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept="image/*,video/*,audio/*,.pdf,.txt,.zip,.rar,.7z,.doc,.docx"
+          style={{ display: 'none' }}
+          onChange={(e) => onPickFiles(e.target.files)}
+        />
         <IconButton onClick={() => inputRef.current?.click()} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><AttachFileIcon /></IconButton>
         <TextField
           fullWidth

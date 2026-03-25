@@ -55,17 +55,18 @@ const formatChatDate = (value?: string) => {
   return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 };
 
-function getChatName(chat: Chat, myId?: string) {
+function getChatName(chat: Chat, myId?: string, localDisplayName?: string) {
   if (chat.type === 'saved') return 'Избранное';
   if (chat.name?.trim()) return chat.name.trim();
+  if (localDisplayName?.trim()) return localDisplayName.trim();
   const peer = chat.participants?.find((p) => p.id !== myId) || chat.participants?.[0];
   return peer?.fullName || (peer?.username ? `@${peer.username}` : 'Чат');
 }
 
-function getChatAvatar(chat: Chat, myId?: string) {
+function getChatAvatar(chat: Chat, myId?: string, localDisplayName?: string) {
   if (chat.type === 'saved') return { initial: 'И', src: undefined as string | undefined };
   const peer = chat.participants?.find((p) => p.id !== myId) || chat.participants?.[0];
-  const title = getChatName(chat, myId);
+  const title = getChatName(chat, myId, localDisplayName);
   return { initial: title.slice(0, 1).toUpperCase(), src: chat.avatar || peer?.avatar };
 }
 
@@ -346,9 +347,11 @@ export default function ChatsPage() {
         {visible.map((chat) => {
           const rawChat = chat as Chat & Record<string, any>;
           const rawLastMessage = (rawChat.lastMessage ?? rawChat.last_message) as Record<string, any> | undefined;
-          const name = getChatName(chat, user?.id);
+          const peer = chat.participants?.find((p) => p.id !== user?.id) || chat.participants?.[0];
+          const localContactName = peer ? getContactByUserId(peer.id)?.displayName : '';
+          const name = getChatName(chat, user?.id, localContactName);
           const date = formatChatDate(chat.lastMessageTime || rawChat.last_message_time || chat.updatedAt || rawChat.updated_at);
-          const avatarData = getChatAvatar(chat, user?.id);
+          const avatarData = getChatAvatar(chat, user?.id, localContactName);
           const serverUnreadCount = Math.max(0, Number(rawChat.unreadCount ?? rawChat.unread_count ?? 0));
           const lastAuthorId = String(
             rawLastMessage?.userId ??
@@ -364,11 +367,14 @@ export default function ChatsPage() {
           const localLastAttachments = Array.isArray((localLastMessage as any)?.attachments)
             ? ((localLastMessage as any).attachments as any[])
             : [];
-          const attachmentHint = [...rawLastAttachments, ...localLastAttachments].some((item) => item?.type === 'image')
+          const allLastAttachments = [...rawLastAttachments, ...localLastAttachments];
+          const attachmentHint = allLastAttachments.some((item) => item?.type === 'image')
             ? 'Фото'
-            : [...rawLastAttachments, ...localLastAttachments].length > 0
-              ? 'Вложение'
-              : '';
+            : allLastAttachments.some((item) => item?.type === 'video')
+              ? 'Видео'
+              : allLastAttachments.length > 0
+                ? 'Вложение'
+                : '';
           const subtitle =
             chat.lastMessageText ||
             rawChat.last_message_text ||

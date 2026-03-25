@@ -84,12 +84,21 @@ const sameUserMeta = (a: User, b: User) =>
   a.lastSeen === b.lastSeen &&
   a.badge === b.badge;
 
+const defaultContactDisplayName = (user: Partial<User> | null | undefined): string => {
+  const fullName = String(user?.fullName ?? '').trim();
+  if (fullName) return fullName;
+  const username = String(user?.username ?? '').trim();
+  if (username) return `@${username}`;
+  return 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ';
+};
+
 interface ContactsState {
   contacts: Contact[];
   blockedUserIds: string[];
   addContact: (user: User, displayName?: string) => void;
   removeContact: (contactId: string) => void;
   renameContact: (contactId: string, displayName: string) => void;
+  resetContactName: (contactId: string) => void;
   getContactByUserId: (userId: string) => Contact | undefined;
   isUserInContacts: (userId: string) => boolean;
   blockUser: (userId: string) => void;
@@ -132,7 +141,26 @@ export const useContactsStore = create<ContactsState>((set, get) => ({
   renameContact: (contactId, displayName) =>
     set((state) => ({
       contacts: (() => {
-        const nextContacts = state.contacts.map((c) => (c.id === contactId ? { ...c, displayName } : c));
+        const nextName = displayName.trim();
+        const nextContacts = state.contacts.map((c) =>
+          c.id === contactId
+            ? {
+                ...c,
+                displayName: nextName || defaultContactDisplayName(c.user),
+              }
+            : c,
+        );
+        persistContactsState(nextContacts, state.blockedUserIds);
+        return nextContacts;
+      })(),
+    })),
+
+  resetContactName: (contactId) =>
+    set((state) => ({
+      contacts: (() => {
+        const nextContacts = state.contacts.map((c) =>
+          c.id === contactId ? { ...c, displayName: defaultContactDisplayName(c.user) } : c,
+        );
         persistContactsState(nextContacts, state.blockedUserIds);
         return nextContacts;
       })(),

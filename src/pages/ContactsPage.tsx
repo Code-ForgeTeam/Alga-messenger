@@ -1,24 +1,103 @@
-import { Avatar, Box, Fab, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material';
+import {
+  Avatar,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Fab,
+  IconButton,
+  List,
+  ListItemButton,
+  ListItemText,
+  Menu,
+  MenuItem,
+  TextField,
+  Typography,
+} from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded';
-import { useMemo, useState } from 'react';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import { useMemo, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { useContactsStore } from '../stores/contactsStore';
+import type { Contact } from '../lib/types';
 import { AppHeader } from '../components/AppHeader';
+import { useSnackbarStore } from '../stores/snackbarStore';
 
 export default function ContactsPage() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const contacts = useContactsStore((s) => s.contacts);
+  const renameContact = useContactsStore((s) => s.renameContact);
+  const resetContactName = useContactsStore((s) => s.resetContactName);
+  const pushSnackbar = useSnackbarStore((s) => s.push);
   const [q, setQ] = useState('');
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
 
   const filtered = useMemo(() => {
     const needle = q.toLowerCase().trim();
     if (!needle) return contacts;
     return contacts.filter((c) => `${c.displayName} ${c.user.username}`.toLowerCase().includes(needle));
   }, [contacts, q]);
+
+  const defaultDisplayName = (contact: Contact): string =>
+    (contact.user.fullName || (contact.user.username ? `@${contact.user.username}` : 'Пользователь')).trim();
+
+  const openContactMenu = (event: MouseEvent<HTMLElement>, contact: Contact) => {
+    event.stopPropagation();
+    setMenuAnchor(event.currentTarget);
+    setSelectedContact(contact);
+  };
+
+  const closeContactMenu = () => {
+    setMenuAnchor(null);
+  };
+
+  const openRenameDialog = () => {
+    if (!selectedContact) return;
+    setRenameDraft(selectedContact.displayName || defaultDisplayName(selectedContact));
+    closeContactMenu();
+    setRenameOpen(true);
+  };
+
+  const saveLocalName = () => {
+    if (!selectedContact) return;
+    const nextName = renameDraft.trim();
+    if (!nextName) {
+      pushSnackbar({ message: 'Введите имя контакта', timeout: 2200, tone: 'error' });
+      return;
+    }
+    const contactId = selectedContact.id;
+    const prevName = selectedContact.displayName;
+    renameContact(contactId, nextName);
+    setRenameOpen(false);
+    pushSnackbar({
+      message: 'Локальное имя сохранено',
+      timeout: 4200,
+      tone: 'success',
+      onUndo: () => renameContact(contactId, prevName),
+    });
+  };
+
+  const resetLocalName = () => {
+    if (!selectedContact) return;
+    const contactId = selectedContact.id;
+    const prevName = selectedContact.displayName;
+    resetContactName(contactId);
+    closeContactMenu();
+    pushSnackbar({
+      message: 'Локальное имя сброшено',
+      timeout: 4200,
+      onUndo: () => renameContact(contactId, prevName),
+    });
+  };
 
   return (
     <Box
@@ -75,6 +154,12 @@ export default function ContactsPage() {
                 </Typography>
               }
             />
+            <IconButton
+              onClick={(event) => openContactMenu(event, contact)}
+              sx={{ color: isDark ? '#AFC1D9' : '#607383' }}
+            >
+              <MoreVertIcon />
+            </IconButton>
           </ListItemButton>
         ))}
       </List>
@@ -97,6 +182,34 @@ export default function ContactsPage() {
       >
         <PersonAddAlt1RoundedIcon />
       </Fab>
+
+      <Menu
+        anchorEl={menuAnchor}
+        open={!!menuAnchor}
+        onClose={closeContactMenu}
+      >
+        <MenuItem onClick={openRenameDialog}>Изменить имя локально</MenuItem>
+        <MenuItem onClick={resetLocalName}>Сбросить имя</MenuItem>
+      </Menu>
+
+      <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Локальное имя контакта</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Имя"
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            sx={{ mt: 0.5 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenameOpen(false)}>Отмена</Button>
+          <Button variant="contained" onClick={saveLocalName}>Сохранить</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
