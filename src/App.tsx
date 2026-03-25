@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   Box,
   Button,
@@ -10,7 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AuthPage } from './components/AuthPage';
 import { AppSnackbar } from './components/AppSnackbar';
 import { BottomNav } from './components/BottomNav';
@@ -50,6 +50,7 @@ const AdminPage = lazy(() => import('./pages/AdminPage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
 const AuthorSupportPage = lazy(() => import('./pages/AuthorSupportPage'));
+const GamePage = lazy(() => import('./pages/GamePage'));
 
 function BackgroundEffects({
   effect,
@@ -303,6 +304,7 @@ function Guard({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const navigate = useNavigate();
   const auth = useAuthStore();
   const checkAdminAccess = useAdminStore((s) => s.checkAdminAccess);
   const setAdminAccess = useAdminStore((s) => s.setAdminAccess);
@@ -320,8 +322,59 @@ export default function App() {
   const [authBootstrapping, setAuthBootstrapping] = useState(true);
   const [introTarget, setIntroTarget] = useState<IntroTarget>(DEFAULT_INTRO_TARGET);
   const [introTargetReady, setIntroTargetReady] = useState(false);
+  const edgeSwipeRef = useRef<{ active: boolean; startX: number; startY: number; swiped: boolean }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    swiped: false,
+  });
   const launchIntroOnChats = showLaunchIntro && launchIntroEnabled && pathname === '/chats';
   const launchIntroActive = launchIntroOnChats && introTargetReady;
+  const allowGlobalSwipeBack =
+    auth.isAuthenticated &&
+    pathname !== '/auth' &&
+    pathname !== '/chats' &&
+    !pathname.startsWith('/chat/');
+
+  const resetEdgeSwipe = () => {
+    edgeSwipeRef.current.active = false;
+    edgeSwipeRef.current.swiped = false;
+  };
+
+  const handleGlobalPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!allowGlobalSwipeBack || event.pointerType === 'mouse') {
+      resetEdgeSwipe();
+      return;
+    }
+    if (event.clientX <= 24) {
+      edgeSwipeRef.current = {
+        active: true,
+        startX: event.clientX,
+        startY: event.clientY,
+        swiped: false,
+      };
+      return;
+    }
+    resetEdgeSwipe();
+  };
+
+  const handleGlobalPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const state = edgeSwipeRef.current;
+    if (!state.active || state.swiped) return;
+
+    const dx = event.clientX - state.startX;
+    const dy = Math.abs(event.clientY - state.startY);
+    if (dy > 56 || dx < -8) {
+      resetEdgeSwipe();
+      return;
+    }
+
+    if (dx > 92 && dy < 40) {
+      state.swiped = true;
+      state.active = false;
+      navigate('/chats');
+    }
+  };
 
   useEffect(() => {
     let disposed = false;
@@ -588,6 +641,11 @@ export default function App() {
         overflow: 'hidden',
         backgroundColor: 'background.default',
       }}
+      onPointerDown={handleGlobalPointerDown}
+      onPointerMove={handleGlobalPointerMove}
+      onPointerUp={resetEdgeSwipe}
+      onPointerCancel={resetEdgeSwipe}
+      onPointerLeave={resetEdgeSwipe}
     >
       <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
       <LaunchIntro active={launchIntroActive} target={introTarget} />
@@ -619,6 +677,7 @@ export default function App() {
           <Route path="/support" element={<Guard><SupportPage /></Guard>} />
           <Route path="/support-agent" element={<Guard><SupportAgentPage /></Guard>} />
           <Route path="/author-support" element={<Guard><AuthorSupportPage /></Guard>} />
+          <Route path="/game" element={<Guard><GamePage /></Guard>} />
 
           <Route path="*" element={<Navigate to="/chats" replace />} />
         </Routes>

@@ -6,11 +6,12 @@ import { useNavigate } from 'react-router-dom';
 interface AppHeaderProps {
   title: ReactNode;
   showBack?: boolean;
+  backTo?: string;
   leftSlot?: ReactNode;
   rightSlot?: ReactNode;
 }
 
-export function AppHeader({ title, showBack = true, leftSlot, rightSlot }: AppHeaderProps) {
+export function AppHeader({ title, showBack = true, backTo = '/chats', leftSlot, rightSlot }: AppHeaderProps) {
   const navigate = useNavigate();
 
   return (
@@ -27,7 +28,7 @@ export function AppHeader({ title, showBack = true, leftSlot, rightSlot }: AppHe
     >
       {leftSlot ??
         (showBack ? (
-          <IconButton onClick={() => navigate(-1)}>
+          <IconButton onClick={() => navigate(backTo)}>
             <ArrowBackIcon />
           </IconButton>
         ) : (

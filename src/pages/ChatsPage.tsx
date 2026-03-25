@@ -29,6 +29,7 @@ import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import SportsEsportsRoundedIcon from '@mui/icons-material/SportsEsportsRounded';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
@@ -603,6 +604,9 @@ export default function ChatsPage() {
                 </ListItemButton>
                 <ListItemButton sx={menuItemSx} onClick={() => { navigate('/support'); setDrawerOpen(false); }}>
                   <ListItemIcon><PsychologyRoundedIcon /></ListItemIcon><ListItemText primary="AI чат" />
+                </ListItemButton>
+                <ListItemButton sx={menuItemSx} onClick={() => { navigate('/game'); setDrawerOpen(false); }}>
+                  <ListItemIcon><SportsEsportsRoundedIcon /></ListItemIcon><ListItemText primary="Игра" />
                 </ListItemButton>
                 {isCreator && (
                   <ListItemButton sx={menuItemSx} onClick={() => { navigate('/admin'); setDrawerOpen(false); }}>

@@ -30,7 +30,7 @@ export default function AuthorSupportPage() {
           pb: 1,
         }}
       >
-        <IconButton onClick={() => navigate(-1)} sx={{ color: 'inherit' }}>
+        <IconButton onClick={() => navigate('/chats')} sx={{ color: 'inherit' }}>
           <ArrowBackIcon />
         </IconButton>
       </Box>

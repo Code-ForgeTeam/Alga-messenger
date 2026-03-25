@@ -113,7 +113,7 @@ export default function SupportPage() {
           pr: 'max(env(safe-area-inset-right), 4px)',
         }}
       >
-        <IconButton onClick={() => navigate(-1)}><ArrowBackIcon /></IconButton>
+        <IconButton onClick={() => navigate('/chats')}><ArrowBackIcon /></IconButton>
         <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main' }}>
           <PsychologyRoundedIcon sx={{ fontSize: 20 }} />
         </Avatar>

@@ -328,7 +328,7 @@ export default function ChatPage() {
     if (dx > 88 && dy < 42) {
       state.swiped = true;
       state.active = false;
-      navigate(-1);
+      navigate('/chats');
     }
   };
 
@@ -506,7 +506,7 @@ export default function ChatPage() {
       onPointerLeave={resetRootSwipe}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 'max(env(safe-area-inset-left), 8px)', pr: 'max(env(safe-area-inset-right), 8px)', pt: 'max(env(safe-area-inset-top), 12px)', pb: 1, borderBottom: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'divider', bgcolor: isDark ? 'rgba(20,33,52,0.88)' : '#FFFFFF' }}>
-        <IconButton onClick={() => navigate(-1)} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><ArrowBackIcon /></IconButton>
+        <IconButton onClick={() => navigate('/chats')} sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}><ArrowBackIcon /></IconButton>
 
         <ButtonBase
           onClick={openProfileFromHeader}
