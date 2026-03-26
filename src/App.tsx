@@ -51,6 +51,7 @@ const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
 const AuthorSupportPage = lazy(() => import('./pages/AuthorSupportPage'));
 const GamePage = lazy(() => import('./pages/GamePage'));
+const ENABLE_NATIVE_PUSH = String(import.meta.env.VITE_ENABLE_NATIVE_PUSH ?? '').toLowerCase() === 'true';
 
 function BackgroundEffects({
   effect,
@@ -530,6 +531,7 @@ export default function App() {
 
   useEffect(() => {
     if (!auth.isAuthenticated) return;
+    if (!ENABLE_NATIVE_PUSH) return;
 
     let disposed = false;
     let removeRegistration: (() => void) | null = null;
