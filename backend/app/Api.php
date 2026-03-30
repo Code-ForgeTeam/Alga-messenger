@@ -16,6 +16,7 @@ final class Api
     private ?bool $pushTokensTableReady = null;
     private ?bool $storyTablesReady = null;
     private ?bool $notificationsTablesReady = null;
+    private ?array $firebaseAccessTokenCache = null;
 
     public function __construct()
     {
@@ -1869,21 +1870,39 @@ final class Api
     {
         $userId = $this->authUserId();
         $this->assertChatParticipant($chatId, $userId);
+        $limitRaw = (int)($_GET['limit'] ?? 50);
+        $offsetRaw = (int)($_GET['offset'] ?? 0);
+        $limit = max(1, min(500, $limitRaw > 0 ? $limitRaw : 50));
+        $offset = max(0, $offsetRaw);
 
         try {
             $stmt = $this->db()->prepare(
                 'SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited, reply_to_id as replyToId
                  FROM messages
                  WHERE chat_id = ?
-                 ORDER BY created_at ASC
-                 LIMIT 200'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT ?
+                 OFFSET ?'
             );
-            $stmt->execute([$chatId]);
+            $stmt->bindValue(1, $chatId);
+            $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+            $stmt->bindValue(3, $offset, PDO::PARAM_INT);
+            $stmt->execute();
         } catch (\Throwable) {
-            $stmt = $this->db()->prepare('SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT 200');
-            $stmt->execute([$chatId]);
+            $stmt = $this->db()->prepare(
+                'SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited
+                 FROM messages
+                 WHERE chat_id = ?
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT ?
+                 OFFSET ?'
+            );
+            $stmt->bindValue(1, $chatId);
+            $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+            $stmt->bindValue(3, $offset, PDO::PARAM_INT);
+            $stmt->execute();
         }
-        $rows = $stmt->fetchAll() ?: [];
+        $rows = array_reverse($stmt->fetchAll() ?: []);
         $attachmentsByMessage = $this->attachmentsByMessageIds(array_values(array_map(
             fn ($row) => (string)($row['id'] ?? ''),
             $rows
@@ -2567,7 +2586,10 @@ final class Api
     private function sendPushForMessage(string $chatId, string $senderId, string $messageText): void
     {
         $serverKey = trim((string)Config::get('FCM_SERVER_KEY', ''));
-        if ($serverKey === '' || !function_exists('curl_init')) {
+        $firebaseV1 = $this->firebaseV1Credentials();
+        $canUseV1 = $firebaseV1 !== null;
+        $canUseLegacy = $serverKey !== '';
+        if ((!$canUseV1 && !$canUseLegacy) || !function_exists('curl_init')) {
             return;
         }
         if (!$this->ensurePushTokensTable()) {
@@ -2601,14 +2623,25 @@ final class Api
             }
 
             $placeholders = implode(',', array_fill(0, count($recipientIds), '?'));
-            $tokenStmt = $this->db()->prepare("SELECT token FROM push_tokens WHERE user_id IN ({$placeholders})");
+            $tokenStmt = $this->db()->prepare("SELECT user_id, token, platform FROM push_tokens WHERE user_id IN ({$placeholders})");
             $tokenStmt->execute($recipientIds);
             $tokenRows = $tokenStmt->fetchAll() ?: [];
-            $tokens = array_values(array_unique(array_filter(array_map(
-                fn ($row) => trim((string)($row['token'] ?? '')),
-                $tokenRows
-            ))));
-            if (!$tokens) {
+            $tokenPayloadRows = [];
+            $seenTokens = [];
+            foreach ($tokenRows as $row) {
+                $token = trim((string)($row['token'] ?? ''));
+                $recipientUserId = trim((string)($row['user_id'] ?? ''));
+                if ($token === '' || $recipientUserId === '' || isset($seenTokens[$token])) {
+                    continue;
+                }
+                $seenTokens[$token] = true;
+                $tokenPayloadRows[] = [
+                    'token' => $token,
+                    'userId' => $recipientUserId,
+                    'platform' => trim((string)($row['platform'] ?? '')),
+                ];
+            }
+            if (!$tokenPayloadRows) {
                 return;
             }
 
@@ -2634,9 +2667,80 @@ final class Api
                 $normalizedBody = substr($normalizedBody, 0, 137) . '...';
             }
 
-            foreach (array_chunk($tokens, 500) as $chunk) {
+            $unreadByUser = [];
+            foreach ($recipientIds as $recipientId) {
+                $unreadByUser[$recipientId] = $this->unreadCountFromReadState($chatId, $recipientId);
+            }
+
+            if ($canUseV1 && $firebaseV1 !== null) {
+                $accessToken = $this->firebaseAccessToken($firebaseV1);
+                if ($accessToken !== null) {
+                    foreach ($tokenPayloadRows as $tokenRow) {
+                        $token = $tokenRow['token'];
+                        $badge = max(0, (int)($unreadByUser[$tokenRow['userId']] ?? 0));
+                        $message = [
+                            'message' => [
+                                'token' => $token,
+                                'notification' => [
+                                    'title' => $senderName,
+                                    'body' => $normalizedBody,
+                                ],
+                                'data' => [
+                                    'type' => 'message',
+                                    'chatId' => $chatId,
+                                    'senderId' => $senderId,
+                                ],
+                                'android' => [
+                                    'priority' => 'high',
+                                    'notification' => [
+                                        'channel_id' => 'messages',
+                                        'sound' => 'default',
+                                    ],
+                                ],
+                                'apns' => [
+                                    'headers' => [
+                                        'apns-priority' => '10',
+                                    ],
+                                    'payload' => [
+                                        'aps' => [
+                                            'badge' => $badge,
+                                            'sound' => 'default',
+                                            'content-available' => 1,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ];
+
+                        $result = $this->sendFcmV1Payload($accessToken, $firebaseV1['projectId'], $message);
+                        if (!$result['ok'] && (int)($result['status'] ?? 0) === 401) {
+                            $this->firebaseAccessTokenCache = null;
+                            $refreshed = $this->firebaseAccessToken($firebaseV1);
+                            if ($refreshed !== null) {
+                                $result = $this->sendFcmV1Payload($refreshed, $firebaseV1['projectId'], $message);
+                            }
+                        }
+
+                        $errorCode = strtoupper((string)($result['errorCode'] ?? ''));
+                        if ($this->isInvalidPushTokenError($errorCode)) {
+                            $this->deletePushTokenByValue($token);
+                        }
+                    }
+                    return;
+                }
+            }
+
+            if (!$canUseLegacy) {
+                return;
+            }
+
+            foreach (array_chunk($tokenPayloadRows, 500) as $chunkRows) {
+                $chunkTokens = array_values(array_map(
+                    fn ($row) => (string)$row['token'],
+                    $chunkRows
+                ));
                 $payload = [
-                    'registration_ids' => $chunk,
+                    'registration_ids' => $chunkTokens,
                     'priority' => 'high',
                     'notification' => [
                         'title' => $senderName,
@@ -2652,23 +2756,36 @@ final class Api
                     'mutable_content' => true,
                 ];
 
-                $this->sendFcmPayload($serverKey, $payload);
+                $legacyResult = $this->sendFcmPayload($serverKey, $payload);
+                $results = $legacyResult['response']['results'] ?? [];
+                if (!is_array($results)) {
+                    $results = [];
+                }
+                foreach ($results as $index => $result) {
+                    if (!is_array($result)) {
+                        continue;
+                    }
+                    $errorCode = strtoupper((string)($result['error'] ?? ''));
+                    if ($this->isInvalidPushTokenError($errorCode) && isset($chunkTokens[$index])) {
+                        $this->deletePushTokenByValue($chunkTokens[$index]);
+                    }
+                }
             }
         } catch (\Throwable) {
             // ignore push failures
         }
     }
 
-    private function sendFcmPayload(string $serverKey, array $payload): void
+    private function sendFcmPayload(string $serverKey, array $payload): array
     {
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if ($json === false) {
-            return;
+            return ['ok' => false, 'status' => 0, 'response' => [], 'errorCode' => 'JSON_ENCODE_FAILED'];
         }
 
         $ch = curl_init('https://fcm.googleapis.com/fcm/send');
         if ($ch === false) {
-            return;
+            return ['ok' => false, 'status' => 0, 'response' => [], 'errorCode' => 'CURL_INIT_FAILED'];
         }
 
         curl_setopt_array($ch, [
@@ -2681,8 +2798,243 @@ final class Api
             CURLOPT_TIMEOUT => 10,
             CURLOPT_POSTFIELDS => $json,
         ]);
-        curl_exec($ch);
+        $rawResponse = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+
+        if ($rawResponse === false) {
+            return ['ok' => false, 'status' => $status, 'response' => [], 'errorCode' => 'CURL_EXEC_FAILED'];
+        }
+
+        $decoded = json_decode((string)$rawResponse, true);
+        if (!is_array($decoded)) {
+            $decoded = [];
+        }
+
+        return [
+            'ok' => $status >= 200 && $status < 300,
+            'status' => $status,
+            'response' => $decoded,
+            'errorCode' => null,
+        ];
+    }
+
+    private function firebaseV1Credentials(): ?array
+    {
+        $projectId = trim((string)Config::get('FCM_PROJECT_ID', ''));
+        $clientEmail = trim((string)Config::get('FCM_CLIENT_EMAIL', ''));
+        $privateKeyRaw = trim((string)Config::get('FCM_PRIVATE_KEY', ''));
+        if ($projectId === '' || $clientEmail === '' || $privateKeyRaw === '') {
+            return null;
+        }
+
+        $privateKey = str_replace(["\\r\\n", "\\n", "\\r"], "\n", $privateKeyRaw);
+        if (!str_contains($privateKey, 'BEGIN PRIVATE KEY')) {
+            return null;
+        }
+
+        return [
+            'projectId' => $projectId,
+            'clientEmail' => $clientEmail,
+            'privateKey' => $privateKey,
+        ];
+    }
+
+    private function firebaseAccessToken(array $credentials): ?string
+    {
+        $cache = $this->firebaseAccessTokenCache;
+        if (
+            is_array($cache)
+            && !empty($cache['token'])
+            && (int)($cache['expiresAt'] ?? 0) > (time() + 45)
+        ) {
+            return (string)$cache['token'];
+        }
+
+        $assertion = $this->buildGoogleServiceJwtAssertion($credentials);
+        if ($assertion === null) {
+            return null;
+        }
+
+        $ch = curl_init('https://oauth2.googleapis.com/token');
+        if ($ch === false) {
+            return null;
+        }
+
+        $postFields = http_build_query([
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            'assertion' => $assertion,
+        ]);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 12,
+            CURLOPT_POSTFIELDS => $postFields,
+        ]);
+
+        $rawResponse = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($rawResponse === false || $status < 200 || $status >= 300) {
+            return null;
+        }
+
+        $decoded = json_decode((string)$rawResponse, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+        $token = trim((string)($decoded['access_token'] ?? ''));
+        if ($token === '') {
+            return null;
+        }
+
+        $expiresIn = max(60, (int)($decoded['expires_in'] ?? 3600));
+        $this->firebaseAccessTokenCache = [
+            'token' => $token,
+            'expiresAt' => time() + $expiresIn,
+        ];
+
+        return $token;
+    }
+
+    private function buildGoogleServiceJwtAssertion(array $credentials): ?string
+    {
+        $issuedAt = time();
+        $header = ['alg' => 'RS256', 'typ' => 'JWT'];
+        $claims = [
+            'iss' => (string)$credentials['clientEmail'],
+            'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
+            'aud' => 'https://oauth2.googleapis.com/token',
+            'iat' => $issuedAt,
+            'exp' => $issuedAt + 3600,
+        ];
+
+        $encodedHeader = $this->base64UrlEncode((string)json_encode($header, JSON_UNESCAPED_SLASHES));
+        $encodedClaims = $this->base64UrlEncode((string)json_encode($claims, JSON_UNESCAPED_SLASHES));
+        $signingInput = $encodedHeader . '.' . $encodedClaims;
+
+        $privateKey = openssl_pkey_get_private((string)$credentials['privateKey']);
+        if ($privateKey === false) {
+            return null;
+        }
+
+        $signature = '';
+        $signed = openssl_sign($signingInput, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+        if (PHP_VERSION_ID < 80000) {
+            openssl_free_key($privateKey);
+        }
+        if (!$signed) {
+            return null;
+        }
+
+        return $signingInput . '.' . $this->base64UrlEncode($signature);
+    }
+
+    private function sendFcmV1Payload(string $accessToken, string $projectId, array $payload): array
+    {
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            return ['ok' => false, 'status' => 0, 'response' => [], 'errorCode' => 'JSON_ENCODE_FAILED'];
+        }
+
+        $url = 'https://fcm.googleapis.com/v1/projects/' . rawurlencode($projectId) . '/messages:send';
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return ['ok' => false, 'status' => 0, 'response' => [], 'errorCode' => 'CURL_INIT_FAILED'];
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $accessToken,
+                'Content-Type: application/json; charset=UTF-8',
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 12,
+            CURLOPT_POSTFIELDS => $json,
+        ]);
+        $rawResponse = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($rawResponse === false) {
+            return ['ok' => false, 'status' => $status, 'response' => [], 'errorCode' => 'CURL_EXEC_FAILED'];
+        }
+
+        $decoded = json_decode((string)$rawResponse, true);
+        if (!is_array($decoded)) {
+            $decoded = [];
+        }
+        $errorCode = $this->extractFcmV1ErrorCode($decoded);
+
+        return [
+            'ok' => $status >= 200 && $status < 300,
+            'status' => $status,
+            'response' => $decoded,
+            'errorCode' => $errorCode,
+        ];
+    }
+
+    private function extractFcmV1ErrorCode(array $response): ?string
+    {
+        $rootCode = strtoupper(trim((string)($response['error']['status'] ?? '')));
+        if ($rootCode !== '') {
+            return $rootCode;
+        }
+
+        $details = $response['error']['details'] ?? [];
+        if (!is_array($details)) {
+            return null;
+        }
+
+        foreach ($details as $detail) {
+            if (!is_array($detail)) {
+                continue;
+            }
+            $code = strtoupper(trim((string)($detail['errorCode'] ?? $detail['reason'] ?? '')));
+            if ($code !== '') {
+                return $code;
+            }
+        }
+
+        return null;
+    }
+
+    private function isInvalidPushTokenError(string $errorCode): bool
+    {
+        if ($errorCode === '') {
+            return false;
+        }
+        $normalized = strtoupper(trim($errorCode));
+        return in_array($normalized, [
+            'UNREGISTERED',
+            'INVALID_ARGUMENT',
+            'NOTREGISTERED',
+            'INVALIDREGISTRATION',
+            'MISMATCHSENDERID',
+        ], true);
+    }
+
+    private function deletePushTokenByValue(string $token): void
+    {
+        $normalized = trim($token);
+        if ($normalized === '') {
+            return;
+        }
+
+        try {
+            $stmt = $this->db()->prepare('DELETE FROM push_tokens WHERE token = ?');
+            $stmt->execute([$normalized]);
+        } catch (\Throwable) {
+            // ignore cleanup errors
+        }
+    }
+
+    private function base64UrlEncode(string $value): string
+    {
+        return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
     }
 
     private function ensurePushTokensTable(): bool

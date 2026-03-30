@@ -535,8 +535,17 @@ export default function App() {
 
     let disposed = false;
     let removeRegistration: (() => void) | null = null;
+    let removeRegistrationError: (() => void) | null = null;
     let removeReceived: (() => void) | null = null;
     let removeAction: (() => void) | null = null;
+    const navigateFromPush = (payload: any) => {
+      const data = payload?.notification?.data ?? payload?.data ?? {};
+      const targetChatId = String(data?.chatId ?? '').trim();
+      if (!targetChatId) return;
+      const targetPath = `/chat/${targetChatId}`;
+      if (typeof window !== 'undefined' && window.location.pathname === targetPath) return;
+      navigate(targetPath);
+    };
 
     const initPush = async () => {
       try {
@@ -545,7 +554,8 @@ export default function App() {
           import('@capacitor/push-notifications'),
         ]);
 
-        if (Capacitor.getPlatform() === 'web') return;
+        const platform = Capacitor.getPlatform();
+        if (platform === 'web') return;
 
         const perm = await PushNotifications.checkPermissions();
         const granted = perm.receive === 'granted'
@@ -553,28 +563,81 @@ export default function App() {
           : await PushNotifications.requestPermissions();
         if (granted.receive !== 'granted' || disposed) return;
 
+        if (platform === 'android') {
+          await PushNotifications.createChannel({
+            id: 'messages',
+            name: 'Messages',
+            description: 'Уведомления о новых сообщениях',
+            importance: 5,
+            visibility: 1,
+            sound: 'default',
+          }).catch(() => null);
+        }
+
         const registrationHandle = await PushNotifications.addListener('registration', async (token) => {
           const value = String(token?.value ?? '').trim();
           if (!value || disposed) return;
           try {
-            await pushApi.registerToken(value, Capacitor.getPlatform());
+            await pushApi.registerToken(value, platform);
           } catch {
             // ignore registration errors
           }
         });
-        removeRegistration = () => registrationHandle.remove();
+        removeRegistration = () => {
+          try {
+            const result = registrationHandle.remove();
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              void (result as Promise<void>).catch(() => null);
+            }
+          } catch {
+            // ignore
+          }
+        };
+
+        const registrationErrorHandle = await PushNotifications.addListener('registrationError', () => {
+          // ignore registration errors in runtime, app keeps polling fallback
+        });
+        removeRegistrationError = () => {
+          try {
+            const result = registrationErrorHandle.remove();
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              void (result as Promise<void>).catch(() => null);
+            }
+          } catch {
+            // ignore
+          }
+        };
 
         const receivedHandle = await PushNotifications.addListener('pushNotificationReceived', () => {
           if (disposed) return;
           loadChats({ silent: true }).catch(() => null);
         });
-        removeReceived = () => receivedHandle.remove();
+        removeReceived = () => {
+          try {
+            const result = receivedHandle.remove();
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              void (result as Promise<void>).catch(() => null);
+            }
+          } catch {
+            // ignore
+          }
+        };
 
-        const actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', () => {
+        const actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
           if (disposed) return;
           loadChats({ silent: true }).catch(() => null);
+          navigateFromPush(notification);
         });
-        removeAction = () => actionHandle.remove();
+        removeAction = () => {
+          try {
+            const result = actionHandle.remove();
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              void (result as Promise<void>).catch(() => null);
+            }
+          } catch {
+            // ignore
+          }
+        };
 
         await PushNotifications.register();
       } catch {
@@ -587,10 +650,11 @@ export default function App() {
     return () => {
       disposed = true;
       removeRegistration?.();
+      removeRegistrationError?.();
       removeReceived?.();
       removeAction?.();
     };
-  }, [auth.isAuthenticated, loadChats]);
+  }, [auth.isAuthenticated, loadChats, navigate]);
 
   const dismissUpdateDialog = () => {
     if (apkUpdate) {

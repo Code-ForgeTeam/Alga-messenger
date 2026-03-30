@@ -29,7 +29,10 @@ CORS_ORIGIN=http://your-domain
 CREATOR_USER_ID=uuid-of-owner-account
 AI_SERVICE_URL=http://127.0.0.1:8099/reply
 AI_MODEL=gpt-4o-mini
-FCM_SERVER_KEY=your_firebase_server_key
+FCM_PROJECT_ID=your-firebase-project-id
+FCM_CLIENT_EMAIL=firebase-adminsdk-xxx@your-firebase-project-id.iam.gserviceaccount.com
+FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FCM_SERVER_KEY=legacy_server_key_optional
 ```
 
 `CREATOR_USER_ID` is used for `/api/admin/*` access.
@@ -37,7 +40,8 @@ If empty, backend falls back to the oldest user in DB.
 
 `AI_SERVICE_URL` is optional. If empty, backend uses local fallback AI replies.
 
-`FCM_SERVER_KEY` is optional. If empty, native push notifications are disabled.
+`FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY` are recommended for modern FCM HTTP v1.
+`FCM_SERVER_KEY` is optional legacy fallback (used only when HTTP v1 creds are not configured).
 
 ## 2) Initialize database
 
@@ -99,15 +103,14 @@ AI_SERVICE_URL=http://127.0.0.1:8099/reply
 
 ## Optional: real push notifications (Android + iOS)
 
-1. Create project in Firebase and connect Android/iOS apps.
-2. Configure APNs in Firebase for iOS delivery.
-3. Put FCM server key into `backend/.env`:
+Use guide: `../FCM_SETUP.md` (full step-by-step).
 
-```env
-FCM_SERVER_KEY=your_firebase_server_key
-```
+Backend supports:
 
-Frontend app automatically registers device token through `/api/push/token`.
+1. **FCM HTTP v1** (recommended): `FCM_PROJECT_ID + FCM_CLIENT_EMAIL + FCM_PRIVATE_KEY`
+2. **Legacy server key** (fallback): `FCM_SERVER_KEY`
+
+Frontend app automatically registers device token through `/api/push/token` when `VITE_ENABLE_NATIVE_PUSH=true`.
 
 ## Troubleshooting: 500 on `/backend/public/index.php/health`
 

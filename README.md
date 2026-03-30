@@ -17,6 +17,7 @@ VITE_API_BASE_URL=http://q99916rz.beget.tech/backend/public/index.php/api
 VITE_SOCKET_URL=
 VITE_APP_HOST=http://q99916rz.beget.tech/backend/public/index.php
 VITE_FORCE_HTTPS=0
+VITE_ENABLE_NATIVE_PUSH=false
 ```
 
 > Если нет SSL — оставляйте `http://`.
@@ -64,3 +65,12 @@ npm run cap:open:android
 ## 5) Backend
 
 PHP backend находится в `backend/`, SQL схема — `backend/sql/beget_init.sql`.
+
+## 6) FCM Push (Android + iOS)
+
+Подробная инструкция: `FCM_SETUP.md`.
+
+Коротко:
+- для фронта включить `VITE_ENABLE_NATIVE_PUSH=true`
+- для backend указать FCM креды в `backend/.env`
+- добавить Firebase-конфиги в нативные проекты (`google-services.json`, `GoogleService-Info.plist`)

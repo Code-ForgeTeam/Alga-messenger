@@ -341,7 +341,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 ? {
                     ...c,
                     lastMessage: aiMessage,
-                    lastMessageText: aiMessage.text,
+                    lastMessageText: messagePreviewText(aiMessage),
                     lastMessageTime: aiMessage.createdAt,
                   }
                 : c,
@@ -451,7 +451,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ? {
                 ...c,
                 lastMessage: last,
-                lastMessageText: last?.text || '',
+                lastMessageText: last ? messagePreviewText(last) : '',
                 lastMessageTime: last?.createdAt,
               }
             : c,
@@ -565,7 +565,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? {
               ...c,
               lastMessage: message,
-              lastMessageText: message.text,
+              lastMessageText: messagePreviewText(message),
               lastMessageTime: message.createdAt,
               unreadCount:
                 own || state.currentChatId === message.chatId ? c.unreadCount || 0 : (c.unreadCount || 0) + 1,
