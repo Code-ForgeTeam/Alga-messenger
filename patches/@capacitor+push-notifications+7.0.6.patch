@@ -1,0 +1,66 @@
+diff --git a/node_modules/@capacitor/push-notifications/android/src/main/java/com/capacitorjs/plugins/pushnotifications/PushNotificationsPlugin.java b/node_modules/@capacitor/push-notifications/android/src/main/java/com/capacitorjs/plugins/pushnotifications/PushNotificationsPlugin.java
+index 377262d..cd91b6f 100644
+--- a/node_modules/@capacitor/push-notifications/android/src/main/java/com/capacitorjs/plugins/pushnotifications/PushNotificationsPlugin.java
++++ b/node_modules/@capacitor/push-notifications/android/src/main/java/com/capacitorjs/plugins/pushnotifications/PushNotificationsPlugin.java
+@@ -99,27 +99,45 @@ public class PushNotificationsPlugin extends Plugin {
+ 
+     @PluginMethod
+     public void register(PluginCall call) {
+-        FirebaseMessaging.getInstance().setAutoInitEnabled(true);
+-        FirebaseMessaging
+-            .getInstance()
+-            .getToken()
+-            .addOnCompleteListener(
+-                task -> {
+-                    if (!task.isSuccessful()) {
+-                        sendError(task.getException().getLocalizedMessage());
+-                        return;
++        try {
++            FirebaseMessaging.getInstance().setAutoInitEnabled(true);
++            FirebaseMessaging
++                .getInstance()
++                .getToken()
++                .addOnCompleteListener(
++                    task -> {
++                        if (!task.isSuccessful()) {
++                            Exception ex = task.getException();
++                            sendError(ex != null ? ex.getLocalizedMessage() : "FCM token request failed");
++                            return;
++                        }
++                        sendToken(task.getResult());
+                     }
+-                    sendToken(task.getResult());
+-                }
+-            );
+-        call.resolve();
++                );
++            call.resolve();
++        } catch (Exception ex) {
++            String message = ex.getLocalizedMessage();
++            if (message == null || message.trim().isEmpty()) {
++                message = "FCM is not initialized";
++            }
++            sendError(message);
++            call.reject(message);
++        }
+     }
+ 
+     @PluginMethod
+     public void unregister(PluginCall call) {
+-        FirebaseMessaging.getInstance().setAutoInitEnabled(false);
+-        FirebaseMessaging.getInstance().deleteToken();
+-        call.resolve();
++        try {
++            FirebaseMessaging.getInstance().setAutoInitEnabled(false);
++            FirebaseMessaging.getInstance().deleteToken();
++            call.resolve();
++        } catch (Exception ex) {
++            String message = ex.getLocalizedMessage();
++            if (message == null || message.trim().isEmpty()) {
++                message = "FCM unregister failed";
++            }
++            call.reject(message);
++        }
+     }
+ 
+     @PluginMethod
