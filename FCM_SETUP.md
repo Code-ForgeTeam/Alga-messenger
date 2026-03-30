@@ -124,4 +124,7 @@ npm run cap:prepare:ios
 - Для iOS не настроен APNs key в Firebase.
 - Неверный формат `FCM_PRIVATE_KEY` (сломанные `\n`).
 - Токен не сохранился в таблицу `push_tokens`.
-
+- В Android логах есть `Default FirebaseApp failed to initialize... google-services was not applied`:
+  - проверь `android/app/google-services.json`
+  - пересобери проект (`Clean Project` + `Rebuild`)
+  - убедись, что эмулятор с образом **Google Play** (не AOSP-only)

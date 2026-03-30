@@ -51,7 +51,7 @@ const SupportPage = lazy(() => import('./pages/SupportPage'));
 const SupportAgentPage = lazy(() => import('./pages/SupportAgentPage'));
 const AuthorSupportPage = lazy(() => import('./pages/AuthorSupportPage'));
 const GamePage = lazy(() => import('./pages/GamePage'));
-const ENABLE_NATIVE_PUSH = String(import.meta.env.VITE_ENABLE_NATIVE_PUSH ?? '').toLowerCase() === 'true';
+const ENABLE_NATIVE_PUSH = String(import.meta.env.VITE_ENABLE_NATIVE_PUSH ?? 'true').toLowerCase() !== 'false';
 
 function BackgroundEffects({
   effect,
@@ -594,8 +594,8 @@ export default function App() {
           }
         };
 
-        const registrationErrorHandle = await PushNotifications.addListener('registrationError', () => {
-          // ignore registration errors in runtime, app keeps polling fallback
+        const registrationErrorHandle = await PushNotifications.addListener('registrationError', (error) => {
+          console.warn('Push registration error:', error);
         });
         removeRegistrationError = () => {
           try {
