@@ -22,8 +22,6 @@ import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
-import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
@@ -478,9 +476,8 @@ export default function ChatPage() {
   };
 
   const openMessageActionsFromReactions = () => {
-    if (!reactionAnchor || !selectedMessage) return;
+    if (!selectedMessage) return;
     setMsgMenuAnchor(reactionAnchor);
-    closeReactionPicker();
   };
 
   const openMentionProfile = async (username: string) => {
@@ -664,37 +661,6 @@ export default function ChatPage() {
         </MenuItem>
       </Menu>
 
-      {!!selectedMessage && (
-        <Box
-          sx={{
-            px: 1,
-            py: 0.65,
-            borderBottom: '1px solid',
-            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider',
-            display: 'flex',
-            gap: 0.5,
-            overflowX: 'auto',
-            bgcolor: isDark ? 'rgba(14,29,47,0.96)' : '#FBFDFF',
-          }}
-        >
-          <Button size="small" startIcon={<ContentCopyRoundedIcon />} onClick={() => void copySelectedMessage()}>
-            Копировать
-          </Button>
-          <Button size="small" startIcon={<EditRoundedIcon />} disabled={!canEditMessage(selectedMessage)} onClick={startEditSelectedMessage}>
-            Изменить
-          </Button>
-          <Button size="small" onClick={() => selectedMessage && markMessageForReply(selectedMessage)}>
-            Ответить
-          </Button>
-          <Button size="small" color="error" onClick={() => selectedMessage && deleteMessage(chatId, selectedMessage.id, false)}>
-            Удалить
-          </Button>
-          <Button size="small" onClick={() => setSelectedMessage(null)}>
-            Закрыть
-          </Button>
-        </Box>
-      )}
-
       <Popover
         open={!!reactionAnchor}
         anchorEl={reactionAnchor}
@@ -714,34 +680,43 @@ export default function ChatPage() {
           },
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4 }}>
-          {QUICK_REACTIONS.map((item) => (
-            <ButtonBase
-              key={item}
-              onClick={() => { void applyReaction(item); }}
-              sx={{
-                width: 34,
-                height: 34,
-                borderRadius: '50%',
-                fontSize: 20,
-                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' },
+        <Box sx={{ display: 'grid', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, justifyContent: 'center' }}>
+            {QUICK_REACTIONS.map((item) => (
+              <ButtonBase
+                key={item}
+                onClick={() => { void applyReaction(item); }}
+                sx={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: '50%',
+                  fontSize: 20,
+                  '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' },
+                }}
+              >
+                {item}
+              </ButtonBase>
+            ))}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 0.4, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <Button size="small" onClick={() => void copySelectedMessage()}>Копировать</Button>
+            <Button size="small" disabled={!canEditMessage(selectedMessage)} onClick={startEditSelectedMessage}>Изменить</Button>
+            <Button size="small" onClick={() => selectedMessage && markMessageForReply(selectedMessage)}>Ответить</Button>
+            <Button
+              size="small"
+              color="error"
+              onClick={() => {
+                if (!selectedMessage) return;
+                deleteMessage(chatId, selectedMessage.id, false);
+                closeReactionPicker();
+                setSelectedMessage(null);
               }}
             >
-              {item}
-            </ButtonBase>
-          ))}
-          <ButtonBase
-            onClick={openMessageActionsFromReactions}
-            sx={{
-              width: 34,
-              height: 34,
-              borderRadius: '50%',
-              color: isDark ? '#B7C8DD' : '#556370',
-              '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' },
-            }}
-          >
-            <MoreVertIcon sx={{ fontSize: 20 }} />
-          </ButtonBase>
+              Удалить
+            </Button>
+            <Button size="small" onClick={() => { closeReactionPicker(); setSelectedMessage(null); }}>Закрыть</Button>
+            <Button size="small" onClick={openMessageActionsFromReactions}>Ещё</Button>
+          </Box>
         </Box>
       </Popover>
 
