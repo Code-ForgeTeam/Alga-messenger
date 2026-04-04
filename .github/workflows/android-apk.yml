@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -46,6 +46,7 @@ jobs:
           VITE_FORCE_HTTPS: ${{ vars.VITE_FORCE_HTTPS }}
           VITE_APP_VERSION_NAME: ${{ vars.VITE_APP_VERSION_NAME }}
           VITE_APP_VERSION_CODE: ${{ vars.VITE_APP_VERSION_CODE }}
+          VITE_ENABLE_NATIVE_PUSH: ${{ vars.VITE_ENABLE_NATIVE_PUSH }}
         run: |
           if [ -n "$VITE_API_BASE_URL" ]; then
             printf '%s\n' \
@@ -55,6 +56,7 @@ jobs:
               "VITE_FORCE_HTTPS=${VITE_FORCE_HTTPS:-1}" \
               "VITE_APP_VERSION_NAME=${VITE_APP_VERSION_NAME:-1.0.0}" \
               "VITE_APP_VERSION_CODE=${VITE_APP_VERSION_CODE:-1}" \
+              "VITE_ENABLE_NATIVE_PUSH=${VITE_ENABLE_NATIVE_PUSH:-true}" \
               > .env.production
           elif [ -f .env.production ]; then
             echo 'Using committed .env.production'
@@ -74,6 +76,13 @@ jobs:
 
       - name: Sync Capacitor Android
         run: npx cap sync android
+
+      - name: Inject Firebase config (google-services.json)
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          REQUIRE_ANDROID_FIREBASE: "1"
+        run: node ./scripts/setup-android-firebase.mjs --strict
 
       - name: Build installable debug APK
         working-directory: android

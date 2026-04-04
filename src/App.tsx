@@ -523,6 +523,10 @@ export default function App() {
   useEffect(() => {
     if (!auth.isAuthenticated) return;
     if (typeof window === 'undefined') return;
+    const capacitorGlobal = (window as typeof window & {
+      Capacitor?: { isNativePlatform?: () => boolean };
+    }).Capacitor;
+    if (capacitorGlobal?.isNativePlatform?.()) return;
     if (!('Notification' in window)) return;
     if (Notification.permission === 'default') {
       Notification.requestPermission().catch(() => null);

@@ -14,3 +14,6 @@ coverage/
 
 backend/.env
 backend/public/uploads/
+
+google-services.json
+GoogleService-Info.plist
