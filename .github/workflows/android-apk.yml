@@ -56,7 +56,7 @@ jobs:
               "VITE_FORCE_HTTPS=${VITE_FORCE_HTTPS:-1}" \
               "VITE_APP_VERSION_NAME=${VITE_APP_VERSION_NAME:-1.0.0}" \
               "VITE_APP_VERSION_CODE=${VITE_APP_VERSION_CODE:-1}" \
-              "VITE_ENABLE_NATIVE_PUSH=${VITE_ENABLE_NATIVE_PUSH:-true}" \
+              "VITE_ENABLE_NATIVE_PUSH=${VITE_ENABLE_NATIVE_PUSH:-false}" \
               > .env.production
           elif [ -f .env.production ]; then
             echo 'Using committed .env.production'
@@ -78,11 +78,16 @@ jobs:
         run: npx cap sync android
 
       - name: Inject Firebase config (google-services.json)
+        if: ${{ secrets.GOOGLE_SERVICES_JSON_B64 != '' || secrets.GOOGLE_SERVICES_JSON != '' }}
         env:
           GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
           REQUIRE_ANDROID_FIREBASE: "1"
         run: node ./scripts/setup-android-firebase.mjs --strict
+
+      - name: Firebase config missing (build without FCM)
+        if: ${{ secrets.GOOGLE_SERVICES_JSON_B64 == '' && secrets.GOOGLE_SERVICES_JSON == '' }}
+        run: echo "No Firebase secrets found. Building APK without Android FCM configuration."
 
       - name: Build installable debug APK
         working-directory: android
