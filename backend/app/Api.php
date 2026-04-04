@@ -92,6 +92,7 @@ final class Api
         if ($path === '/api/admin/users/delete' && $method === 'POST') { $this->adminDeleteUser($body); }
 
         if (preg_match('#^/api/messages/chat/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatMessages($m[1]); }
+        if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'PUT') { $this->editMessage($m[1], $body); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteMessage($m[1], $body); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reaction$#', $path, $m) && $method === 'POST') { $this->setMessageReaction($m[1], $body); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reaction$#', $path, $m) && $method === 'DELETE') { $this->removeMessageReaction($m[1]); }
@@ -1690,6 +1691,55 @@ final class Api
         $updateChat->execute([$message['chat_id']]);
 
         $this->json(['ok' => true]);
+    }
+
+    private function editMessage(string $messageId, array $body): void
+    {
+        $userId = $this->authUserId();
+        $text = trim((string)($body['text'] ?? ''));
+        if ($text === '') {
+            $this->json(['error' => 'Text is required'], 400);
+        }
+
+        $stmt = $this->db()->prepare('SELECT id, chat_id, user_id, created_at FROM messages WHERE id = ? LIMIT 1');
+        $stmt->execute([$messageId]);
+        $message = $stmt->fetch();
+        if (!$message) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        if ((string)$message['user_id'] !== $userId) {
+            $this->json(['error' => 'Only own messages can be edited'], 403);
+        }
+
+        $createdAtTs = strtotime((string)($message['created_at'] ?? ''));
+        if ($createdAtTs === false || (time() - $createdAtTs) > 900) {
+            $this->json(['error' => 'Editing window (15 minutes) has expired'], 403);
+        }
+
+        $part = $this->db()->prepare('SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1');
+        $part->execute([$message['chat_id'], $userId]);
+        if (!$part->fetchColumn()) {
+            $this->json(['error' => 'Forbidden'], 403);
+        }
+
+        $update = $this->db()->prepare('UPDATE messages SET text = ?, edited = 1 WHERE id = ?');
+        $update->execute([$text, $messageId]);
+
+        $chatUpdate = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $chatUpdate->execute([$message['chat_id']]);
+
+        $this->json([
+            'ok' => true,
+            'message' => [
+                'id' => $messageId,
+                'chatId' => (string)$message['chat_id'],
+                'userId' => $userId,
+                'text' => $text,
+                'edited' => 1,
+                'editedAt' => date('c'),
+            ],
+        ]);
     }
 
     private function me(): void
@@ -3997,6 +4047,5 @@ final class Api
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
 }
-
 
 
