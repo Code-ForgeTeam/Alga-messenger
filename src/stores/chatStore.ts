@@ -157,6 +157,7 @@ interface ChatState {
   loadMessages: (chatId: string) => Promise<void>;
   setCurrentChat: (chatId: string | null) => void;
   sendMessage: (chatId: string, text: string, attachments?: unknown[], replyToId?: string) => Promise<void>;
+  updateMessage: (chatId: string, messageId: string, text: string) => Promise<boolean>;
   markAsRead: (chatId: string) => Promise<void>;
   deleteMessage: (chatId: string, messageId: string, deleteForAll?: boolean) => Promise<void>;
 
@@ -425,6 +426,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       chats: state.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
     }));
+  },
+
+  updateMessage: async (chatId, messageId, text) => {
+    const normalizedText = String(text ?? '').trim();
+    if (!normalizedText) return false;
+
+    const message = (get().messages[chatId] || []).find((item) => item.id === messageId);
+    const me = useAuthStore.getState().user?.id;
+    if (!message || message.userId !== me) return false;
+
+    try {
+      const response = await messageApi.update(messageId, normalizedText);
+      const updated = (response?.message ?? response) as Message;
+      const editedAt = String(updated?.editedAt || new Date().toISOString());
+
+      set((state) => {
+        const list = (state.messages[chatId] || []).map((item) =>
+          item.id === messageId ? { ...item, text: normalizedText, edited: true, editedAt } : item,
+        );
+        const last = list[list.length - 1];
+        return {
+          messages: { ...state.messages, [chatId]: list },
+          chats: state.chats.map((chat) =>
+            chat.id === chatId
+              ? {
+                  ...chat,
+                  lastMessage: last,
+                  lastMessageText: last ? messagePreviewText(last) : '',
+                }
+              : chat,
+          ),
+        };
+      });
+
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   deleteMessage: async (chatId, messageId, deleteForAll = false) => {

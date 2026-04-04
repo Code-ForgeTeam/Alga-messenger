@@ -107,6 +107,8 @@ export const messageApi = {
     (await api.delete(`/messages/${messageId}/reaction`)).data,
   delete: async (messageId: string, deleteForAll = false) =>
     (await api.delete(`/messages/${messageId}`, { data: { deleteForAll } })).data,
+  update: async (messageId: string, text: string) =>
+    (await api.put(`/messages/${messageId}`, { text })).data,
 };
 
 export const notificationsApi = {
@@ -203,5 +205,4 @@ export const uploadApi = {
   getFileInfo: async (id: string) => (await api.get(`/upload/info/${id}`)).data,
   deleteFile: async (id: string) => (await api.delete(`/upload/${id}`)).data,
 };
-
 

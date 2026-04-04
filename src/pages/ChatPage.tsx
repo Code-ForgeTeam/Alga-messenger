@@ -22,6 +22,9 @@ import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { messageApi, uploadApi, userApi } from '../lib/api';
@@ -79,6 +82,7 @@ export default function ChatPage() {
     pinChat,
     deleteChat,
     deleteMessage,
+    updateMessage,
   } = useChatStore();
 
   const me = useAuthStore((s) => s.user);
@@ -95,6 +99,7 @@ export default function ChatPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploaded, setUploaded] = useState<any[]>([]);
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +134,8 @@ export default function ChatPage() {
 
   useEffect(() => {
     lastRenderedMessageIdRef.current = '';
+    setSelectedMessage(null);
+    setEditingMessage(null);
   }, [chatId]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
@@ -240,6 +247,18 @@ export default function ChatPage() {
   };
 
   const submit = async () => {
+    if (editingMessage) {
+      const ok = await updateMessage(chatId, editingMessage.id, text);
+      if (!ok) {
+        pushSnackbar({ message: 'Не удалось изменить сообщение', timeout: 2200, tone: 'error' });
+        return;
+      }
+      setText('');
+      setEditingMessage(null);
+      setSelectedMessage(null);
+      return;
+    }
+
     if (!text.trim() && !uploaded.length) return;
     await sendMessage(chatId, text, uploaded, replyToMessage?.id);
     setText('');
@@ -295,6 +314,50 @@ export default function ChatPage() {
     setReplyToMessage(message);
     setMsgMenuAnchor(null);
     setSelectedMessage(null);
+    setEditingMessage(null);
+  };
+
+  const copySelectedMessage = async () => {
+    if (!selectedMessage) return;
+    const textValue = String(selectedMessage.text || '').trim();
+    const fallback = (selectedMessage.attachments || []).map((item) => item.url).filter(Boolean).join('\n');
+    const payload = textValue || fallback;
+    if (!payload) return;
+    try {
+      await navigator.clipboard.writeText(payload);
+      pushSnackbar({ message: 'Скопировано', timeout: 1800 });
+    } catch {
+      pushSnackbar({ message: 'Не удалось скопировать', timeout: 2200, tone: 'error' });
+    } finally {
+      setSelectedMessage(null);
+    }
+  };
+
+  const canEditMessage = (message: Message | null): boolean => {
+    if (!message || message.userId !== me?.id) return false;
+    const ts = new Date(message.createdAt).getTime();
+    if (!Number.isFinite(ts)) return false;
+    return Date.now() - ts <= 15 * 60 * 1000;
+  };
+
+  const startEditSelectedMessage = () => {
+    if (!selectedMessage || !canEditMessage(selectedMessage)) return;
+    setEditingMessage(selectedMessage);
+    setReplyToMessage(null);
+    setText(selectedMessage.text || '');
+    setSelectedMessage(null);
+  };
+
+  const downloadAttachment = (attachment: Attachment) => {
+    const url = String(attachment?.url || '').trim();
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = attachment.name || 'photo';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   const handleRootPointerDown = (event: any) => {
@@ -565,6 +628,23 @@ export default function ChatPage() {
         </MenuItem>
         <MenuItem
           onClick={() => {
+            void copySelectedMessage();
+            setMsgMenuAnchor(null);
+          }}
+        >
+          Копировать
+        </MenuItem>
+        <MenuItem
+          disabled={!canEditMessage(selectedMessage)}
+          onClick={() => {
+            startEditSelectedMessage();
+            setMsgMenuAnchor(null);
+          }}
+        >
+          Изменить
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
             if (selectedMessage) deleteMessage(chatId, selectedMessage.id, false);
             setMsgMenuAnchor(null);
             setSelectedMessage(null);
@@ -583,6 +663,37 @@ export default function ChatPage() {
           Удалить у всех
         </MenuItem>
       </Menu>
+
+      {!!selectedMessage && (
+        <Box
+          sx={{
+            px: 1,
+            py: 0.65,
+            borderBottom: '1px solid',
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider',
+            display: 'flex',
+            gap: 0.5,
+            overflowX: 'auto',
+            bgcolor: isDark ? 'rgba(14,29,47,0.96)' : '#FBFDFF',
+          }}
+        >
+          <Button size="small" startIcon={<ContentCopyRoundedIcon />} onClick={() => void copySelectedMessage()}>
+            Копировать
+          </Button>
+          <Button size="small" startIcon={<EditRoundedIcon />} disabled={!canEditMessage(selectedMessage)} onClick={startEditSelectedMessage}>
+            Изменить
+          </Button>
+          <Button size="small" onClick={() => selectedMessage && markMessageForReply(selectedMessage)}>
+            Ответить
+          </Button>
+          <Button size="small" color="error" onClick={() => selectedMessage && deleteMessage(chatId, selectedMessage.id, false)}>
+            Удалить
+          </Button>
+          <Button size="small" onClick={() => setSelectedMessage(null)}>
+            Закрыть
+          </Button>
+        </Box>
+      )}
 
       <Popover
         open={!!reactionAnchor}
@@ -774,24 +885,50 @@ export default function ChatPage() {
                           return (
                             <Box
                               key={`${m.id}-att-${index}`}
-                              component="img"
-                              src={url}
-                              alt={attachment.name || 'photo'}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setPreviewAttachment(attachment);
-                              }}
                               sx={{
                                 width: 'min(240px, 64vw)',
                                 maxWidth: '100%',
-                                borderRadius: 2,
-                                display: 'block',
-                                objectFit: 'cover',
-                                cursor: 'pointer',
-                                border: '1px solid',
-                                borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.08)',
+                                position: 'relative',
                               }}
-                            />
+                            >
+                              <Box
+                                component="img"
+                                src={url}
+                                alt={attachment.name || 'photo'}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setPreviewAttachment(attachment);
+                                }}
+                                sx={{
+                                  width: '100%',
+                                  borderRadius: 2,
+                                  display: 'block',
+                                  objectFit: 'cover',
+                                  cursor: 'pointer',
+                                  border: '1px solid',
+                                  borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.08)',
+                                }}
+                              />
+                              <IconButton
+                                size="small"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  downloadAttachment(attachment);
+                                }}
+                                sx={{
+                                  position: 'absolute',
+                                  right: 6,
+                                  top: 6,
+                                  width: 24,
+                                  height: 24,
+                                  color: '#fff',
+                                  bgcolor: 'rgba(0,0,0,0.45)',
+                                  '&:hover': { bgcolor: 'rgba(0,0,0,0.62)' },
+                                }}
+                              >
+                                <DownloadRoundedIcon sx={{ fontSize: 15 }} />
+                              </IconButton>
+                            </Box>
                           );
                         }
 
@@ -892,6 +1029,7 @@ export default function ChatPage() {
                   <Box sx={{ mt: 0.2, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.35 }}>
                     <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                       {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                      {m.edited ? ' · изм.' : ''}
                     </Typography>
                     {m.userId === me?.id && (
                       m.status === 'read' ? (
@@ -1048,6 +1186,28 @@ export default function ChatPage() {
         </Box>
       )}
 
+      {!!editingMessage && (
+        <Box
+          sx={{
+            px: 1.1,
+            py: 0.55,
+            borderTop: '1px solid',
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.8,
+            bgcolor: isDark ? 'rgba(16,29,46,0.95)' : '#FAFBFC',
+          }}
+        >
+          <Typography variant="caption" sx={{ fontWeight: 700, flex: 1 }}>
+            Редактирование сообщения (до 15 минут)
+          </Typography>
+          <IconButton size="small" onClick={() => { setEditingMessage(null); setText(''); }} sx={{ color: isDark ? '#AFC1D9' : '#708090' }}>
+            <CloseRoundedIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Box>
+      )}
+
       <Box sx={{ px: 1, pt: 1, pb: 'max(env(safe-area-inset-bottom), 8px)', display: 'flex', gap: 1, alignItems: 'center', bgcolor: isDark ? 'rgba(14,29,47,0.95)' : '#FFFFFF', borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider' }}>
         <input
           ref={inputRef}
@@ -1066,7 +1226,7 @@ export default function ChatPage() {
           maxRows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Сообщение..."
+          placeholder={editingMessage ? 'Изменить сообщение...' : 'Сообщение...'}
           sx={{
             '& .MuiOutlinedInput-root': {
               borderRadius: 99,
