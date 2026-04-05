@@ -296,6 +296,21 @@ export default function ChatPage() {
     return formatPresence(peerUser?.status, peerUser?.lastSeen);
   }, [typingUsers, chatId, chat?.type, peerUser?.status, peerUser?.lastSeen, groupMembersCount]);
 
+  const participantsById = useMemo(() => {
+    const map = new Map<string, User>();
+    (chat?.participants || []).forEach((participant) => {
+      if (!participant?.id) return;
+      map.set(participant.id, participant);
+    });
+    if (me?.id) {
+      map.set(me.id, {
+        ...me,
+        isAdmin: Boolean(chat?.isAdmin),
+      });
+    }
+    return map;
+  }, [chat?.participants, chat?.isAdmin, me]);
+
   const onPickFiles = async (list: FileList | null) => {
     if (!list?.length) return;
     const arr = Array.from(list);
@@ -961,31 +976,99 @@ export default function ChatPage() {
               ? ((m as any).attachments as Attachment[])
               : [];
             const hasText = String(m.text ?? '').trim() !== '';
+            const isMine = String(m.userId) === String(me?.id || '');
+            const isGroupMessage = chat?.type === 'group';
+            const fallbackSender = participantsById.get(m.userId);
+            const apiSender = (m as any)?.sender as Partial<User> | undefined;
+            const sender = apiSender?.id
+              ? ({
+                  ...fallbackSender,
+                  ...apiSender,
+                } as User)
+              : fallbackSender;
+            const senderName = String(
+              sender?.fullName ||
+                (sender?.username ? `@${sender.username}` : ''),
+            ).trim();
+            const showGroupSenderMeta = isGroupMessage && !isMine;
+            const showSenderAdmin = Boolean(sender?.isAdmin);
+            const senderAvatar = sender?.avatar;
             return (
-              <Box key={row.key} sx={{ mb: 1, display: 'flex', justifyContent: m.userId === me?.id ? 'flex-end' : 'flex-start' }}>
-                <Box
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setSelectedMessage(m);
-                    setMsgMenuAnchor(e.currentTarget);
-                  }}
-                  onPointerDown={(event) => handleMessagePointerDown(event, m)}
-                  onPointerMove={(event) => handleMessagePointerMove(event, m)}
-                  onPointerUp={clearMessageGesture}
-                  onPointerLeave={clearMessageGesture}
-                  onPointerCancel={clearMessageGesture}
-                  sx={{
-                    px: 1.5,
-                    py: 0.95,
-                    borderRadius: 2.8,
-                    maxWidth: '72%',
-                    bgcolor: m.userId === me?.id ? (isDark ? '#2F5888' : '#D8F2E4') : (isDark ? '#152741' : '#F2F5F8'),
-                    WebkitTouchCallout: 'none',
-                    WebkitUserSelect: 'none',
-                    userSelect: 'none',
-                    touchAction: 'manipulation',
-                  }}
-                >
+              <Box key={row.key} sx={{ mb: 1, display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.65, maxWidth: '86%' }}>
+                  {showGroupSenderMeta && (
+                    <Avatar
+                      src={senderAvatar}
+                      sx={{
+                        width: 30,
+                        height: 30,
+                        mb: 0.25,
+                        bgcolor: isDark ? '#32557D' : '#DFE8F2',
+                        color: isDark ? '#EAF1FF' : '#1C2A38',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {(senderName || 'U').slice(0, 1).toUpperCase()}
+                    </Avatar>
+                  )}
+
+                  <Box sx={{ minWidth: 0 }}>
+                    {showGroupSenderMeta && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mb: 0.22, ml: 0.15 }}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: isDark ? '#AFC1D9' : '#5E6E7F',
+                            fontWeight: 700,
+                            lineHeight: 1.1,
+                          }}
+                        >
+                          {senderName || 'Участник'}
+                        </Typography>
+                        {showSenderAdmin && (
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              px: 0.55,
+                              py: 0.08,
+                              borderRadius: 0.85,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              bgcolor: isDark ? 'rgba(250,187,58,0.2)' : 'rgba(250,187,58,0.24)',
+                              color: isDark ? '#FFD574' : '#8C5B00',
+                            }}
+                          >
+                            Админ
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+
+                    <Box
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setSelectedMessage(m);
+                        setMsgMenuAnchor(e.currentTarget);
+                      }}
+                      onPointerDown={(event) => handleMessagePointerDown(event, m)}
+                      onPointerMove={(event) => handleMessagePointerMove(event, m)}
+                      onPointerUp={clearMessageGesture}
+                      onPointerLeave={clearMessageGesture}
+                      onPointerCancel={clearMessageGesture}
+                      sx={{
+                        px: 1.5,
+                        py: 0.95,
+                        borderRadius: 2.8,
+                        maxWidth: '100%',
+                        bgcolor: isMine ? (isDark ? '#2F5888' : '#D8F2E4') : (isDark ? '#152741' : '#F2F5F8'),
+                        WebkitTouchCallout: 'none',
+                        WebkitUserSelect: 'none',
+                        userSelect: 'none',
+                        touchAction: 'manipulation',
+                      }}
+                    >
                   {!!m.replyTo && (
                     <Box
                       sx={{
@@ -1206,6 +1289,8 @@ export default function ChatPage() {
                       )}
                     </Box>
                   )}
+                    </Box>
+                  </Box>
                 </Box>
               </Box>
             );

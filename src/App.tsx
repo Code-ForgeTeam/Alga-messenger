@@ -543,6 +543,7 @@ export default function App() {
     let removeRegistrationError: (() => void) | null = null;
     let removeReceived: (() => void) | null = null;
     let removeAction: (() => void) | null = null;
+    let removeAppState: (() => void) | null = null;
     const normalizePushUrl = (rawUrl: unknown): string | null => {
       const value = String(rawUrl ?? '').trim();
       if (!value) return null;
@@ -580,9 +581,10 @@ export default function App() {
 
     const initPush = async () => {
       try {
-        const [{ Capacitor }, { PushNotifications }] = await Promise.all([
+        const [{ Capacitor }, { PushNotifications }, { App }] = await Promise.all([
           import('@capacitor/core'),
           import('@capacitor/push-notifications'),
+          import('@capacitor/app'),
         ]);
 
         const platform = Capacitor.getPlatform();
@@ -593,6 +595,9 @@ export default function App() {
           ? perm
           : await PushNotifications.requestPermissions();
         if (granted.receive !== 'granted' || disposed) return;
+
+        await PushNotifications.removeAllDeliveredNotifications().catch(() => null);
+        await pushApi.unregisterToken('').catch(() => null);
 
         if (platform === 'android') {
           await PushNotifications.createChannel({
@@ -664,12 +669,31 @@ export default function App() {
 
         const actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
           if (disposed) return;
+          PushNotifications.removeAllDeliveredNotifications().catch(() => null);
           loadChats({ silent: true }).catch(() => null);
           navigateFromPush(notification);
         });
         removeAction = () => {
           try {
             const result = actionHandle.remove();
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              void (result as Promise<void>).catch(() => null);
+            }
+          } catch {
+            // ignore
+          }
+        };
+
+        const appStateHandle = await App.addListener('appStateChange', ({ isActive }) => {
+          if (disposed || !isActive) return;
+          PushNotifications.removeAllDeliveredNotifications().catch(() => null);
+          pushApi.unregisterToken('').catch(() => null);
+          PushNotifications.register().catch(() => null);
+          loadChats({ silent: true }).catch(() => null);
+        });
+        removeAppState = () => {
+          try {
+            const result = appStateHandle.remove();
             if (result && typeof (result as Promise<void>).then === 'function') {
               void (result as Promise<void>).catch(() => null);
             }
@@ -692,6 +716,7 @@ export default function App() {
       removeRegistrationError?.();
       removeReceived?.();
       removeAction?.();
+      removeAppState?.();
     };
   }, [auth.isAuthenticated, loadChats, navigate]);
 

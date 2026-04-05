@@ -72,6 +72,8 @@ final class Api
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/archive$#', $path, $m) && $method === 'POST') { $this->setChatArchive($m[1], true); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/archive$#', $path, $m) && $method === 'DELETE') { $this->setChatArchive($m[1], false); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/participants$#', $path, $m) && $method === 'POST') { $this->addGroupParticipants($m[1], $body); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/participants/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->removeGroupParticipant($m[1], $m[2]); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/group$#', $path, $m) && $method === 'PUT') { $this->updateGroupChat($m[1], $body); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/mute$#', $path, $m) && $method === 'POST') { $this->toggleChatMute($m[1]); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/pin$#', $path, $m) && $method === 'POST') { $this->toggleChatPin($m[1]); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/block$#', $path, $m) && $method === 'POST') { $this->blockInChat($m[1], $body); }
@@ -90,6 +92,7 @@ final class Api
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
         if ($path === '/api/upload' && $method === 'POST') { $this->uploadFiles(); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
+        if ($path === '/api/upload/group-avatar' && $method === 'POST') { $this->uploadGroupAvatar(); }
         if ($path === '/api/upload/storage-stats' && $method === 'GET') { $this->uploadStorageStats(); }
         if ($path === '/api/upload/clear-cache' && $method === 'DELETE') { $this->clearUploadCache(); }
         if ($path === '/api/admin/users/delete' && $method === 'POST') { $this->adminDeleteUser($body); }
@@ -1009,10 +1012,20 @@ final class Api
         $stmt = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, ?)');
         $stmt->execute([$chatId, $name === '' ? null : $name, $type]);
 
-        $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
+        $useGroupAdmins = $type === 'group' && $this->hasChatParticipantColumn('is_admin');
+        $insertParticipant = $useGroupAdmins
+            ? $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES (?, ?, ?)')
+            : $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
         foreach ($allParticipants as $uid) {
-            $insertParticipant->execute([$chatId, $uid]);
+            if ($useGroupAdmins) {
+                $insertParticipant->execute([$chatId, $uid, strcasecmp((string)$uid, $ownerId) === 0 ? 1 : 0]);
+            } else {
+                $insertParticipant->execute([$chatId, $uid]);
+            }
             $this->touchChatReadState($chatId, (string)$uid);
+        }
+        if ($type === 'group') {
+            $this->ensureGroupHasAdmin($chatId, $ownerId);
         }
 
         $chat = $this->chatByIdForUser($chatId, $ownerId);
@@ -1029,6 +1042,8 @@ final class Api
     {
         $actorId = $this->authUserId();
         $this->assertChatParticipant($chatId, $actorId);
+        $this->ensureGroupHasAdmin($chatId, $actorId);
+        $this->assertGroupAdmin($chatId, $actorId);
 
         $typeStmt = $this->db()->prepare('SELECT type FROM chats WHERE id = ? LIMIT 1');
         $typeStmt->execute([$chatId]);
@@ -1110,7 +1125,9 @@ final class Api
             $this->json(['error' => 'Group participants limit is 15'], 400);
         }
 
-        $insert = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
+        $insert = $this->hasChatParticipantColumn('is_admin')
+            ? $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES (?, ?, 0)')
+            : $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
         foreach ($toAdd as $uid) {
             try {
                 $insert->execute([$chatId, $uid]);
@@ -1127,6 +1144,155 @@ final class Api
         $this->json([
             'ok' => true,
             'added' => count($toAdd),
+            'chat' => $chat,
+        ]);
+    }
+
+    private function updateGroupChat(string $chatId, array $body): void
+    {
+        $actorId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $actorId);
+        $this->ensureGroupHasAdmin($chatId, $actorId);
+        $this->assertGroupAdmin($chatId, $actorId);
+
+        $chatTypeStmt = $this->db()->prepare('SELECT type, name, avatar FROM chats WHERE id = ? LIMIT 1');
+        $chatTypeStmt->execute([$chatId]);
+        $chatRow = $chatTypeStmt->fetch() ?: null;
+        if (!$chatRow) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+        if (strtolower((string)($chatRow['type'] ?? '')) !== 'group') {
+            $this->json(['error' => 'Only group chats can be updated here'], 400);
+        }
+
+        $nameProvided = array_key_exists('name', $body);
+        $avatarProvided = array_key_exists('avatar', $body);
+        if (!$nameProvided && !$avatarProvided) {
+            $this->json(['error' => 'Nothing to update'], 400);
+        }
+
+        $nextName = trim((string)($chatRow['name'] ?? ''));
+        if ($nameProvided) {
+            $candidateName = trim((string)($body['name'] ?? ''));
+            if ($candidateName === '') {
+                $this->json(['error' => 'Group name is required'], 400);
+            }
+            if (function_exists('mb_strlen') && mb_strlen($candidateName) > 80) {
+                $this->json(['error' => 'Group name is too long'], 400);
+            }
+            if (!function_exists('mb_strlen') && strlen($candidateName) > 80) {
+                $this->json(['error' => 'Group name is too long'], 400);
+            }
+            $nextName = $candidateName;
+        }
+
+        $currentAvatar = trim((string)($chatRow['avatar'] ?? ''));
+        $nextAvatar = $currentAvatar;
+        if ($avatarProvided) {
+            if ($body['avatar'] === null) {
+                $nextAvatar = '';
+            } else {
+                $candidateAvatar = trim((string)($body['avatar'] ?? ''));
+                if ($candidateAvatar !== '' && strlen($candidateAvatar) > 2048) {
+                    $this->json(['error' => 'Avatar URL is too long'], 400);
+                }
+                $nextAvatar = $candidateAvatar;
+            }
+        }
+
+        $update = $this->db()->prepare('UPDATE chats SET name = ?, avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $update->execute([
+            $nextName === '' ? null : $nextName,
+            $nextAvatar === '' ? null : $nextAvatar,
+            $chatId,
+        ]);
+
+        if ($currentAvatar !== '' && strcasecmp($currentAvatar, $nextAvatar) !== 0) {
+            $this->deleteUploadedFileByUrl($currentAvatar, ['/uploads/group-avatars/']);
+        }
+
+        $chat = $this->chatByIdForUser($chatId, $actorId);
+        $this->json([
+            'ok' => true,
+            'chat' => $chat,
+        ]);
+    }
+
+    private function removeGroupParticipant(string $chatId, string $targetUserId): void
+    {
+        $actorId = $this->authUserId();
+        $targetId = trim($targetUserId);
+        if ($targetId === '') {
+            $this->json(['error' => 'userId is required'], 400);
+        }
+
+        $this->assertChatParticipant($chatId, $actorId);
+        $this->ensureGroupHasAdmin($chatId, $actorId);
+        $this->assertGroupAdmin($chatId, $actorId);
+
+        $chatTypeStmt = $this->db()->prepare('SELECT type FROM chats WHERE id = ? LIMIT 1');
+        $chatTypeStmt->execute([$chatId]);
+        $chatType = strtolower((string)$chatTypeStmt->fetchColumn());
+        if ($chatType !== 'group') {
+            $this->json(['error' => 'Only group chats can remove participants'], 400);
+        }
+
+        if (strcasecmp($targetId, $actorId) === 0) {
+            $this->json(['error' => 'Use leave group action for yourself'], 400);
+        }
+
+        $targetSelect = $this->hasChatParticipantColumn('is_admin')
+            ? 'SELECT user_id, is_admin FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
+            : 'SELECT user_id, 0 AS is_admin FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1';
+        $targetStmt = $this->db()->prepare($targetSelect);
+        $targetStmt->execute([$chatId, $targetId]);
+        $targetParticipant = $targetStmt->fetch();
+        if (!$targetParticipant) {
+            $this->json(['error' => 'Participant not found'], 404);
+        }
+
+        if ($this->hasChatParticipantColumn('is_admin') && (int)($targetParticipant['is_admin'] ?? 0) === 1) {
+            $adminsCountStmt = $this->db()->prepare(
+                'SELECT COUNT(*) FROM chat_participants WHERE chat_id = ? AND is_admin = 1'
+            );
+            $adminsCountStmt->execute([$chatId]);
+            $adminsCount = (int)$adminsCountStmt->fetchColumn();
+            if ($adminsCount <= 1) {
+                $this->json(['error' => 'Group must have at least one admin'], 400);
+            }
+        }
+
+        $removeStmt = $this->db()->prepare('DELETE FROM chat_participants WHERE chat_id = ? AND user_id = ?');
+        $removeStmt->execute([$chatId, $targetId]);
+
+        if ($this->ensureChatReadStateTable()) {
+            try {
+                $dropReadState = $this->db()->prepare('DELETE FROM chat_read_state WHERE chat_id = ? AND user_id = ?');
+                $dropReadState->execute([$chatId, $targetId]);
+            } catch (\Throwable) {
+                // ignore read state cleanup issues
+            }
+        }
+
+        $countStmt = $this->db()->prepare('SELECT COUNT(*) FROM chat_participants WHERE chat_id = ?');
+        $countStmt->execute([$chatId]);
+        $participantsCount = (int)$countStmt->fetchColumn();
+
+        if ($participantsCount <= 0) {
+            $this->deleteChatAvatarById($chatId);
+            $cleanup = $this->db()->prepare('DELETE FROM chats WHERE id = ?');
+            $cleanup->execute([$chatId]);
+            $this->json(['ok' => true, 'chatDeleted' => true]);
+        }
+
+        $touch = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $touch->execute([$chatId]);
+        $this->ensureGroupHasAdmin($chatId, $actorId);
+
+        $chat = $this->chatByIdForUser($chatId, $actorId);
+        $this->json([
+            'ok' => true,
+            'chatDeleted' => false,
             'chat' => $chat,
         ]);
     }
@@ -1179,6 +1345,7 @@ final class Api
                 $idsStmt->fetchAll() ?: []
             )));
             $this->deleteAttachmentFilesByMessageIds($messageIds);
+            $this->deleteChatAvatarById($chatId);
 
             $stmt = $this->db()->prepare('DELETE FROM chats WHERE id = ?');
             $stmt->execute([$chatId]);
@@ -1193,6 +1360,7 @@ final class Api
         $participantsCount = (int)$countStmt->fetchColumn();
 
         if ($participantsCount <= 0) {
+            $this->deleteChatAvatarById($chatId);
             $cleanup = $this->db()->prepare('DELETE FROM chats WHERE id = ?');
             $cleanup->execute([$chatId]);
         } else {
@@ -1290,6 +1458,13 @@ final class Api
         $stmt->execute([$chatId, $userId]);
         if (!$stmt->fetchColumn()) {
             $this->json(['error' => 'Forbidden'], 403);
+        }
+    }
+
+    private function assertGroupAdmin(string $chatId, string $userId): void
+    {
+        if (!$this->isGroupAdmin($chatId, $userId)) {
+            $this->json(['error' => 'Only group admin can do this'], 403);
         }
     }
 
@@ -1392,6 +1567,7 @@ final class Api
         $updateChat->execute([$chatId]);
         $pushText = $text !== '' ? $text : 'Фото';
         $this->sendPushForMessage($chatId, $userId, $pushText);
+        $senderPayload = $this->messageSenderPayload($userId);
 
         $message = [
             'id' => $messageId,
@@ -1405,6 +1581,7 @@ final class Api
             'status' => 'delivered',
             'isAi' => false,
             'reactions' => ['mine' => null, 'counts' => new \stdClass()],
+            'sender' => $senderPayload,
         ];
 
         $this->json(['message' => $message], 201);
@@ -2172,10 +2349,12 @@ final class Api
 
         try {
             $stmt = $this->db()->prepare(
-                'SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited, reply_to_id as replyToId
-                 FROM messages
-                 WHERE chat_id = ?
-                 ORDER BY created_at DESC, id DESC
+                'SELECT m.id, m.chat_id as chatId, m.user_id as userId, m.text, m.created_at as createdAt, m.edited,
+                        m.reply_to_id as replyToId, u.username as senderUsername, u.full_name as senderFullName, u.avatar as senderAvatar
+                 FROM messages m
+                 LEFT JOIN users u ON u.id = m.user_id
+                 WHERE m.chat_id = ?
+                 ORDER BY m.created_at DESC, m.id DESC
                  LIMIT ?
                  OFFSET ?'
             );
@@ -2185,10 +2364,12 @@ final class Api
             $stmt->execute();
         } catch (\Throwable) {
             $stmt = $this->db()->prepare(
-                'SELECT id, chat_id as chatId, user_id as userId, text, created_at as createdAt, edited
-                 FROM messages
-                 WHERE chat_id = ?
-                 ORDER BY created_at DESC, id DESC
+                'SELECT m.id, m.chat_id as chatId, m.user_id as userId, m.text, m.created_at as createdAt, m.edited,
+                        NULL as replyToId, u.username as senderUsername, u.full_name as senderFullName, u.avatar as senderAvatar
+                 FROM messages m
+                 LEFT JOIN users u ON u.id = m.user_id
+                 WHERE m.chat_id = ?
+                 ORDER BY m.created_at DESC, m.id DESC
                  LIMIT ?
                  OFFSET ?'
             );
@@ -2227,6 +2408,12 @@ final class Api
                 'status' => $authorId === $userId ? $ownStatus : $incomingStatus,
                 'isAi' => $isAi,
                 'reactions' => $this->messageReactionSummary($messageId, $userId),
+                'sender' => [
+                    'id' => $authorId,
+                    'username' => (string)($row['senderUsername'] ?? ''),
+                    'fullName' => (string)($row['senderFullName'] ?? ''),
+                    'avatar' => $row['senderAvatar'] ?? null,
+                ],
             ];
         }, $rows);
 
@@ -2255,12 +2442,33 @@ final class Api
         if (!$row) {
             return null;
         }
+        if (strtolower((string)($row['type'] ?? '')) === 'group') {
+            $this->ensureGroupHasAdmin($chatId, $userId);
+            $stmt->execute([$chatId, $userId]);
+            $row = $stmt->fetch() ?: $row;
+        }
 
         return $this->buildChatPayload($row, $userId);
     }
 
     private function buildChatPayload(array $row, string $viewerId): array
     {
+        if (strtolower((string)($row['type'] ?? '')) === 'group') {
+            $chatId = (string)($row['id'] ?? '');
+            $this->ensureGroupHasAdmin($chatId, $viewerId);
+            if ($this->hasChatParticipantColumn('is_admin')) {
+                try {
+                    $viewerAdminStmt = $this->db()->prepare(
+                        'SELECT is_admin FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
+                    );
+                    $viewerAdminStmt->execute([$chatId, $viewerId]);
+                    $row['is_admin'] = (int)$viewerAdminStmt->fetchColumn();
+                } catch (\Throwable) {
+                    // ignore admin-role refresh errors
+                }
+            }
+        }
+
         $participants = $this->chatParticipants((string)$row['id'], $viewerId, (string)$row['type']);
         $last = $this->chatLastMessage((string)$row['id'], $viewerId);
 
@@ -2274,6 +2482,7 @@ final class Api
             'pinned' => (bool)$row['pinned'],
             'muted' => (bool)$row['muted'],
             'blocked' => (bool)$row['blocked'],
+            'isAdmin' => (bool)($row['is_admin'] ?? false),
             'unreadCount' => $this->resolveUnreadCount((string)$row['id'], $viewerId, $row),
             'lastMessage' => $last,
             'lastMessageText' => $last['text'] ?? '',
@@ -2417,11 +2626,14 @@ final class Api
             return [];
         }
 
+        $adminSelect = $this->hasChatParticipantColumn('is_admin')
+            ? 'cp.is_admin AS is_admin,'
+            : '0 AS is_admin,';
         $stmt = $this->db()->prepare(
-            'SELECT u.id, u.username, u.full_name, u.avatar, u.bio, u.status, u.last_seen, u.badge
+            "SELECT u.id, u.username, u.full_name, u.avatar, u.bio, u.status, u.last_seen, {$adminSelect} u.badge
              FROM chat_participants cp
              JOIN users u ON u.id = cp.user_id
-             WHERE cp.chat_id = ? AND cp.user_id <> ?'
+             WHERE cp.chat_id = ? AND cp.user_id <> ?"
         );
         $stmt->execute([$chatId, $viewerId]);
 
@@ -2438,6 +2650,7 @@ final class Api
                 'status' => $presence['status'],
                 'lastSeen' => $presence['lastSeen'],
                 'badge' => $u['badge'] ?? null,
+                'isAdmin' => (bool)($u['is_admin'] ?? false),
             ];
         }, $rows ?: []);
     }
@@ -2446,19 +2659,23 @@ final class Api
     {
         try {
             $stmt = $this->db()->prepare(
-                'SELECT id, chat_id, user_id, text, created_at, edited, reply_to_id
-                 FROM messages
-                 WHERE chat_id = ?
-                 ORDER BY created_at DESC
+                'SELECT m.id, m.chat_id, m.user_id, m.text, m.created_at, m.edited, m.reply_to_id,
+                        u.username as senderUsername, u.full_name as senderFullName, u.avatar as senderAvatar
+                 FROM messages m
+                 LEFT JOIN users u ON u.id = m.user_id
+                 WHERE m.chat_id = ?
+                 ORDER BY m.created_at DESC
                  LIMIT 1'
             );
             $stmt->execute([$chatId]);
         } catch (\Throwable) {
             $stmt = $this->db()->prepare(
-                'SELECT id, chat_id, user_id, text, created_at, edited
-                 FROM messages
-                 WHERE chat_id = ?
-                 ORDER BY created_at DESC
+                'SELECT m.id, m.chat_id, m.user_id, m.text, m.created_at, m.edited,
+                        u.username as senderUsername, u.full_name as senderFullName, u.avatar as senderAvatar
+                 FROM messages m
+                 LEFT JOIN users u ON u.id = m.user_id
+                 WHERE m.chat_id = ?
+                 ORDER BY m.created_at DESC
                  LIMIT 1'
             );
             $stmt->execute([$chatId]);
@@ -2492,7 +2709,45 @@ final class Api
             'status' => $status,
             'isAi' => $this->isAiMessageText((string)($m['text'] ?? '')),
             'reactions' => $this->messageReactionSummary($messageId, $viewerId),
+            'sender' => [
+                'id' => $authorId,
+                'username' => (string)($m['senderUsername'] ?? ''),
+                'fullName' => (string)($m['senderFullName'] ?? ''),
+                'avatar' => $m['senderAvatar'] ?? null,
+            ],
         ];
+    }
+
+    private function messageSenderPayload(string $userId): array
+    {
+        $id = trim($userId);
+        if ($id === '') {
+            return [
+                'id' => '',
+                'username' => '',
+                'fullName' => '',
+                'avatar' => null,
+            ];
+        }
+
+        try {
+            $stmt = $this->db()->prepare('SELECT username, full_name, avatar FROM users WHERE id = ? LIMIT 1');
+            $stmt->execute([$id]);
+            $row = $stmt->fetch() ?: [];
+            return [
+                'id' => $id,
+                'username' => (string)($row['username'] ?? ''),
+                'fullName' => (string)($row['full_name'] ?? ''),
+                'avatar' => $row['avatar'] ?? null,
+            ];
+        } catch (\Throwable) {
+            return [
+                'id' => $id,
+                'username' => '',
+                'fullName' => '',
+                'avatar' => null,
+            ];
+        }
     }
 
     private function normalizeMessageAttachments(array $attachments): array
@@ -2756,6 +3011,72 @@ final class Api
             $stmt->execute([$chatId, $userId]);
         } catch (\Throwable) {
             // ignore read state write errors
+        }
+    }
+
+    private function isGroupAdmin(string $chatId, string $userId): bool
+    {
+        if (!$this->hasChatParticipantColumn('is_admin')) {
+            return true;
+        }
+
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT is_admin FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
+            );
+            $stmt->execute([$chatId, $userId]);
+            return ((int)$stmt->fetchColumn()) === 1;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function ensureGroupHasAdmin(string $chatId, ?string $preferredUserId = null): void
+    {
+        if (!$this->hasChatParticipantColumn('is_admin')) {
+            return;
+        }
+
+        try {
+            $countAdminsStmt = $this->db()->prepare(
+                'SELECT COUNT(*) FROM chat_participants WHERE chat_id = ? AND is_admin = 1'
+            );
+            $countAdminsStmt->execute([$chatId]);
+            if ((int)$countAdminsStmt->fetchColumn() > 0) {
+                return;
+            }
+
+            $targetUserId = '';
+            $preferred = trim((string)$preferredUserId);
+            if ($preferred !== '') {
+                $checkPreferredStmt = $this->db()->prepare(
+                    'SELECT user_id FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
+                );
+                $checkPreferredStmt->execute([$chatId, $preferred]);
+                $preferredFound = trim((string)$checkPreferredStmt->fetchColumn());
+                if ($preferredFound !== '') {
+                    $targetUserId = $preferredFound;
+                }
+            }
+
+            if ($targetUserId === '') {
+                $firstStmt = $this->db()->prepare(
+                    'SELECT user_id FROM chat_participants WHERE chat_id = ? ORDER BY user_id ASC LIMIT 1'
+                );
+                $firstStmt->execute([$chatId]);
+                $targetUserId = trim((string)$firstStmt->fetchColumn());
+            }
+
+            if ($targetUserId === '') {
+                return;
+            }
+
+            $promoteStmt = $this->db()->prepare(
+                'UPDATE chat_participants SET is_admin = 1 WHERE chat_id = ? AND user_id = ?'
+            );
+            $promoteStmt->execute([$chatId, $targetUserId]);
+        } catch (\Throwable) {
+            // ignore migration/permission issues
         }
     }
 
@@ -3805,6 +4126,58 @@ final class Api
         $this->json(['url' => $url], 201);
     }
 
+    private function uploadGroupAvatar(): void
+    {
+        $this->authUserId();
+
+        if (!isset($_FILES['avatar']) || !is_array($_FILES['avatar'])) {
+            $this->json(['error' => 'Avatar file is required'], 400);
+        }
+
+        $file = $_FILES['avatar'];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $this->json(['error' => 'Upload failed'], 400);
+        }
+
+        $tmp = (string)($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            $this->json(['error' => 'Invalid upload'], 400);
+        }
+
+        $maxSize = 5 * 1024 * 1024;
+        if (($file['size'] ?? 0) > $maxSize) {
+            $this->json(['error' => 'File too large'], 400);
+        }
+
+        $mime = mime_content_type($tmp) ?: '';
+        $allowed = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+
+        if (!isset($allowed[$mime])) {
+            $this->json(['error' => 'Unsupported image format'], 400);
+        }
+
+        $ext = $allowed[$mime];
+        $fileName = $this->uuid() . '.' . $ext;
+        $uploadDir = dirname(__DIR__) . '/public/uploads/group-avatars';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            $this->json(['error' => 'Cannot create upload directory'], 500);
+        }
+
+        $dest = $uploadDir . '/' . $fileName;
+        if (!move_uploaded_file($tmp, $dest)) {
+            $this->json(['error' => 'Cannot save file'], 500);
+        }
+
+        $relative = '/uploads/group-avatars/' . $fileName;
+        $url = $this->buildPublicUrl($relative);
+
+        $this->json(['url' => $url], 201);
+    }
+
     private function uploadStorageStats(): void
     {
         $this->authUserId();
@@ -4008,6 +4381,27 @@ final class Api
         }
 
         return $deleted;
+    }
+
+    private function deleteChatAvatarById(string $chatId): void
+    {
+        $id = trim($chatId);
+        if ($id === '') {
+            return;
+        }
+
+        try {
+            $stmt = $this->db()->prepare('SELECT avatar FROM chats WHERE id = ? LIMIT 1');
+            $stmt->execute([$id]);
+            $avatar = trim((string)$stmt->fetchColumn());
+            if ($avatar === '') {
+                return;
+            }
+
+            $this->deleteUploadedFileByUrl($avatar, ['/uploads/group-avatars/']);
+        } catch (\Throwable) {
+            // ignore chat avatar cleanup failures
+        }
     }
 
     private function extractUploadsRelativePath(string $url): ?string
@@ -4245,6 +4639,7 @@ final class Api
         $parts[] = $this->hasChatParticipantColumn('pinned') ? 'cp.pinned AS pinned' : '0 AS pinned';
         $parts[] = $this->hasChatParticipantColumn('muted') ? 'cp.muted AS muted' : '0 AS muted';
         $parts[] = $this->hasChatParticipantColumn('blocked') ? 'cp.blocked AS blocked' : '0 AS blocked';
+        $parts[] = $this->hasChatParticipantColumn('is_admin') ? 'cp.is_admin AS is_admin' : '0 AS is_admin';
         $parts[] = $this->hasChatParticipantColumn('unread_count') ? 'cp.unread_count AS unread_count' : '0 AS unread_count';
 
         return implode(', ', $parts);
@@ -4362,6 +4757,7 @@ final class Api
                 'pinned' => 'TINYINT(1) NOT NULL DEFAULT 0',
                 'muted' => 'TINYINT(1) NOT NULL DEFAULT 0',
                 'blocked' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'is_admin' => 'TINYINT(1) NOT NULL DEFAULT 0',
                 'unread_count' => 'INT NOT NULL DEFAULT 0',
             ];
             foreach ($optional as $name => $definition) {

@@ -82,8 +82,12 @@ export const chatApi = {
   getById: async (chatId: string) => (await api.get(`/chats/${chatId}`)).data,
   create: async (name: string, type: string, participantIds: string[]) =>
     (await api.post('/chats', { name, type, participantIds })).data,
+  updateGroup: async (chatId: string, payload: { name?: string; avatar?: string | null }) =>
+    (await api.put(`/chats/${chatId}/group`, payload)).data,
   addParticipants: async (chatId: string, participantIds: string[]) =>
     (await api.post(`/chats/${chatId}/participants`, { participantIds })).data,
+  removeParticipant: async (chatId: string, userId: string) =>
+    (await api.delete(`/chats/${chatId}/participants/${encodeURIComponent(userId)}`)).data,
   clear: async (chatId: string) => (await api.delete(`/chats/${chatId}/messages`)).data,
   delete: async (chatId: string, deleteForAll = false) =>
     (await api.delete(`/chats/${chatId}`, { data: { deleteForAll } })).data,
@@ -140,7 +144,7 @@ export const adminApi = {
 export const pushApi = {
   registerToken: async (token: string, platform: string) =>
     (await api.post('/push/token', { token, platform })).data,
-  unregisterToken: async (token: string) =>
+  unregisterToken: async (token = '') =>
     (await api.delete('/push/token', { data: { token } })).data,
 };
 
@@ -200,6 +204,15 @@ export const uploadApi = {
     });
 
     return response.data.files;
+  },
+  uploadGroupAvatar: async (file: File) => {
+    const form = new FormData();
+    form.append('avatar', file);
+    return (
+      await api.post('/upload/group-avatar', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    ).data;
   },
   getFileInfo: async (id: string) => (await api.get(`/upload/info/${id}`)).data,
   deleteFile: async (id: string) => (await api.delete(`/upload/${id}`)).data,

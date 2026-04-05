@@ -5,6 +5,7 @@ export interface User {
   username: string;
   fullName: string;
   avatar?: string;
+  isAdmin?: boolean;
   status?: 'online' | 'offline' | 'away' | 'hidden';
   lastSeen?: string;
   badge?: BadgeType;
@@ -35,6 +36,7 @@ export interface Message {
   chatId: string;
   userId: string;
   text: string;
+  sender?: Pick<User, 'id' | 'username' | 'fullName' | 'avatar' | 'isAdmin'>;
   attachments?: Attachment[];
   createdAt: string;
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
@@ -51,6 +53,7 @@ export interface Chat {
   type: 'private' | 'group' | 'saved' | 'ai';
   participants: User[];
   avatar?: string;
+  isAdmin?: boolean;
   archived?: boolean;
   pinned?: boolean;
   muted?: boolean;
