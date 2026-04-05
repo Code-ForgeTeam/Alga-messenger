@@ -15,6 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { chatApi, userApi } from '../lib/api';
 import type { Chat, User } from '../lib/types';
@@ -61,6 +62,7 @@ export default function UserProfilePage() {
   const [actionLoading, setActionLoading] = useState<'message' | 'block' | 'delete' | null>(null);
   const [editLocalNameOpen, setEditLocalNameOpen] = useState(false);
   const [localNameDraft, setLocalNameDraft] = useState('');
+  const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
 
   const navigate = useNavigate();
   const pushSnackbar = useSnackbarStore((s) => s.push);
@@ -247,7 +249,18 @@ export default function UserProfilePage() {
 
       <Box sx={{ display: 'grid', justifyItems: 'center', textAlign: 'center', mt: 1 }}>
         <Box sx={{ position: 'relative', width: 110, height: 110, mb: 1.5 }}>
-          <Avatar src={user.avatar} sx={{ width: 110, height: 110, bgcolor: 'primary.main' }}>
+          <Avatar
+            src={user.avatar}
+            onClick={() => {
+              if (user.avatar) setAvatarPreviewOpen(true);
+            }}
+            sx={{
+              width: 110,
+              height: 110,
+              bgcolor: 'primary.main',
+              cursor: user.avatar ? 'zoom-in' : 'default',
+            }}
+          >
             {(user.fullName || user.username || '?').slice(0, 1).toUpperCase()}
           </Avatar>
           {isSelfProfile && (
@@ -335,6 +348,49 @@ export default function UserProfilePage() {
           <Button onClick={() => setEditLocalNameOpen(false)}>Отмена</Button>
           <Button variant="contained" onClick={saveLocalName}>Сохранить</Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog open={avatarPreviewOpen} onClose={() => setAvatarPreviewOpen(false)} fullScreen>
+        <Box
+          sx={{
+            width: '100%',
+            height: '100%',
+            bgcolor: '#000',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+          }}
+        >
+          <IconButton
+            onClick={() => setAvatarPreviewOpen(false)}
+            sx={{
+              position: 'absolute',
+              top: 'max(env(safe-area-inset-top), 10px)',
+              right: 'max(env(safe-area-inset-right), 10px)',
+              color: '#fff',
+              bgcolor: 'rgba(0,0,0,0.52)',
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.68)' },
+            }}
+          >
+            <CloseRoundedIcon />
+          </IconButton>
+
+          {user.avatar ? (
+            <Box
+              component="img"
+              src={user.avatar}
+              alt={`@${user.username}`}
+              sx={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+              }}
+            />
+          ) : (
+            <Typography sx={{ color: '#fff' }}>Аватар не установлен</Typography>
+          )}
+        </Box>
       </Dialog>
     </Box>
   );

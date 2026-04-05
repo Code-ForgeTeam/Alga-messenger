@@ -71,6 +71,62 @@ const formatAttachmentSize = (bytes: number): string => {
   return `${Math.round(bytes / 104857.6) / 10} MB`;
 };
 
+const sanitizeFileName = (value: string): string => {
+  const cleaned = value
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || 'attachment';
+};
+
+const guessExtension = (mimeType: string, attachmentType?: Attachment['type']): string => {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('webp')) return 'webp';
+  if (mime.includes('gif')) return 'gif';
+  if (mime.includes('heic')) return 'heic';
+  if (mime.includes('mp4')) return 'mp4';
+  if (mime.includes('mov')) return 'mov';
+  if (mime.includes('webm')) return 'webm';
+  if (attachmentType === 'video') return 'mp4';
+  if (attachmentType === 'image') return 'jpg';
+  return 'bin';
+};
+
+const blobToBase64 = async (blob: Blob): Promise<string> =>
+  await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = String(reader.result || '');
+      const commaIndex = result.indexOf(',');
+      if (commaIndex === -1) {
+        reject(new Error('BASE64_PARSE_FAILED'));
+        return;
+      }
+      resolve(result.slice(commaIndex + 1));
+    };
+    reader.onerror = () => reject(new Error('BASE64_READ_FAILED'));
+    reader.readAsDataURL(blob);
+  });
+
+const inferFileName = (attachment: Attachment, url: string, mimeType: string): string => {
+  const explicitName = sanitizeFileName(String(attachment?.name || ''));
+  if (explicitName && explicitName !== 'attachment') {
+    if (explicitName.includes('.')) return explicitName;
+    return `${explicitName}.${guessExtension(mimeType, attachment.type)}`;
+  }
+
+  const fromUrlRaw = decodeURIComponent(String(url.split('?')[0] || '').split('/').pop() || '');
+  const fromUrl = sanitizeFileName(fromUrlRaw);
+  if (fromUrl && fromUrl !== 'attachment') {
+    if (fromUrl.includes('.')) return fromUrl;
+    return `${fromUrl}.${guessExtension(mimeType, attachment.type)}`;
+  }
+
+  const baseName = attachment.type === 'video' ? 'video' : attachment.type === 'image' ? 'photo' : 'file';
+  return `${baseName}.${guessExtension(mimeType, attachment.type)}`;
+};
+
 export default function ChatPage() {
   const { chatId = '' } = useParams();
   const navigate = useNavigate();
@@ -369,16 +425,88 @@ export default function ChatPage() {
     setSelectedMessage(null);
   };
 
-  const downloadAttachment = (attachment: Attachment) => {
+  const downloadAttachment = async (attachment: Attachment) => {
     const url = String(attachment?.url || '').trim();
     if (!url) return;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = attachment.name || 'photo';
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+
+    const fallbackFileName = sanitizeFileName(String(attachment.name || 'photo'));
+    const triggerDownload = (href: string, fileName: string) => {
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = fileName;
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    };
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP_${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const mimeType = String(blob.type || '');
+      const fileName = inferFileName(attachment, url, mimeType);
+
+      let savedToNativeStorage = false;
+      try {
+        const [{ Capacitor }, { Directory, Filesystem }] = await Promise.all([
+          import('@capacitor/core'),
+          import('@capacitor/filesystem'),
+        ]);
+        if (Capacitor.getPlatform() !== 'web') {
+          const data = await blobToBase64(blob);
+          const mediaFolder = attachment.type === 'video' ? 'Movies' : 'Pictures';
+          const path = `${mediaFolder}/Alga/${fileName}`;
+          const dirs = [Directory.ExternalStorage, Directory.External, Directory.Documents] as const;
+          for (const directory of dirs) {
+            try {
+              await Filesystem.writeFile({
+                path,
+                data,
+                directory,
+                recursive: true,
+              });
+              savedToNativeStorage = true;
+              break;
+            } catch {
+              // try next directory
+            }
+          }
+        }
+      } catch {
+        // if native save plugin is unavailable, fallback to browser download flow
+      }
+
+      if (!savedToNativeStorage) {
+        const objectUrl = URL.createObjectURL(blob);
+        triggerDownload(objectUrl, fileName);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
+      }
+
+      pushSnackbar({
+        message: attachment.type === 'video' ? 'Видео сохранено' : 'Фото сохранено',
+        timeout: 2200,
+        tone: 'success',
+      });
+    } catch {
+      let fallbackTriggered = false;
+      try {
+        triggerDownload(url, fallbackFileName);
+        fallbackTriggered = true;
+      } catch {
+        // ignore fallback errors
+      }
+      pushSnackbar({
+        message: fallbackTriggered
+          ? (attachment.type === 'video' ? 'Видео сохранено' : 'Фото сохранено')
+          : (attachment.type === 'video' ? 'Не удалось сохранить видео' : 'Не удалось сохранить фото'),
+        timeout: fallbackTriggered ? 2200 : 2600,
+        tone: fallbackTriggered ? 'success' : 'error',
+      });
+    }
   };
 
   const handleRootPointerDown = (event: any) => {

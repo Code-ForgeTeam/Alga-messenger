@@ -33,7 +33,6 @@ interface SettingsState {
   privacySettings: PrivacySettings;
   bgEffect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain';
   effectIntensity: number;
-  glowMode: boolean;
   launchIntroEnabled: boolean;
   chatCompactMode: boolean;
   storageAutoDownload: {
@@ -48,7 +47,6 @@ interface SettingsState {
   setCustomColors: (colors: SettingsState['customColors']) => void;
   setBgEffect: (effect: 'none' | 'snow' | 'leaves' | 'flowers' | 'rain') => void;
   setEffectIntensity: (value: number) => void;
-  setGlowMode: (value: boolean) => void;
   setLaunchIntroEnabled: (value: boolean) => void;
   setChatCompactMode: (value: boolean) => void;
   setStorageAutoDownload: (
@@ -90,7 +88,6 @@ export const useSettingsStore = create<SettingsState>()(
       },
       bgEffect: 'none',
       effectIntensity: 100,
-      glowMode: false,
       launchIntroEnabled: true,
       chatCompactMode: false,
       storageAutoDownload: {
@@ -116,7 +113,6 @@ export const useSettingsStore = create<SettingsState>()(
       setCustomColors: (customColors) => set({ customColors }),
       setBgEffect: (bgEffect) => set({ bgEffect }),
       setEffectIntensity: (effectIntensity) => set({ effectIntensity }),
-      setGlowMode: (glowMode) => set({ glowMode }),
       setLaunchIntroEnabled: (launchIntroEnabled) => set({ launchIntroEnabled }),
       setChatCompactMode: (chatCompactMode) => set({ chatCompactMode }),
       setStorageAutoDownload: (network, media, value) =>
@@ -202,7 +198,6 @@ export const useSettingsStore = create<SettingsState>()(
         customColors: state.customColors,
         bgEffect: state.bgEffect,
         effectIntensity: state.effectIntensity,
-        glowMode: state.glowMode,
         launchIntroEnabled: state.launchIntroEnabled,
         chatCompactMode: state.chatCompactMode,
         storageAutoDownload: state.storageAutoDownload,

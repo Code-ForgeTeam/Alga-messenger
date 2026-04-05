@@ -8,13 +8,11 @@ export default function SpecialFeaturesPage() {
     aiApiKey,
     effectIntensity,
     bgEffect,
-    glowMode,
     launchIntroEnabled,
     setAiProvider,
     setAiApiKey,
     setEffectIntensity,
     setBgEffect,
-    setGlowMode,
     setLaunchIntroEnabled,
   } = useSettingsStore();
 
@@ -109,11 +107,6 @@ export default function SpecialFeaturesPage() {
           valueLabelDisplay="auto"
           sx={{ mb: 2 }}
         />
-
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography>Свечение интерфейса</Typography>
-          <Switch checked={glowMode} onChange={(e) => setGlowMode(e.target.checked)} />
-        </Box>
       </Paper>
     </Box>
   );
