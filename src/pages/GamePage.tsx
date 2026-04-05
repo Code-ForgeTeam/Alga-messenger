@@ -82,6 +82,14 @@ const WINS_KEY = 'alga.mahjong.wins.v2';
 const ONLINE_GAME_URL = String(import.meta.env.VITE_ONLINE_GAME_URL || '').trim();
 const ONLINE_LOAD_TIMEOUT_MS = 8000;
 
+const deriveDefaultOnlineGameUrl = (): string => {
+  const appHostRaw = String(import.meta.env.VITE_APP_HOST || '').trim();
+  if (!appHostRaw) return '';
+  const withoutIndex = appHostRaw.replace(/\/index\.php\/?$/i, '');
+  if (!withoutIndex) return '';
+  return `${withoutIndex}/game/index.html`;
+};
+
 const TILE_FACES: TileFace[] = [
   'code', 'terminal', 'memory', 'storage', 'bug', 'security', 'cloud', 'api',
   'data', 'dns', 'lan', 'bot', 'router', 'hub', 'rocket', 'build',
@@ -634,17 +642,18 @@ export default function GamePage() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
+  const onlineGameUrl = ONLINE_GAME_URL || deriveDefaultOnlineGameUrl();
 
-  const [mode, setMode] = useState<GameMode>(() => (ONLINE_GAME_URL ? 'checking' : 'unavailable'));
+  const [mode, setMode] = useState<GameMode>(() => (onlineGameUrl ? 'checking' : 'unavailable'));
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (!ONLINE_GAME_URL) {
+    if (!onlineGameUrl) {
       setMode('unavailable');
       return;
     }
     setMode('checking');
-  }, [reloadKey]);
+  }, [reloadKey, onlineGameUrl]);
 
   useEffect(() => {
     if (mode !== 'checking') return;
@@ -684,7 +693,7 @@ export default function GamePage() {
           <Typography sx={{ fontSize: 18, fontWeight: 800, mb: 0.8 }}>
             Не доступно! Хотите играть офлайн?
           </Typography>
-          {!ONLINE_GAME_URL && (
+          {!onlineGameUrl && (
             <Typography color="text.secondary" sx={{ mb: 1.2 }}>
               Онлайн-игра не настроена. Укажи `VITE_ONLINE_GAME_URL` в `.env.production`.
             </Typography>
@@ -693,7 +702,7 @@ export default function GamePage() {
             <Button variant="contained" onClick={() => setMode('offline')}>
               Да, офлайн
             </Button>
-            {ONLINE_GAME_URL && (
+            {onlineGameUrl && (
               <Button variant="outlined" onClick={() => setReloadKey((prev) => prev + 1)}>
                 Повторить
               </Button>
@@ -747,11 +756,11 @@ export default function GamePage() {
                 </Stack>
               </Box>
             )}
-            {ONLINE_GAME_URL && (
+            {onlineGameUrl && (
               <Box
                 key={`online-game-${reloadKey}`}
                 component="iframe"
-                src={ONLINE_GAME_URL}
+                src={onlineGameUrl}
                 title="Alga Online Game"
                 onLoad={() => setMode('online')}
                 onError={() => setMode('unavailable')}

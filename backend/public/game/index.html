@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Pyrga Mahjong</title>
+  <style>
+    :root {
+      --bg-1: #0d1b2a;
+      --bg-2: #14263f;
+      --card: #f7fbff;
+      --card-border: #d9e7f9;
+      --ink: #15253a;
+      --accent: #2ac36b;
+      --accent-2: #26a75c;
+      --danger: #d94c4c;
+      --warn: #d9a221;
+      --panel: rgba(255, 255, 255, 0.07);
+      --panel-2: rgba(255, 255, 255, 0.1);
+      --text: #e9f2ff;
+      --text-soft: #b5c8df;
+      --shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(53, 94, 166, 0.28), transparent 42%),
+        radial-gradient(circle at 100% 100%, rgba(42, 195, 107, 0.2), transparent 42%),
+        linear-gradient(165deg, var(--bg-1), var(--bg-2));
+      color: var(--text);
+      font-family: "Segoe UI", "SF Pro Text", "Inter", sans-serif;
+    }
+
+    body {
+      min-height: 100dvh;
+      overflow: hidden;
+    }
+
+    #app {
+      max-width: 980px;
+      margin: 0 auto;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 12px;
+      padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 14px);
+    }
+
+    .top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.06));
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 16px;
+      padding: 12px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(5px);
+    }
+
+    .title {
+      font-size: clamp(18px, 2.7vw, 28px);
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+
+    .subtitle {
+      margin-top: 2px;
+      color: var(--text-soft);
+      font-size: 13px;
+    }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .chip {
+      min-width: 72px;
+      padding: 6px 9px;
+      border-radius: 11px;
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-soft);
+    }
+
+    .chip b {
+      display: block;
+      margin-top: 2px;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+
+    .tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      background: linear-gradient(180deg, var(--accent), var(--accent-2));
+      box-shadow: 0 8px 16px rgba(32, 133, 75, 0.35);
+      cursor: pointer;
+      transition: transform 120ms ease, opacity 120ms ease, filter 120ms ease;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    button.ghost {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: var(--text);
+      box-shadow: none;
+    }
+
+    button.warn {
+      background: linear-gradient(180deg, #e1b237, #b58411);
+      box-shadow: 0 8px 16px rgba(166, 119, 24, 0.4);
+    }
+
+    button.danger {
+      background: linear-gradient(180deg, #e36363, #b94141);
+      box-shadow: 0 8px 16px rgba(160, 50, 50, 0.42);
+    }
+
+    button:disabled {
+      opacity: 0.46;
+      filter: saturate(0.8);
+      cursor: default;
+      transform: none;
+    }
+
+    .board-wrap {
+      min-height: 0;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: linear-gradient(170deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+      box-shadow: var(--shadow);
+      overflow: auto;
+      padding: 12px;
+    }
+
+    .board {
+      min-height: 100%;
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .tile {
+      width: 100%;
+      min-height: 64px;
+      border-radius: 14px;
+      border: 1px solid var(--card-border);
+      background: var(--card);
+      color: var(--ink);
+      box-shadow: 0 6px 14px rgba(10, 30, 50, 0.2);
+      position: relative;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      font-weight: 800;
+      transition: transform 130ms ease, box-shadow 130ms ease, opacity 130ms ease, filter 130ms ease;
+    }
+
+    .tile.blocked {
+      filter: grayscale(0.45) brightness(0.87);
+      opacity: 0.86;
+      box-shadow: 0 3px 8px rgba(10, 20, 35, 0.18);
+    }
+
+    .tile.hint {
+      animation: pulse 0.8s ease infinite alternate;
+      outline: 2px solid rgba(255, 232, 159, 0.9);
+    }
+
+    .tile.fly {
+      animation: pop 180ms ease;
+    }
+
+    .tile.removed {
+      opacity: 0;
+      transform: scale(0.6);
+      pointer-events: none;
+    }
+
+    .rank-top,
+    .rank-bottom {
+      position: absolute;
+      font-size: 11px;
+      line-height: 1;
+      letter-spacing: 0.3px;
+      font-weight: 900;
+    }
+
+    .rank-top {
+      top: 6px;
+      left: 7px;
+    }
+
+    .rank-bottom {
+      right: 7px;
+      bottom: 6px;
+      transform: rotate(180deg);
+    }
+
+    .face {
+      font-size: 27px;
+      line-height: 1;
+      transform: translateY(1px);
+      filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.1));
+    }
+
+    .s-red {
+      color: #d64242;
+    }
+
+    .s-black {
+      color: #1a2433;
+    }
+
+    .tray-wrap {
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+
+    .tray-title {
+      font-size: 13px;
+      color: var(--text-soft);
+      margin-bottom: 8px;
+    }
+
+    .tray {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .slot {
+      min-height: 58px;
+      border-radius: 12px;
+      border: 1px dashed rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.05);
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+      color: var(--text-soft);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .slot .tiny {
+      position: absolute;
+      top: 4px;
+      left: 5px;
+      font-size: 9px;
+      opacity: 0.85;
+      font-weight: 800;
+    }
+
+    .status {
+      margin-top: 9px;
+      min-height: 18px;
+      font-size: 13px;
+      color: var(--text-soft);
+    }
+
+    .status.win {
+      color: #90f3b8;
+      font-weight: 700;
+    }
+
+    .status.lose {
+      color: #f5a4a4;
+      font-weight: 700;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 8, 18, 0.72);
+      backdrop-filter: blur(3px);
+      display: grid;
+      place-items: center;
+      z-index: 90;
+      padding: 16px;
+    }
+
+    .overlay.hidden {
+      display: none;
+    }
+
+    .modal {
+      width: min(500px, 100%);
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: linear-gradient(180deg, rgba(20, 38, 63, 0.98), rgba(9, 22, 41, 0.98));
+      box-shadow: var(--shadow);
+      padding: 18px;
+      text-align: center;
+    }
+
+    .modal h2 {
+      margin: 0;
+      font-size: clamp(20px, 3vw, 28px);
+      letter-spacing: 0.2px;
+    }
+
+    .modal p {
+      margin: 8px 0 14px;
+      color: var(--text-soft);
+      line-height: 1.4;
+      font-size: 14px;
+    }
+
+    .modal .row {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    @keyframes pop {
+      0% { transform: scale(0.95); }
+      100% { transform: scale(1.03); }
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 rgba(255, 220, 123, 0.4); transform: translateY(0); }
+      100% { box-shadow: 0 0 14px rgba(255, 220, 123, 0.7); transform: translateY(-1px); }
+    }
+
+    @media (max-width: 700px) {
+      #app {
+        gap: 10px;
+        padding: calc(env(safe-area-inset-top, 0px) + 10px) 10px calc(env(safe-area-inset-bottom, 0px) + 12px);
+      }
+      .board {
+        gap: 6px;
+      }
+      .tile {
+        min-height: 56px;
+        border-radius: 12px;
+      }
+      .face {
+        font-size: 23px;
+      }
+      .rank-top, .rank-bottom {
+        font-size: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <section class="top">
+      <div>
+        <div class="title">Pyrga Mahjong</div>
+        <div class="subtitle">Покер-плитки • 4 ячейки • удаление по совпадению пары</div>
+      </div>
+      <div class="chips">
+        <div class="chip">Пары<b id="pairs">0/24</b></div>
+        <div class="chip">Ходы<b id="moves">0</b></div>
+        <div class="chip">Время<b id="timer">00:00</b></div>
+        <div class="chip">Рекорд<b id="best">—</b></div>
+      </div>
+    </section>
+
+    <section class="tools">
+      <button id="newGameBtn">Новая партия</button>
+      <button id="hintBtn" class="warn">Подсказка</button>
+      <button id="shuffleBtn" class="ghost">Перемешать <span id="shuffleLeft">2</span></button>
+      <button id="resetWinsBtn" class="danger">Сброс побед</button>
+    </section>
+
+    <section class="board-wrap">
+      <div id="board" class="board"></div>
+    </section>
+
+    <section class="tray-wrap">
+      <div class="tray-title">Ячейки: <b id="trayCount">0/4</b> • Победы: <b id="wins">0</b></div>
+      <div id="tray" class="tray"></div>
+      <div id="status" class="status"></div>
+    </section>
+  </div>
+
+  <div id="overlay" class="overlay hidden">
+    <div class="modal">
+      <h2 id="modalTitle">Победа!</h2>
+      <p id="modalText">Отличная партия.</p>
+      <div class="row">
+        <button id="playAgainBtn">Играть ещё</button>
+        <button id="closeModalBtn" class="ghost">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const ROWS = 6;
+      const COLS = 8;
+      const TILE_COUNT = ROWS * COLS;
+      const TRAY_LIMIT = 4;
+      const SHUFFLES_PER_GAME = 2;
+      const BOARD_ATTEMPTS = 46;
+      const BEST_KEY = 'alga.pyrga_mahjong.best_sec.v1';
+      const WINS_KEY = 'alga.pyrga_mahjong.wins.v1';
+
+      const FACES = [
+        ['A', '♠', 'black'], ['K', '♠', 'black'], ['Q', '♠', 'black'], ['J', '♠', 'black'], ['10', '♠', 'black'], ['9', '♠', 'black'],
+        ['A', '♥', 'red'],   ['K', '♥', 'red'],   ['Q', '♥', 'red'],   ['J', '♥', 'red'],   ['10', '♥', 'red'],   ['9', '♥', 'red'],
+        ['A', '♦', 'red'],   ['K', '♦', 'red'],   ['Q', '♦', 'red'],   ['J', '♦', 'red'],   ['10', '♦', 'red'],   ['9', '♦', 'red'],
+        ['A', '♣', 'black'], ['K', '♣', 'black'], ['Q', '♣', 'black'], ['J', '♣', 'black'], ['10', '♣', 'black'], ['9', '♣', 'black'],
+      ];
+
+      const state = {
+        tiles: [],
+        tray: [],
+        moves: 0,
+        resolvedPairs: 0,
+        seconds: 0,
+        running: true,
+        won: false,
+        lost: false,
+        shufflesLeft: SHUFFLES_PER_GAME,
+        wins: readStoredNumber(WINS_KEY),
+        best: readStoredNumber(BEST_KEY),
+        timer: null,
+        hintTimer: null,
+      };
+
+      const boardEl = document.getElementById('board');
+      const trayEl = document.getElementById('tray');
+      const statusEl = document.getElementById('status');
+      const pairsEl = document.getElementById('pairs');
+      const movesEl = document.getElementById('moves');
+      const timerEl = document.getElementById('timer');
+      const bestEl = document.getElementById('best');
+      const winsEl = document.getElementById('wins');
+      const trayCountEl = document.getElementById('trayCount');
+      const shuffleLeftEl = document.getElementById('shuffleLeft');
+      const overlayEl = document.getElementById('overlay');
+      const modalTitleEl = document.getElementById('modalTitle');
+      const modalTextEl = document.getElementById('modalText');
+      const hintBtn = document.getElementById('hintBtn');
+      const shuffleBtn = document.getElementById('shuffleBtn');
+      const newGameBtn = document.getElementById('newGameBtn');
+      const resetWinsBtn = document.getElementById('resetWinsBtn');
+      const playAgainBtn = document.getElementById('playAgainBtn');
+      const closeModalBtn = document.getElementById('closeModalBtn');
+
+      function readStoredNumber(key) {
+        const n = Number(localStorage.getItem(key) || 0);
+        return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+      }
+
+      function formatTime(sec) {
+        const safe = Math.max(0, Math.floor(sec));
+        const m = String(Math.floor(safe / 60)).padStart(2, '0');
+        const s = String(safe % 60).padStart(2, '0');
+        return m + ':' + s;
+      }
+
+      function shuffle(arr) {
+        const copy = arr.slice();
+        for (let i = copy.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const tmp = copy[i];
+          copy[i] = copy[j];
+          copy[j] = tmp;
+        }
+        return copy;
+      }
+
+      function tileFaceValue(tile) {
+        const face = FACES[tile.face];
+        return face[0] + face[1];
+      }
+
+      function isTileFree(tiles, tile) {
+        if (tile.removed) return false;
+        const leftBusy = tiles.some(t => !t.removed && t.row === tile.row && t.col === tile.col - 1);
+        const rightBusy = tiles.some(t => !t.removed && t.row === tile.row && t.col === tile.col + 1);
+        return !leftBusy || !rightBusy;
+      }
+
+      function countFreePairs(tiles) {
+        const map = new Map();
+        for (const tile of tiles) {
+          if (tile.removed || !isTileFree(tiles, tile)) continue;
+          const key = tileFaceValue(tile);
+          map.set(key, (map.get(key) || 0) + 1);
+        }
+        let pairs = 0;
+        for (const count of map.values()) pairs += Math.floor(count / 2);
+        return pairs;
+      }
+
+      function buildCandidateBoard() {
+        const deck = shuffle(FACES.flatMap((_, idx) => [idx, idx]));
+        return Array.from({ length: TILE_COUNT }).map((_, i) => ({
+          id: 'tile_' + i + '_' + deck[i],
+          face: deck[i],
+          row: Math.floor(i / COLS),
+          col: i % COLS,
+          removed: false,
+          hint: false,
+          justTapped: false,
+        }));
+      }
+
+      function buildBoard() {
+        let best = buildCandidateBoard();
+        let score = countFreePairs(best);
+        for (let i = 0; i < BOARD_ATTEMPTS; i += 1) {
+          const c = buildCandidateBoard();
+          const s = countFreePairs(c);
+          if (s > score) {
+            best = c;
+            score = s;
+          }
+        }
+        return best;
+      }
+
+      function openModal(title, text) {
+        modalTitleEl.textContent = title;
+        modalTextEl.textContent = text;
+        overlayEl.classList.remove('hidden');
+      }
+
+      function closeModal() {
+        overlayEl.classList.add('hidden');
+      }
+
+      function setStatus(text, cls) {
+        statusEl.textContent = text || '';
+        statusEl.className = 'status' + (cls ? ' ' + cls : '');
+      }
+
+      function clearHints() {
+        if (state.hintTimer) {
+          clearTimeout(state.hintTimer);
+          state.hintTimer = null;
+        }
+        for (const tile of state.tiles) tile.hint = false;
+      }
+
+      function updateUi() {
+        pairsEl.textContent = state.resolvedPairs + '/24';
+        movesEl.textContent = String(state.moves);
+        timerEl.textContent = formatTime(state.seconds);
+        bestEl.textContent = state.best > 0 ? formatTime(state.best) : '—';
+        winsEl.textContent = String(state.wins);
+        trayCountEl.textContent = state.tray.length + '/4';
+        shuffleLeftEl.textContent = String(state.shufflesLeft);
+        hintBtn.disabled = !state.running || state.won || state.lost;
+        shuffleBtn.disabled = !state.running || state.won || state.lost || state.shufflesLeft <= 0;
+        renderBoard();
+        renderTray();
+      }
+
+      function renderBoard() {
+        const frag = document.createDocumentFragment();
+        for (const tile of state.tiles) {
+          const btn = document.createElement('button');
+          btn.className = 'tile';
+          if (tile.removed) btn.classList.add('removed');
+          if (!tile.removed && !isTileFree(state.tiles, tile)) btn.classList.add('blocked');
+          if (tile.hint) btn.classList.add('hint');
+          if (tile.justTapped) btn.classList.add('fly');
+          btn.disabled = tile.removed || !state.running || state.won || state.lost || !isTileFree(state.tiles, tile);
+          btn.dataset.id = tile.id;
+
+          const [rank, suit, color] = FACES[tile.face];
+          const top = document.createElement('div');
+          top.className = 'rank-top ' + (color === 'red' ? 's-red' : 's-black');
+          top.textContent = rank + suit;
+          const bottom = document.createElement('div');
+          bottom.className = 'rank-bottom ' + (color === 'red' ? 's-red' : 's-black');
+          bottom.textContent = rank + suit;
+          const face = document.createElement('div');
+          face.className = 'face ' + (color === 'red' ? 's-red' : 's-black');
+          face.textContent = suit;
+          btn.appendChild(top);
+          btn.appendChild(face);
+          btn.appendChild(bottom);
+          frag.appendChild(btn);
+        }
+        boardEl.innerHTML = '';
+        boardEl.appendChild(frag);
+      }
+
+      function renderTray() {
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < TRAY_LIMIT; i += 1) {
+          const slot = document.createElement('div');
+          slot.className = 'slot';
+          const item = state.tray[i];
+          if (item) {
+            const [rank, suit, color] = FACES[item.face];
+            const tiny = document.createElement('div');
+            tiny.className = 'tiny ' + (color === 'red' ? 's-red' : 's-black');
+            tiny.textContent = rank + suit;
+            const face = document.createElement('div');
+            face.className = color === 'red' ? 's-red' : 's-black';
+            face.textContent = suit;
+            slot.appendChild(tiny);
+            slot.appendChild(face);
+          } else {
+            slot.textContent = '·';
+          }
+          frag.appendChild(slot);
+        }
+        trayEl.innerHTML = '';
+        trayEl.appendChild(frag);
+      }
+
+      function evaluateState() {
+        if (!state.running || state.won || state.lost) return;
+        const left = state.tiles.filter(t => !t.removed).length;
+        if (left === 0 && state.tray.length === 0) {
+          state.running = false;
+          state.won = true;
+          state.wins += 1;
+          localStorage.setItem(WINS_KEY, String(state.wins));
+          if (state.best === 0 || state.seconds < state.best) {
+            state.best = state.seconds;
+            localStorage.setItem(BEST_KEY, String(state.best));
+          }
+          setStatus('Победа! Время: ' + formatTime(state.seconds), 'win');
+          openModal('Победа!', 'Отличная партия. Время: ' + formatTime(state.seconds));
+        } else if (state.tray.length >= TRAY_LIMIT) {
+          state.running = false;
+          state.lost = true;
+          setStatus('Ячейки заполнены. Начни новую партию.', 'lose');
+          openModal('Поражение', 'Ячейки заполнены. Попробуй снова.');
+        } else {
+          const free = state.tiles.filter(t => !t.removed && isTileFree(state.tiles, t)).length;
+          setStatus('Осталось плиток: ' + left + '. Свободных: ' + free + '.');
+        }
+      }
+
+      function tryCollapseTrayPairs() {
+        let changed = false;
+        while (state.tray.length > 1) {
+          const idxByFace = new Map();
+          let pair = null;
+          for (let i = 0; i < state.tray.length; i += 1) {
+            const key = tileFaceValue({ face: state.tray[i].face });
+            if (idxByFace.has(key)) {
+              pair = [idxByFace.get(key), i];
+              break;
+            }
+            idxByFace.set(key, i);
+          }
+          if (!pair) break;
+          const [a, b] = pair;
+          state.tray = state.tray.filter((_, i) => i !== a && i !== b);
+          state.resolvedPairs += 1;
+          changed = true;
+        }
+        return changed;
+      }
+
+      function findHintPair() {
+        const free = state.tiles.filter(t => !t.removed && isTileFree(state.tiles, t));
+        if (!free.length) return [];
+        for (let i = 0; i < free.length; i += 1) {
+          for (let j = i + 1; j < free.length; j += 1) {
+            if (tileFaceValue(free[i]) === tileFaceValue(free[j])) return [free[i].id, free[j].id];
+          }
+        }
+        return [];
+      }
+
+      function onTileTap(tileId) {
+        if (!state.running || state.won || state.lost) return;
+        if (state.tray.length >= TRAY_LIMIT) return;
+        const tile = state.tiles.find(t => t.id === tileId);
+        if (!tile || tile.removed || !isTileFree(state.tiles, tile)) return;
+
+        clearHints();
+        tile.justTapped = true;
+        state.moves += 1;
+        state.tray.push({ id: tile.id, face: tile.face });
+        tile.removed = true;
+        setTimeout(() => {
+          tile.justTapped = false;
+          tryCollapseTrayPairs();
+          evaluateState();
+          updateUi();
+        }, 90);
+        updateUi();
+      }
+
+      function reshuffleRemaining() {
+        if (!state.running || state.shufflesLeft <= 0) return;
+        const active = state.tiles.filter(t => !t.removed);
+        const faces = shuffle(active.map(t => t.face));
+        for (let i = 0; i < active.length; i += 1) active[i].face = faces[i];
+        state.shufflesLeft -= 1;
+        clearHints();
+        evaluateState();
+        updateUi();
+      }
+
+      function showHint() {
+        if (!state.running || state.won || state.lost) return;
+        clearHints();
+        const ids = findHintPair();
+        if (!ids.length) {
+          setStatus('Подсказка: пары сейчас не видно, попробуй перемешать.');
+          updateUi();
+          return;
+        }
+        for (const id of ids) {
+          const t = state.tiles.find(x => x.id === id);
+          if (t) t.hint = true;
+        }
+        state.hintTimer = setTimeout(() => {
+          clearHints();
+          updateUi();
+        }, 1200);
+        updateUi();
+      }
+
+      function resetWins() {
+        state.wins = 0;
+        localStorage.setItem(WINS_KEY, '0');
+        updateUi();
+      }
+
+      function startNewGame() {
+        clearHints();
+        closeModal();
+        state.tiles = buildBoard();
+        state.tray = [];
+        state.moves = 0;
+        state.resolvedPairs = 0;
+        state.seconds = 0;
+        state.running = true;
+        state.won = false;
+        state.lost = false;
+        state.shufflesLeft = SHUFFLES_PER_GAME;
+        setStatus('Партия началась.');
+        updateUi();
+      }
+
+      boardEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.tile');
+        if (!btn) return;
+        const tileId = btn.dataset.id;
+        if (!tileId) return;
+        onTileTap(tileId);
+      });
+
+      newGameBtn.addEventListener('click', startNewGame);
+      hintBtn.addEventListener('click', showHint);
+      shuffleBtn.addEventListener('click', reshuffleRemaining);
+      resetWinsBtn.addEventListener('click', resetWins);
+      playAgainBtn.addEventListener('click', startNewGame);
+      closeModalBtn.addEventListener('click', closeModal);
+
+      state.timer = setInterval(() => {
+        if (!state.running || state.won || state.lost) return;
+        state.seconds += 1;
+        timerEl.textContent = formatTime(state.seconds);
+      }, 1000);
+
+      startNewGame();
+    })();
+  </script>
+</body>
+</html>
+
