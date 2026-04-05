@@ -157,7 +157,11 @@ interface ChatState {
   loadMessages: (chatId: string) => Promise<void>;
   setCurrentChat: (chatId: string | null) => void;
   sendMessage: (chatId: string, text: string, attachments?: unknown[], replyToId?: string) => Promise<void>;
-  updateMessage: (chatId: string, messageId: string, text: string) => Promise<boolean>;
+  updateMessage: (
+    chatId: string,
+    messageId: string,
+    text: string,
+  ) => Promise<{ ok: boolean; code?: 'expired' | 'forbidden' | 'not_found' | 'unknown' }>;
   markAsRead: (chatId: string) => Promise<void>;
   deleteMessage: (chatId: string, messageId: string, deleteForAll?: boolean) => Promise<void>;
 
@@ -430,11 +434,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateMessage: async (chatId, messageId, text) => {
     const normalizedText = String(text ?? '').trim();
-    if (!normalizedText) return false;
+    if (!normalizedText) return { ok: false, code: 'unknown' };
 
     const message = (get().messages[chatId] || []).find((item) => item.id === messageId);
     const me = useAuthStore.getState().user?.id;
-    if (!message || message.userId !== me) return false;
+    if (!message || message.userId !== me) return { ok: false, code: 'forbidden' };
 
     try {
       const response = await messageApi.update(messageId, normalizedText);
@@ -460,9 +464,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         };
       });
 
-      return true;
-    } catch {
-      return false;
+      return { ok: true };
+    } catch (error: any) {
+      const status = Number(error?.response?.status ?? 0);
+      const apiError = String(error?.response?.data?.error ?? '').toLowerCase();
+      if (status === 404) {
+        return { ok: false, code: 'not_found' };
+      }
+      if (status === 403 && apiError.includes('editing window')) {
+        return { ok: false, code: 'expired' };
+      }
+      if (status === 403) {
+        return { ok: false, code: 'forbidden' };
+      }
+      return { ok: false, code: 'unknown' };
     }
   },
 

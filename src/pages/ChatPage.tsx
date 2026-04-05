@@ -257,8 +257,20 @@ export default function ChatPage() {
 
   const submit = async () => {
     if (editingMessage) {
-      const ok = await updateMessage(chatId, editingMessage.id, text);
-      if (!ok) {
+      if (!canEditMessage(editingMessage)) {
+        setEditingMessage(null);
+        setSelectedMessage(null);
+        setText('');
+        return;
+      }
+      const result = await updateMessage(chatId, editingMessage.id, text);
+      if (!result.ok) {
+        if (result.code === 'expired') {
+          setEditingMessage(null);
+          setSelectedMessage(null);
+          setText('');
+          return;
+        }
         pushSnackbar({ message: 'Не удалось изменить сообщение', timeout: 2200, tone: 'error' });
         return;
       }
@@ -1228,7 +1240,17 @@ export default function ChatPage() {
             },
           }}
         />
-        <IconButton onClick={submit} disabled={!text.trim() && !uploaded.length} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><SendRoundedIcon /></IconButton>
+        <IconButton
+          onClick={submit}
+          disabled={
+            editingMessage
+              ? !canEditMessage(editingMessage) || !text.trim()
+              : (!text.trim() && !uploaded.length)
+          }
+          sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}
+        >
+          <SendRoundedIcon />
+        </IconButton>
       </Box>
     </Box>
   );
