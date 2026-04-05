@@ -127,11 +127,6 @@ export const adminApi = {
     title?: string;
     message?: string;
     downloadUrl?: string;
-    durationMs?: number;
-    showOnce?: boolean;
-    bgColor?: string;
-    textColor?: string;
-    expiresHours?: number;
   }) => (await api.post('/admin/events', payload)).data,
   resetEvents: async () => (await api.post('/admin/events/reset')).data,
   resetUsersExceptCreator: async () => (await api.post('/admin/reset-users')).data,

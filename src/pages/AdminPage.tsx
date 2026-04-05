@@ -91,7 +91,6 @@ export default function AdminPage() {
   const [eventTitle, setEventTitle] = useState(UPDATE_EVENT_TITLE);
   const [eventMessage, setEventMessage] = useState(UPDATE_EVENT_MESSAGE);
   const [eventDownloadUrl, setEventDownloadUrl] = useState('');
-  const [eventDurationSec, setEventDurationSec] = useState('5');
   const [isEventBusy, setIsEventBusy] = useState(false);
 
   const isCreator = isCreatorUser(me) || canUseAdminTools;
@@ -228,7 +227,6 @@ export default function AdminPage() {
         title,
         message,
         downloadUrl: normalizedDownloadUrl ?? undefined,
-        showOnce: true,
       });
       pushSnackbar({ message: 'Ивент отправлен', timeout: 2200, tone: 'success' });
       if (eventTemplate === 'custom') {
@@ -411,15 +409,6 @@ export default function AdminPage() {
                         ? 'При нажатии на push с обновлением откроется эта ссылка.'
                         : 'Необязательно: можно указать ссылку для кастомного ивента.'
                     }
-                  />
-
-                  <TextField
-                    size="small"
-                    type="number"
-                    label="Время показа (сек)"
-                    value={eventDurationSec}
-                    onChange={(e) => setEventDurationSec(e.target.value)}
-                    inputProps={{ min: 2, max: 15, step: 1 }}
                   />
 
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8}>
