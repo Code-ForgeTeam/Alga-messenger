@@ -128,7 +128,6 @@ export const adminApi = {
     message?: string;
     downloadUrl?: string;
   }) => (await api.post('/admin/events', payload)).data,
-  resetEvents: async () => (await api.post('/admin/events/reset')).data,
   resetUsersExceptCreator: async () => (await api.post('/admin/reset-users')).data,
   deleteUserByUsername: async (username: string) =>
     (await api.post('/admin/users/delete', { username })).data,

@@ -248,27 +248,6 @@ export default function AdminPage() {
     }
   };
 
-  const resetEvents = async () => {
-    setIsEventBusy(true);
-    try {
-      const response = await adminApi.resetEvents();
-      const disabled = Number(response?.disabled ?? 0);
-      pushSnackbar({
-        message: disabled > 0 ? `Ивенты сброшены: ${disabled}` : 'Ивенты сброшены',
-        timeout: 2200,
-        tone: 'success',
-      });
-    } catch (error: any) {
-      pushSnackbar({
-        message: error?.response?.data?.error || 'Не удалось сбросить ивенты',
-        timeout: 2600,
-        tone: 'error',
-      });
-    } finally {
-      setIsEventBusy(false);
-    }
-  };
-
   return (
     <Box
       sx={{
@@ -419,15 +398,6 @@ export default function AdminPage() {
                       disabled={isEventBusy || (eventTemplate === 'update' && eventDownloadUrl.trim() === '')}
                     >
                       {isEventBusy ? 'Отправка...' : 'Отправить ивент'}
-                    </Button>
-                    <Button
-                      sx={{ flex: 1 }}
-                      variant="outlined"
-                      color="inherit"
-                      onClick={resetEvents}
-                      disabled={isEventBusy}
-                    >
-                      Сбросить ивенты
                     </Button>
                   </Stack>
                 </Stack>

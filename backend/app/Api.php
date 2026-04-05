@@ -48,7 +48,6 @@ final class Api
         if ($path === '/api/admin/clear-content' && $method === 'POST') { $this->adminClearContent(); }
         if ($path === '/api/admin/reset-users' && $method === 'POST') { $this->adminResetUsers(); }
         if ($path === '/api/admin/events' && $method === 'POST') { $this->adminCreateEvent($body); }
-        if ($path === '/api/admin/events/reset' && $method === 'POST') { $this->adminResetEvents(); }
 
         if ($path === '/api/users/me' && $method === 'GET') { $this->me(); }
         if ($path === '/api/users/me' && $method === 'PUT') { $this->updateMe($body); }
@@ -438,29 +437,6 @@ final class Api
             ],
             'sent' => (int)($dispatch['sent'] ?? 0),
         ], 201);
-    }
-
-    private function adminResetEvents(): void
-    {
-        $userId = $this->authUserId();
-        $this->assertCreator($userId);
-
-        $disabledCount = 0;
-        if ($this->ensureNotificationsTables()) {
-            try {
-                $stmt = $this->db()->prepare('UPDATE notifications SET active = 0 WHERE active = 1');
-                $stmt->execute();
-                $disabledCount = (int)$stmt->rowCount();
-            } catch (\Throwable) {
-                // fallback below
-            }
-        }
-
-        $fallbackDisabled = $this->deactivateNotificationsFallback();
-        $this->json([
-            'ok' => true,
-            'disabled' => $disabledCount + $fallbackDisabled,
-        ]);
     }
 
     private function activeNotifications(): void
