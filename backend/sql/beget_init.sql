@@ -147,20 +147,28 @@ CREATE TABLE IF NOT EXISTS privacy_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS notifications (
-  id                CHAR(36) PRIMARY KEY,
-  title             VARCHAR(255) NULL,
-  message           TEXT NULL,
-  icon              VARCHAR(64) NULL,
-  bg_color          VARCHAR(32) NULL,
-  text_color        VARCHAR(32) NULL,
-  button_text       VARCHAR(255) NULL,
-  button_url        VARCHAR(2048) NULL,
-  button_color      VARCHAR(32) NULL,
-  button_text_color VARCHAR(32) NULL,
-  dismissable       TINYINT(1) NOT NULL DEFAULT 1,
-  show_once         TINYINT(1) NOT NULL DEFAULT 1,
-  min_version_code  INT NOT NULL DEFAULT 1,
-  is_active         TINYINT(1) NOT NULL DEFAULT 1
+  id          CHAR(36) PRIMARY KEY,
+  title       VARCHAR(255) NULL,
+  message     TEXT NULL,
+  bg_color    VARCHAR(32) NULL,
+  text_color  VARCHAR(32) NULL,
+  duration_ms INT NOT NULL DEFAULT 5000,
+  show_once   TINYINT(1) NOT NULL DEFAULT 1,
+  active      TINYINT(1) NOT NULL DEFAULT 1,
+  created_by  CHAR(36) NULL,
+  expires_at  DATETIME NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_notifications_active_created (active, created_at),
+  INDEX idx_notifications_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS notification_dismissals (
+  notification_id CHAR(36) NOT NULL,
+  user_id         CHAR(36) NOT NULL,
+  dismissed_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (notification_id, user_id),
+  INDEX idx_notification_dismissals_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS support_tickets (

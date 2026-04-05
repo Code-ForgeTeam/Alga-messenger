@@ -691,9 +691,29 @@ export default function App() {
       <Box
         className={glowMode ? 'glow-mode' : ''}
         sx={{
+          position: 'relative',
+          isolation: 'isolate',
           height: '100dvh',
           overflow: 'hidden',
           backgroundColor: 'background.default',
+          ...(glowMode
+            ? {
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  inset: 0,
+                  pointerEvents: 'none',
+                  zIndex: 0,
+                  background:
+                    'radial-gradient(120% 64% at 50% -14%, rgba(76, 175, 80, 0.20), transparent 62%), radial-gradient(92% 54% at 0% 50%, rgba(0, 188, 212, 0.14), transparent 68%), radial-gradient(92% 54% at 100% 50%, rgba(255, 193, 7, 0.11), transparent 68%)',
+                  mixBlendMode: 'screen',
+                },
+                '& > *': {
+                  position: 'relative',
+                  zIndex: 1,
+                },
+              }
+            : {}),
         }}
       >
         <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
@@ -706,10 +726,30 @@ export default function App() {
     <Box
       className={glowMode ? 'glow-mode' : ''}
       sx={{
+        position: 'relative',
+        isolation: 'isolate',
         height: '100dvh',
         pb: isChatRoute ? 0 : 10,
         overflow: 'hidden',
         backgroundColor: 'background.default',
+        ...(glowMode
+          ? {
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'none',
+                zIndex: 0,
+                background:
+                  'radial-gradient(120% 64% at 50% -14%, rgba(76, 175, 80, 0.20), transparent 62%), radial-gradient(92% 54% at 0% 50%, rgba(0, 188, 212, 0.14), transparent 68%), radial-gradient(92% 54% at 100% 50%, rgba(255, 193, 7, 0.11), transparent 68%)',
+                mixBlendMode: 'screen',
+              },
+              '& > *': {
+                position: 'relative',
+                zIndex: 1,
+              },
+            }
+          : {}),
       }}
       onPointerDown={handleGlobalPointerDown}
       onPointerMove={handleGlobalPointerMove}

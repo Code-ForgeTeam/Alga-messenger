@@ -332,10 +332,7 @@ export default function ChatPage() {
   };
 
   const canEditMessage = (message: Message | null): boolean => {
-    if (!message || message.userId !== me?.id) return false;
-    const ts = new Date(message.createdAt).getTime();
-    if (!Number.isFinite(ts)) return false;
-    return Date.now() - ts <= 15 * 60 * 1000;
+    return !!message && message.userId === me?.id;
   };
 
   const startEditSelectedMessage = () => {

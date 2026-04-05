@@ -7,6 +7,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS support_messages;
 DROP TABLE IF EXISTS support_tickets;
+DROP TABLE IF EXISTS notification_dismissals;
 DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS privacy_settings;
 DROP TABLE IF EXISTS contacts;

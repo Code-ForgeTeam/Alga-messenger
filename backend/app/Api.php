@@ -16,6 +16,7 @@ final class Api
     private ?bool $pushTokensTableReady = null;
     private ?bool $storyTablesReady = null;
     private ?bool $notificationsTablesReady = null;
+    private ?array $notificationColumns = null;
     private ?array $firebaseAccessTokenCache = null;
 
     public function __construct()
@@ -557,6 +558,39 @@ final class Api
         }
 
         try {
+            $showOnce = true;
+            $metaSql = $this->hasNotificationColumn('show_once')
+                ? 'SELECT id, show_once FROM notifications WHERE id = ? LIMIT 1'
+                : 'SELECT id FROM notifications WHERE id = ? LIMIT 1';
+            $meta = $this->db()->prepare($metaSql);
+            $meta->execute([$id]);
+            $row = $meta->fetch();
+            if (!$row) {
+                $this->dismissNotificationFallback($id, $userId);
+                $this->json(['ok' => true]);
+            }
+            if ($this->hasNotificationColumn('show_once')) {
+                $showOnce = !empty($row['show_once']);
+            }
+            if ($showOnce) {
+                try {
+                    $this->db()->beginTransaction();
+                    $delDismiss = $this->db()->prepare('DELETE FROM notification_dismissals WHERE notification_id = ?');
+                    $delDismiss->execute([$id]);
+                    $delNotif = $this->db()->prepare('DELETE FROM notifications WHERE id = ?');
+                    $delNotif->execute([$id]);
+                    $this->db()->commit();
+                } catch (\Throwable) {
+                    if ($this->db()->inTransaction()) {
+                        $this->db()->rollBack();
+                    }
+                    throw new \RuntimeException('Failed to delete show-once notification');
+                }
+
+                $this->dismissNotificationFallback($id, $userId);
+                $this->json(['ok' => true]);
+            }
+
             $stmt = $this->db()->prepare(
                 'INSERT INTO notification_dismissals (notification_id, user_id, dismissed_at)
                  VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -603,6 +637,45 @@ final class Api
                     KEY idx_notification_dismissals_user (user_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
             );
+
+            $columns = $this->notificationColumns();
+            $applyColumn = function (string $name, string $definition) use (&$columns): void {
+                if (isset($columns[$name])) {
+                    return;
+                }
+                try {
+                    $this->db()->exec("ALTER TABLE notifications ADD COLUMN {$name} {$definition}");
+                    $columns[$name] = true;
+                } catch (\Throwable) {
+                    // Keep graceful fallback on shared hosting with restricted ALTER privileges.
+                }
+            };
+
+            // Legacy schema compatibility: old table used is_active.
+            if (!isset($columns['active'])) {
+                if (isset($columns['is_active'])) {
+                    try {
+                        $this->db()->exec('ALTER TABLE notifications ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1');
+                        $this->db()->exec('UPDATE notifications SET active = COALESCE(is_active, 1)');
+                        $columns['active'] = true;
+                    } catch (\Throwable) {
+                        // ignore migration errors
+                    }
+                } else {
+                    $applyColumn('active', 'TINYINT(1) NOT NULL DEFAULT 1');
+                }
+            }
+
+            $applyColumn('duration_ms', 'INT NOT NULL DEFAULT 5000');
+            $applyColumn('show_once', 'TINYINT(1) NOT NULL DEFAULT 1');
+            $applyColumn('created_by', 'CHAR(36) NULL');
+            $applyColumn('expires_at', 'DATETIME NULL');
+            $applyColumn('created_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP');
+            $applyColumn('updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+            $applyColumn('bg_color', 'VARCHAR(32) NULL');
+            $applyColumn('text_color', 'VARCHAR(32) NULL');
+
+            $this->notificationColumns = $columns;
             $this->notificationsTablesReady = true;
         } catch (\Throwable) {
             $this->notificationsTablesReady = false;
@@ -806,21 +879,29 @@ final class Api
         }
 
         $changed = false;
-        foreach ($rows as &$row) {
+        $next = [];
+        foreach ($rows as $row) {
             if ((string)($row['id'] ?? '') !== $id) {
+                $next[] = $row;
                 continue;
             }
+
+            if (!empty($row['showOnce'])) {
+                $changed = true;
+                continue;
+            }
+
             $dismissedBy = is_array($row['dismissedBy'] ?? null) ? $row['dismissedBy'] : [];
             if (!in_array($userId, $dismissedBy, true)) {
                 $dismissedBy[] = $userId;
                 $row['dismissedBy'] = $dismissedBy;
                 $changed = true;
             }
+            $next[] = $row;
         }
-        unset($row);
 
         if ($changed) {
-            $this->writeNotificationsFallback($rows);
+            $this->writeNotificationsFallback($next);
         }
     }
 
@@ -1710,11 +1791,6 @@ final class Api
 
         if ((string)$message['user_id'] !== $userId) {
             $this->json(['error' => 'Only own messages can be edited'], 403);
-        }
-
-        $createdAtTs = strtotime((string)($message['created_at'] ?? ''));
-        if ($createdAtTs === false || (time() - $createdAtTs) > 900) {
-            $this->json(['error' => 'Editing window (15 minutes) has expired'], 403);
         }
 
         $part = $this->db()->prepare('SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1');
@@ -3829,6 +3905,12 @@ final class Api
         return isset($columns[strtolower($column)]);
     }
 
+    private function hasNotificationColumn(string $column): bool
+    {
+        $columns = $this->notificationColumns();
+        return isset($columns[strtolower($column)]);
+    }
+
     private function ensureUserProfileColumns(): void
     {
         if ($this->hasUserColumn('birth_date')) {
@@ -3961,6 +4043,29 @@ final class Api
         }
 
         $this->userColumns = $columns;
+        return $columns;
+    }
+
+    private function notificationColumns(): array
+    {
+        if ($this->notificationColumns !== null) {
+            return $this->notificationColumns;
+        }
+
+        $columns = [];
+        try {
+            $stmt = $this->db()->query('SHOW COLUMNS FROM notifications');
+            foreach ($stmt->fetchAll() as $row) {
+                $name = strtolower((string)($row['Field'] ?? ''));
+                if ($name !== '') {
+                    $columns[$name] = true;
+                }
+            }
+        } catch (\Throwable) {
+            $columns = ['id' => true];
+        }
+
+        $this->notificationColumns = $columns;
         return $columns;
     }
 
