@@ -52,6 +52,17 @@ const formatPresence = (status?: User['status'], lastSeen?: string): string => {
 const QUICK_REACTIONS = ['❤️', '👍', '👎', '🔥'] as const;
 type QuickReaction = (typeof QUICK_REACTIONS)[number];
 const USERNAME_MENTION_RE = /@([A-Za-z0-9_]{3,32})/g;
+const MESSAGE_EDIT_WINDOW_MS = 15 * 60 * 1000;
+
+const parseMessageTimestamp = (value: string): number => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return Number.NaN;
+  const direct = Date.parse(normalized);
+  if (Number.isFinite(direct)) return direct;
+  const withT = Date.parse(normalized.replace(' ', 'T'));
+  if (Number.isFinite(withT)) return withT;
+  return Number.NaN;
+};
 
 const formatAttachmentSize = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '';
@@ -332,7 +343,10 @@ export default function ChatPage() {
   };
 
   const canEditMessage = (message: Message | null): boolean => {
-    return !!message && message.userId === me?.id;
+    if (!message || message.userId !== me?.id) return false;
+    const createdAtTs = parseMessageTimestamp(String(message.createdAt ?? ''));
+    if (!Number.isFinite(createdAtTs)) return false;
+    return Date.now() - createdAtTs <= MESSAGE_EDIT_WINDOW_MS;
   };
 
   const startEditSelectedMessage = () => {

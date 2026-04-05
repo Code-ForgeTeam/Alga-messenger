@@ -1793,6 +1793,22 @@ final class Api
             $this->json(['error' => 'Only own messages can be edited'], 403);
         }
 
+        try {
+            $windowStmt = $this->db()->prepare(
+                'SELECT 1 FROM messages WHERE id = ? AND created_at >= (CURRENT_TIMESTAMP - INTERVAL 15 MINUTE) LIMIT 1'
+            );
+            $windowStmt->execute([$messageId]);
+            if (!$windowStmt->fetchColumn()) {
+                $this->json(['error' => 'Editing window (15 minutes) has expired'], 403);
+            }
+        } catch (\Throwable) {
+            // Fallback check if DB interval expression is unavailable.
+            $createdAtTs = strtotime((string)($message['created_at'] ?? ''));
+            if ($createdAtTs === false || (time() - $createdAtTs) > 900) {
+                $this->json(['error' => 'Editing window (15 minutes) has expired'], 403);
+            }
+        }
+
         $part = $this->db()->prepare('SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1');
         $part->execute([$message['chat_id'], $userId]);
         if (!$part->fetchColumn()) {
