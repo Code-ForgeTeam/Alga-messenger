@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   CircularProgress,
@@ -8,12 +9,16 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  List,
+  ListItemButton,
+  ListItemText,
   Paper,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import { useNavigate } from 'react-router-dom';
 import { AppHeader } from '../components/AppHeader';
 import { adminApi } from '../lib/api';
 import { isCreatorUser } from '../lib/creator';
@@ -27,6 +32,17 @@ type AdminOverview = {
   chats?: number;
   messages?: number;
   creatorUserId?: string;
+};
+
+type AdminUser = {
+  id: string;
+  username: string;
+  fullName: string;
+  avatar?: string | null;
+  bio?: string | null;
+  status?: string;
+  lastSeen?: string | null;
+  isCreator?: boolean;
 };
 
 type AdminAction = 'clear-chats' | 'clear-messages' | 'clear-content' | 'reset-users' | null;
@@ -72,6 +88,7 @@ function normalizeHttpUrl(raw: string): string | null {
 }
 
 export default function AdminPage() {
+  const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const me = useAuthStore((s) => s.user);
@@ -86,6 +103,9 @@ export default function AdminPage() {
   const [action, setAction] = useState<AdminAction>(null);
   const [targetUsername, setTargetUsername] = useState('');
   const [confirmDeleteUserOpen, setConfirmDeleteUserOpen] = useState(false);
+  const [usersDialogOpen, setUsersDialogOpen] = useState(false);
+  const [usersListLoading, setUsersListLoading] = useState(false);
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
 
   const [eventTemplate, setEventTemplate] = useState<'update' | 'custom'>('update');
   const [eventTitle, setEventTitle] = useState(UPDATE_EVENT_TITLE);
@@ -121,6 +141,26 @@ export default function AdminPage() {
     if (!me?.id) return;
     void refreshOverview();
   }, [me?.id]);
+
+  const openUsersDialog = async () => {
+    setUsersDialogOpen(true);
+    setUsersListLoading(true);
+    try {
+      const response = await adminApi.getUsers();
+      const items = Array.isArray(response?.items)
+        ? response.items
+        : (Array.isArray(response) ? response : []);
+      setAdminUsers(items as AdminUser[]);
+    } catch (error: any) {
+      pushSnackbar({
+        message: error?.response?.data?.error || 'Не удалось загрузить список пользователей',
+        timeout: 2600,
+        tone: 'error',
+      });
+    } finally {
+      setUsersListLoading(false);
+    }
+  };
 
   const runAction = async () => {
     if (!action) return;
@@ -284,7 +324,20 @@ export default function AdminPage() {
               >
                 <Typography sx={{ fontWeight: 800, mb: 1 }}>Состояние сервера</Typography>
                 <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-                  <Paper sx={{ px: 1.4, py: 1, borderRadius: 2 }}>
+                  <Paper
+                    component="button"
+                    onClick={() => { void openUsersDialog(); }}
+                    sx={{
+                      px: 1.4,
+                      py: 1,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: isDark ? 'rgba(175,193,217,0.28)' : '#D7E4DE',
+                      bgcolor: isDark ? 'rgba(17,33,50,0.9)' : '#FFFFFF',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                  >
                     <Typography variant="caption" color="text.secondary">Пользователи</Typography>
                     <Typography sx={{ fontWeight: 800 }}>{overview.users ?? 0}</Typography>
                   </Paper>
@@ -499,6 +552,51 @@ export default function AdminPage() {
           <Button disabled={isBusy} color="error" variant="contained" onClick={deleteByUsername}>
             {isBusy ? 'Удаление...' : 'Удалить'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={usersDialogOpen} onClose={() => setUsersDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Пользователи</DialogTitle>
+        <DialogContent sx={{ px: 0 }}>
+          {usersListLoading ? (
+            <Box sx={{ display: 'grid', placeItems: 'center', py: 4 }}>
+              <CircularProgress size={24} />
+            </Box>
+          ) : !adminUsers.length ? (
+            <Typography color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
+              Пользователи не найдены
+            </Typography>
+          ) : (
+            <List disablePadding>
+              {adminUsers.map((item) => (
+                <ListItemButton
+                  key={item.id}
+                  onClick={() => {
+                    setUsersDialogOpen(false);
+                    navigate(`/user/${item.id}`);
+                  }}
+                >
+                  <Avatar
+                    src={item.avatar || undefined}
+                    sx={{ width: 36, height: 36, mr: 1.2, bgcolor: 'primary.main', flexShrink: 0 }}
+                  >
+                    {(item.fullName || item.username || 'U').slice(0, 1).toUpperCase()}
+                  </Avatar>
+                  <ListItemText
+                    primary={item.fullName || `@${item.username}`}
+                    secondary={
+                      item.username
+                        ? `@${item.username}${item.isCreator ? ' • создатель' : ''}`
+                        : (item.isCreator ? 'создатель' : '')
+                    }
+                  />
+                </ListItemButton>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUsersDialogOpen(false)}>Закрыть</Button>
         </DialogActions>
       </Dialog>
     </Box>

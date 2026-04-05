@@ -47,6 +47,7 @@ final class Api
         if ($path === '/api/admin/clear-messages' && $method === 'POST') { $this->adminClearMessages(); }
         if ($path === '/api/admin/clear-content' && $method === 'POST') { $this->adminClearContent(); }
         if ($path === '/api/admin/reset-users' && $method === 'POST') { $this->adminResetUsers(); }
+        if ($path === '/api/admin/users' && $method === 'GET') { $this->adminUsers(); }
         if ($path === '/api/admin/events' && $method === 'POST') { $this->adminCreateEvent($body); }
 
         if ($path === '/api/users/me' && $method === 'GET') { $this->me(); }
@@ -256,6 +257,51 @@ final class Api
             'chats' => $chats,
             'messages' => $messages,
             'creatorUserId' => $this->creatorUserId(),
+        ]);
+    }
+
+    private function adminUsers(): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+        $this->ensureUserProfileColumns();
+
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        if ($this->hasUserColumn('birth_date')) {
+            $select .= ', birth_date';
+        }
+        $select .= ' FROM users ORDER BY updated_at DESC, created_at DESC, username ASC';
+
+        try {
+            $rows = $this->db()->query($select)->fetchAll() ?: [];
+        } catch (\Throwable) {
+            $fallback = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+            if ($this->hasUserColumn('birth_date')) {
+                $fallback .= ', birth_date';
+            }
+            $fallback .= ' FROM users ORDER BY username ASC';
+            $rows = $this->db()->query($fallback)->fetchAll() ?: [];
+        }
+
+        $items = array_map(function ($u) {
+            $presence = $this->normalizePresence((string)($u['status'] ?? 'offline'), $u['last_seen'] ?? null);
+            return [
+                'id' => (string)($u['id'] ?? ''),
+                'username' => (string)($u['username'] ?? ''),
+                'fullName' => (string)($u['full_name'] ?? ''),
+                'bio' => $u['bio'] ?? null,
+                'avatar' => $u['avatar'] ?? null,
+                'status' => $presence['status'],
+                'lastSeen' => $presence['lastSeen'],
+                'birthday' => $u['birth_date'] ?? null,
+                'isCreator' => $this->isCreatorMatch((string)($u['id'] ?? '')),
+            ];
+        }, $rows);
+
+        $this->json([
+            'ok' => true,
+            'count' => count($items),
+            'items' => $items,
         ]);
     }
 
@@ -888,6 +934,9 @@ final class Api
     {
         $ownerId = $this->authUserId();
         $type = (string)($body['type'] ?? 'private');
+        if (!in_array($type, ['private', 'group', 'saved', 'ai'], true)) {
+            $type = 'private';
+        }
         $name = trim((string)($body['name'] ?? ''));
         $participantIds = $body['participantIds'] ?? [];
         if (!is_array($participantIds)) {
@@ -895,6 +944,15 @@ final class Api
         }
 
         $allParticipants = array_values(array_unique(array_filter(array_merge([$ownerId], $participantIds), fn ($v) => is_string($v) && $v !== '')));
+
+        if ($type === 'group') {
+            if (count($allParticipants) < 2) {
+                $this->json(['error' => 'Group must have at least 2 participants'], 400);
+            }
+            if (count($allParticipants) > 15) {
+                $this->json(['error' => 'Group participants limit is 15'], 400);
+            }
+        }
 
         if ($type === 'private' && count($allParticipants) === 2) {
             sort($allParticipants);

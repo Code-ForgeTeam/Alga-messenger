@@ -456,16 +456,21 @@ export default function ChatPage() {
           import('@capacitor/core'),
           import('@capacitor/filesystem'),
         ]);
-        if (Capacitor.getPlatform() !== 'web') {
-          const data = await blobToBase64(blob);
+        const isNative = Capacitor.getPlatform() !== 'web';
+        if (isNative) {
           const mediaFolder = attachment.type === 'video' ? 'Movies' : 'Pictures';
           const path = `${mediaFolder}/Alga/${fileName}`;
-          const dirs = [Directory.ExternalStorage, Directory.External, Directory.Documents] as const;
+          const dirs = [Directory.Documents, Directory.External, Directory.Data] as const;
+          try {
+            await Filesystem.requestPermissions();
+          } catch {
+            // runtime permissions may be unavailable depending on platform
+          }
           for (const directory of dirs) {
             try {
-              await Filesystem.writeFile({
+              await Filesystem.downloadFile({
+                url,
                 path,
-                data,
                 directory,
                 recursive: true,
               });
@@ -475,12 +480,34 @@ export default function ChatPage() {
               // try next directory
             }
           }
+
+          if (!savedToNativeStorage) {
+            const data = await blobToBase64(blob);
+            for (const directory of dirs) {
+              try {
+                await Filesystem.writeFile({
+                  path,
+                  data,
+                  directory,
+                  recursive: true,
+                });
+                savedToNativeStorage = true;
+                break;
+              } catch {
+                // try next directory
+              }
+            }
+          }
         }
       } catch {
         // if native save plugin is unavailable, fallback to browser download flow
       }
 
       if (!savedToNativeStorage) {
+        const { Capacitor } = await import('@capacitor/core');
+        if (Capacitor.getPlatform() !== 'web') {
+          throw new Error('NATIVE_SAVE_FAILED');
+        }
         const objectUrl = URL.createObjectURL(blob);
         triggerDownload(objectUrl, fileName);
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
@@ -493,11 +520,20 @@ export default function ChatPage() {
       });
     } catch {
       let fallbackTriggered = false;
+      let canUseBrowserFallback = true;
       try {
-        triggerDownload(url, fallbackFileName);
-        fallbackTriggered = true;
+        const { Capacitor } = await import('@capacitor/core');
+        canUseBrowserFallback = Capacitor.getPlatform() === 'web';
       } catch {
-        // ignore fallback errors
+        // keep web fallback if capacitor runtime is unavailable
+      }
+      if (canUseBrowserFallback) {
+        try {
+          triggerDownload(url, fallbackFileName);
+          fallbackTriggered = true;
+        } catch {
+          // ignore fallback errors
+        }
       }
       pushSnackbar({
         message: fallbackTriggered
