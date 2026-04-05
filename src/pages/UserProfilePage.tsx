@@ -104,7 +104,14 @@ export default function UserProfilePage() {
     return findPrivateChatWithUser(chats, userId);
   }, [chats, userId]);
 
-  const resolvedChatId = incomingChatId || privateChat?.id || '';
+  const incomingPrivateChat = useMemo(() => {
+    if (!incomingChatId) return undefined;
+    const chat = chats.find((item) => item.id === incomingChatId);
+    if (!chat || chat.type !== 'private') return undefined;
+    return chat.participants.some((participant) => participant.id === userId) ? chat : undefined;
+  }, [chats, incomingChatId, userId]);
+
+  const resolvedChatId = incomingPrivateChat?.id || privateChat?.id || '';
   const isBlocked = !!privateChat?.blocked;
   const contactEntry = useMemo(() => getContactByUserId(userId), [getContactByUserId, userId]);
   const displayName = (contactEntry?.displayName || user?.fullName || user?.username || '').trim();
@@ -115,8 +122,8 @@ export default function UserProfilePage() {
     contactEntry.displayName.trim() !== defaultDisplayName;
 
   const ensurePrivateChat = async (): Promise<Chat> => {
-    if (incomingChatId) {
-      const existing = chats.find((c) => c.id === incomingChatId);
+    if (incomingPrivateChat) {
+      const existing = chats.find((c) => c.id === incomingPrivateChat.id);
       if (existing) return existing;
     }
 

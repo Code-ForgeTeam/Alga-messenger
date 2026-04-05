@@ -45,7 +45,7 @@ type AdminUser = {
   isCreator?: boolean;
 };
 
-type AdminAction = 'clear-chats' | 'clear-messages' | 'clear-content' | 'reset-users' | null;
+type AdminAction = 'clear-chats' | 'clear-messages' | 'clear-content' | 'clear-push-tokens' | 'reset-users' | null;
 
 const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: string; button: string }> = {
   'clear-chats': {
@@ -62,6 +62,11 @@ const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: str
     title: 'Очистить весь медиа-контент?',
     body: 'Будут удалены все фото и файлы из чатов на сервере.',
     button: 'Очистить контент',
+  },
+  'clear-push-tokens': {
+    title: 'Очистить push-токены?',
+    body: 'Будут удалены все токены уведомлений. Пользователям потребуется снова открыть приложение.',
+    button: 'Очистить push-токены',
   },
   'reset-users': {
     title: 'Сбросить пользователей?',
@@ -152,8 +157,12 @@ export default function AdminPage() {
         : (Array.isArray(response) ? response : []);
       setAdminUsers(items as AdminUser[]);
     } catch (error: any) {
+      const message =
+        Number(error?.response?.status ?? 0) === 404
+          ? 'Backend не обновлён: загрузите backend/app/Api.php на сервер'
+          : undefined;
       pushSnackbar({
-        message: error?.response?.data?.error || 'Не удалось загрузить список пользователей',
+        message: message || error?.response?.data?.error || 'Не удалось загрузить список пользователей',
         timeout: 2600,
         tone: 'error',
       });
@@ -173,6 +182,8 @@ export default function AdminPage() {
         result = await adminApi.clearAllMessages();
       } else if (action === 'clear-content') {
         result = await adminApi.clearAllContent();
+      } else if (action === 'clear-push-tokens') {
+        result = await adminApi.clearPushTokens();
       } else if (action === 'reset-users') {
         result = await adminApi.resetUsersExceptCreator();
       }
@@ -185,6 +196,17 @@ export default function AdminPage() {
         const clearedMb = clearedBytes > 0 ? Math.round((clearedBytes / (1024 * 1024)) * 10) / 10 : 0;
         pushSnackbar({
           message: clearedMb > 0 ? `Контент очищен (${clearedMb} MB)` : 'Контент очищен',
+          timeout: 2600,
+          tone: 'success',
+        });
+        setAction(null);
+        return;
+      }
+
+      if (action === 'clear-push-tokens') {
+        const deleted = Number(result?.deleted ?? 0);
+        pushSnackbar({
+          message: deleted > 0 ? `Push-токены очищены (${deleted})` : 'Push-токены очищены',
           timeout: 2600,
           tone: 'success',
         });
@@ -474,6 +496,9 @@ export default function AdminPage() {
                   </Button>
                   <Button color="error" variant="outlined" onClick={() => setAction('clear-content')}>
                     Очистить весь контент
+                  </Button>
+                  <Button color="error" variant="outlined" onClick={() => setAction('clear-push-tokens')}>
+                    Очистить push-токены
                   </Button>
                   <Button color="error" variant="outlined" onClick={() => setAction('clear-chats')}>
                     Очистить все чаты

@@ -82,6 +82,8 @@ export const chatApi = {
   getById: async (chatId: string) => (await api.get(`/chats/${chatId}`)).data,
   create: async (name: string, type: string, participantIds: string[]) =>
     (await api.post('/chats', { name, type, participantIds })).data,
+  addParticipants: async (chatId: string, participantIds: string[]) =>
+    (await api.post(`/chats/${chatId}/participants`, { participantIds })).data,
   clear: async (chatId: string) => (await api.delete(`/chats/${chatId}/messages`)).data,
   delete: async (chatId: string, deleteForAll = false) =>
     (await api.delete(`/chats/${chatId}`, { data: { deleteForAll } })).data,
@@ -123,6 +125,7 @@ export const adminApi = {
   clearAllChats: async () => (await api.post('/admin/clear-chats')).data,
   clearAllMessages: async () => (await api.post('/admin/clear-messages')).data,
   clearAllContent: async () => (await api.post('/admin/clear-content')).data,
+  clearPushTokens: async () => (await api.post('/admin/clear-push-tokens')).data,
   createEvent: async (payload: {
     template?: 'update' | 'custom';
     title?: string;

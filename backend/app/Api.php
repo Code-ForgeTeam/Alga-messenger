@@ -46,6 +46,7 @@ final class Api
         if ($path === '/api/admin/clear-chats' && $method === 'POST') { $this->adminClearChats(); }
         if ($path === '/api/admin/clear-messages' && $method === 'POST') { $this->adminClearMessages(); }
         if ($path === '/api/admin/clear-content' && $method === 'POST') { $this->adminClearContent(); }
+        if ($path === '/api/admin/clear-push-tokens' && $method === 'POST') { $this->adminClearPushTokens(); }
         if ($path === '/api/admin/reset-users' && $method === 'POST') { $this->adminResetUsers(); }
         if ($path === '/api/admin/users' && $method === 'GET') { $this->adminUsers(); }
         if ($path === '/api/admin/events' && $method === 'POST') { $this->adminCreateEvent($body); }
@@ -70,6 +71,7 @@ final class Api
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/messages$#', $path, $m) && $method === 'DELETE') { $this->clearChatMessages($m[1]); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/archive$#', $path, $m) && $method === 'POST') { $this->setChatArchive($m[1], true); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/archive$#', $path, $m) && $method === 'DELETE') { $this->setChatArchive($m[1], false); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/participants$#', $path, $m) && $method === 'POST') { $this->addGroupParticipants($m[1], $body); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/mute$#', $path, $m) && $method === 'POST') { $this->toggleChatMute($m[1]); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/pin$#', $path, $m) && $method === 'POST') { $this->toggleChatPin($m[1]); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/block$#', $path, $m) && $method === 'POST') { $this->blockInChat($m[1], $body); }
@@ -353,6 +355,28 @@ final class Api
         ]);
     }
 
+    private function adminClearPushTokens(): void
+    {
+        $userId = $this->authUserId();
+        $this->assertCreator($userId);
+
+        if (!$this->ensurePushTokensTable()) {
+            $this->json(['error' => 'Push tokens table is unavailable'], 500);
+        }
+
+        try {
+            $count = (int)$this->db()->query('SELECT COUNT(*) FROM push_tokens')->fetchColumn();
+            $this->db()->exec('DELETE FROM push_tokens');
+        } catch (\Throwable) {
+            $this->json(['error' => 'Failed to clear push tokens'], 500);
+        }
+
+        $this->json([
+            'ok' => true,
+            'deleted' => $count,
+        ]);
+    }
+
     private function adminResetUsers(): void
     {
         $userId = $this->authUserId();
@@ -369,6 +393,11 @@ final class Api
 
             $deleteUsers = $db->prepare('DELETE FROM users WHERE id <> ?');
             $deleteUsers->execute([$creatorId]);
+
+            if ($this->ensurePushTokensTable()) {
+                $dropTokens = $db->prepare('DELETE FROM push_tokens WHERE user_id <> ?');
+                $dropTokens->execute([$creatorId]);
+            }
 
             $db->exec('DELETE c FROM chats c LEFT JOIN chat_participants cp ON cp.chat_id = c.id WHERE cp.chat_id IS NULL');
 
@@ -413,6 +442,10 @@ final class Api
         $db = $this->db();
         try {
             $db->beginTransaction();
+            if ($this->ensurePushTokensTable()) {
+                $dropTokens = $db->prepare('DELETE FROM push_tokens WHERE user_id = ?');
+                $dropTokens->execute([(string)$target['id']]);
+            }
             $delete = $db->prepare('DELETE FROM users WHERE id = ? LIMIT 1');
             $delete->execute([(string)$target['id']]);
             $db->exec('DELETE c FROM chats c LEFT JOIN chat_participants cp ON cp.chat_id = c.id WHERE cp.chat_id IS NULL');
@@ -990,6 +1023,112 @@ final class Api
             'participants' => [],
             'updatedAt' => date('c'),
         ], 201);
+    }
+
+    private function addGroupParticipants(string $chatId, array $body): void
+    {
+        $actorId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $actorId);
+
+        $typeStmt = $this->db()->prepare('SELECT type FROM chats WHERE id = ? LIMIT 1');
+        $typeStmt->execute([$chatId]);
+        $chatType = strtolower((string)$typeStmt->fetchColumn());
+        if ($chatType !== 'group') {
+            $this->json(['error' => 'Only group chats can add participants'], 400);
+        }
+
+        $participantIdsRaw = $body['participantIds'] ?? [];
+        if (!is_array($participantIdsRaw)) {
+            $participantIdsRaw = [];
+        }
+
+        $participantIds = [];
+        foreach ($participantIdsRaw as $value) {
+            if (!is_scalar($value)) {
+                continue;
+            }
+            $id = trim((string)$value);
+            if ($id === '' || strcasecmp($id, $actorId) === 0) {
+                continue;
+            }
+            $participantIds[] = $id;
+        }
+        $participantIds = array_values(array_unique($participantIds));
+        if (!$participantIds) {
+            $this->json(['error' => 'participantIds are required'], 400);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($participantIds), '?'));
+
+        $existingUsersStmt = $this->db()->prepare("SELECT id FROM users WHERE id IN ({$placeholders})");
+        $existingUsersStmt->execute($participantIds);
+        $existingUsersRows = $existingUsersStmt->fetchAll() ?: [];
+        $existingUsers = [];
+        foreach ($existingUsersRows as $row) {
+            $id = trim((string)($row['id'] ?? ''));
+            if ($id === '') {
+                continue;
+            }
+            $existingUsers[strtolower($id)] = $id;
+        }
+
+        if (!$existingUsers) {
+            $this->json(['error' => 'No valid users were found'], 400);
+        }
+
+        $alreadyStmt = $this->db()->prepare(
+            "SELECT user_id FROM chat_participants WHERE chat_id = ? AND user_id IN ({$placeholders})"
+        );
+        $alreadyStmt->execute(array_merge([$chatId], $participantIds));
+        $alreadyRows = $alreadyStmt->fetchAll() ?: [];
+        $already = [];
+        foreach ($alreadyRows as $row) {
+            $id = trim((string)($row['user_id'] ?? ''));
+            if ($id !== '') {
+                $already[strtolower($id)] = true;
+            }
+        }
+
+        $toAdd = [];
+        foreach ($participantIds as $requestedId) {
+            $key = strtolower($requestedId);
+            if (!isset($existingUsers[$key]) || isset($already[$key])) {
+                continue;
+            }
+            $toAdd[] = $existingUsers[$key];
+        }
+
+        if (!$toAdd) {
+            $chat = $this->chatByIdForUser($chatId, $actorId);
+            $this->json(['ok' => true, 'added' => 0, 'chat' => $chat]);
+        }
+
+        $countStmt = $this->db()->prepare('SELECT COUNT(*) FROM chat_participants WHERE chat_id = ?');
+        $countStmt->execute([$chatId]);
+        $currentMembersCount = (int)$countStmt->fetchColumn();
+        if ($currentMembersCount + count($toAdd) > 15) {
+            $this->json(['error' => 'Group participants limit is 15'], 400);
+        }
+
+        $insert = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id) VALUES (?, ?)');
+        foreach ($toAdd as $uid) {
+            try {
+                $insert->execute([$chatId, $uid]);
+            } catch (\Throwable) {
+                // ignore duplicate or race inserts
+            }
+            $this->touchChatReadState($chatId, (string)$uid);
+        }
+
+        $touch = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $touch->execute([$chatId]);
+
+        $chat = $this->chatByIdForUser($chatId, $actorId);
+        $this->json([
+            'ok' => true,
+            'added' => count($toAdd),
+            'chat' => $chat,
+        ]);
     }
 
     private function chatById(string $chatId): void

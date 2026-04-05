@@ -36,6 +36,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ChatSettingsPage = lazy(() => import('./pages/ChatSettingsPage'));
 const EditProfilePage = lazy(() => import('./pages/EditProfilePage'));
 const UserProfilePage = lazy(() => import('./pages/UserProfilePage'));
+const GroupProfilePage = lazy(() => import('./pages/GroupProfilePage'));
 const GlobalSearchPage = lazy(() => import('./pages/GlobalSearchPage'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
 const PrivacySettingPage = lazy(() => import('./pages/PrivacySettingPage'));
@@ -769,6 +770,7 @@ export default function App() {
           <Route path="/chat-settings" element={<Guard><ChatSettingsPage /></Guard>} />
           <Route path="/edit-profile" element={<Guard><EditProfilePage /></Guard>} />
           <Route path="/user/:userId" element={<Guard><UserProfilePage /></Guard>} />
+          <Route path="/group/:chatId" element={<Guard><GroupProfilePage /></Guard>} />
           <Route path="/search" element={<Guard><GlobalSearchPage /></Guard>} />
           <Route path="/privacy" element={<Guard><PrivacyPage /></Guard>} />
           <Route path="/privacy/:settingKey" element={<Guard><PrivacySettingPage /></Guard>} />

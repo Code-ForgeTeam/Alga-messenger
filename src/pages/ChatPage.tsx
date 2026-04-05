@@ -49,6 +49,15 @@ const formatPresence = (status?: User['status'], lastSeen?: string): string => {
   })}`;
 };
 
+const formatGroupMembers = (total: number): string => {
+  const value = Math.max(0, Math.trunc(total));
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${value} участник`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${value} участника`;
+  return `${value} участников`;
+};
+
 const QUICK_REACTIONS = ['❤️', '👍', '👎', '🔥'] as const;
 type QuickReaction = (typeof QUICK_REACTIONS)[number];
 const USERNAME_MENTION_RE = /@([A-Za-z0-9_]{3,32})/g;
@@ -92,22 +101,6 @@ const guessExtension = (mimeType: string, attachmentType?: Attachment['type']): 
   if (attachmentType === 'image') return 'jpg';
   return 'bin';
 };
-
-const blobToBase64 = async (blob: Blob): Promise<string> =>
-  await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = String(reader.result || '');
-      const commaIndex = result.indexOf(',');
-      if (commaIndex === -1) {
-        reject(new Error('BASE64_PARSE_FAILED'));
-        return;
-      }
-      resolve(result.slice(commaIndex + 1));
-    };
-    reader.onerror = () => reject(new Error('BASE64_READ_FAILED'));
-    reader.readAsDataURL(blob);
-  });
 
 const inferFileName = (attachment: Attachment, url: string, mimeType: string): string => {
   const explicitName = sanitizeFileName(String(attachment?.name || ''));
@@ -274,9 +267,15 @@ export default function ChatPage() {
     return chat.participants?.find((p) => p.id !== me?.id) || chat.participants?.[0] || null;
   }, [chat, me?.id]);
 
+  const groupMembersCount = useMemo(() => {
+    if (!chat || chat.type !== 'group') return 0;
+    return (Array.isArray(chat.participants) ? chat.participants.length : 0) + 1;
+  }, [chat]);
+
   const title = useMemo(() => {
     if (!chat) return 'Чат';
     if (chat.type === 'saved') return 'Избранное';
+    if (chat.type === 'group') return chat.name?.trim() || 'Группа';
     if (chat.name?.trim()) return chat.name.trim();
     const localDisplayName = peerUser ? getContactByUserId(peerUser.id)?.displayName : '';
     if (localDisplayName) return localDisplayName;
@@ -284,15 +283,18 @@ export default function ChatPage() {
   }, [chat, getContactByUserId, peerUser]);
 
   const avatarSrc = useMemo(() => {
-    return chat?.avatar || peerUser?.avatar;
+    if (!chat) return peerUser?.avatar;
+    if (chat.type === 'group') return chat.avatar;
+    return chat.avatar || peerUser?.avatar;
   }, [chat, peerUser]);
 
   const subtitle = useMemo(() => {
     if (typingUsers[chatId]?.length) return 'печатает...';
     if (chat?.type === 'saved') return 'сообщения самому себе';
     if (chat?.type === 'ai') return 'AI-помощник';
+    if (chat?.type === 'group') return formatGroupMembers(groupMembersCount);
     return formatPresence(peerUser?.status, peerUser?.lastSeen);
-  }, [typingUsers, chatId, chat?.type, peerUser?.status, peerUser?.lastSeen]);
+  }, [typingUsers, chatId, chat?.type, peerUser?.status, peerUser?.lastSeen, groupMembersCount]);
 
   const onPickFiles = async (list: FileList | null) => {
     if (!list?.length) return;
@@ -441,25 +443,17 @@ export default function ChatPage() {
     };
 
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP_${response.status}`);
-      }
-
-      const blob = await response.blob();
-      const mimeType = String(blob.type || '');
-      const fileName = inferFileName(attachment, url, mimeType);
-
+      const [{ Capacitor }, { Directory, Filesystem }] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor/filesystem'),
+      ]);
+      const isNative = Capacitor.getPlatform() !== 'web';
+      const nativeFileName = inferFileName(attachment, url, '');
       let savedToNativeStorage = false;
-      try {
-        const [{ Capacitor }, { Directory, Filesystem }] = await Promise.all([
-          import('@capacitor/core'),
-          import('@capacitor/filesystem'),
-        ]);
-        const isNative = Capacitor.getPlatform() !== 'web';
-        if (isNative) {
+
+      if (isNative) {
           const mediaFolder = attachment.type === 'video' ? 'Movies' : 'Pictures';
-          const path = `${mediaFolder}/Alga/${fileName}`;
+          const path = `${mediaFolder}/Alga/${nativeFileName}`;
           const dirs = [Directory.Documents, Directory.External, Directory.Data] as const;
           try {
             await Filesystem.requestPermissions();
@@ -482,32 +476,17 @@ export default function ChatPage() {
           }
 
           if (!savedToNativeStorage) {
-            const data = await blobToBase64(blob);
-            for (const directory of dirs) {
-              try {
-                await Filesystem.writeFile({
-                  path,
-                  data,
-                  directory,
-                  recursive: true,
-                });
-                savedToNativeStorage = true;
-                break;
-              } catch {
-                // try next directory
-              }
-            }
+            throw new Error('NATIVE_SAVE_FAILED');
           }
         }
-      } catch {
-        // if native save plugin is unavailable, fallback to browser download flow
-      }
-
       if (!savedToNativeStorage) {
-        const { Capacitor } = await import('@capacitor/core');
-        if (Capacitor.getPlatform() !== 'web') {
-          throw new Error('NATIVE_SAVE_FAILED');
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP_${response.status}`);
         }
+        const blob = await response.blob();
+        const mimeType = String(blob.type || '');
+        const fileName = inferFileName(attachment, url, mimeType);
         const objectUrl = URL.createObjectURL(blob);
         triggerDownload(objectUrl, fileName);
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
@@ -630,6 +609,10 @@ export default function ChatPage() {
   useEffect(() => () => clearMessageGesture(), []);
 
   const openProfileFromHeader = () => {
+    if (chat?.type === 'group') {
+      navigate(`/group/${chatId}`);
+      return;
+    }
     if (!peerUser) return;
     navigate(`/user/${peerUser.id}?chatId=${encodeURIComponent(chatId)}`);
   };
@@ -757,7 +740,7 @@ export default function ChatPage() {
 
         <ButtonBase
           onClick={openProfileFromHeader}
-          disabled={!peerUser}
+          disabled={chat.type === 'saved' || chat.type === 'ai'}
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -776,7 +759,7 @@ export default function ChatPage() {
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontWeight: 700, fontSize: 18 }} noWrap>{title}</Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              {peerUser?.status === 'online' && !typingUsers[chatId]?.length && (
+              {chat.type === 'private' && peerUser?.status === 'online' && !typingUsers[chatId]?.length && (
                 <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#32C26A', flexShrink: 0 }} />
               )}
               <Typography variant="caption" color={isDark ? '#B7C8DD' : 'text.secondary'} noWrap>

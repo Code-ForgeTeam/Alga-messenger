@@ -58,6 +58,7 @@ const formatChatDate = (value?: string) => {
 
 function getChatName(chat: Chat, myId?: string, localDisplayName?: string) {
   if (chat.type === 'saved') return 'Избранное';
+  if (chat.type === 'group') return chat.name?.trim() || 'Группа';
   if (chat.name?.trim()) return chat.name.trim();
   if (localDisplayName?.trim()) return localDisplayName.trim();
   const peer = chat.participants?.find((p) => p.id !== myId) || chat.participants?.[0];
@@ -66,6 +67,10 @@ function getChatName(chat: Chat, myId?: string, localDisplayName?: string) {
 
 function getChatAvatar(chat: Chat, myId?: string, localDisplayName?: string) {
   if (chat.type === 'saved') return { initial: 'И', src: undefined as string | undefined };
+  if (chat.type === 'group') {
+    const title = getChatName(chat, myId, localDisplayName);
+    return { initial: title.slice(0, 1).toUpperCase(), src: chat.avatar };
+  }
   const peer = chat.participants?.find((p) => p.id !== myId) || chat.participants?.[0];
   const title = getChatName(chat, myId, localDisplayName);
   return { initial: title.slice(0, 1).toUpperCase(), src: chat.avatar || peer?.avatar };
