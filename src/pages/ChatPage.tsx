@@ -638,9 +638,12 @@ export default function ChatPage() {
     setReactionAnchor(anchor);
   };
 
-  const closeReactionPicker = () => {
+  const closeReactionPicker = (options?: { keepSelected?: boolean }) => {
     setReactionAnchor(null);
     setReactionMessageId(null);
+    if (!options?.keepSelected) {
+      setSelectedMessage(null);
+    }
   };
 
   const applyReaction = async (value: QuickReaction) => {
@@ -661,8 +664,33 @@ export default function ChatPage() {
   };
 
   const openMessageActionsFromReactions = () => {
-    if (!selectedMessage) return;
+    if (!selectedMessage || !reactionAnchor) return;
     setMsgMenuAnchor(reactionAnchor);
+    closeReactionPicker({ keepSelected: true });
+  };
+
+  const handleClearChatAction = async () => {
+    const isAiChat = chat?.type === 'ai';
+    const confirmed = window.confirm(
+      isAiChat ? 'Очистить AI-чат у всех пользователей?' : 'Очистить историю этого чата?',
+    );
+    if (!confirmed) return;
+    try {
+      await clearChat(chatId);
+      pushSnackbar({
+        message: isAiChat ? 'AI-чат очищен у всех' : 'Чат очищен',
+        timeout: 2200,
+        tone: 'success',
+      });
+    } catch {
+      pushSnackbar({
+        message: isAiChat ? 'Не удалось очистить AI-чат' : 'Не удалось очистить чат',
+        timeout: 2400,
+        tone: 'error',
+      });
+    } finally {
+      setMenuAnchor(null);
+    }
   };
 
   const openMentionProfile = async (username: string) => {
@@ -791,7 +819,12 @@ export default function ChatPage() {
         <MenuItem onClick={() => { pinChat(chatId); setMenuAnchor(null); }}>{chat.pinned ? 'Открепить' : 'Закрепить'}</MenuItem>
         <MenuItem onClick={() => { muteChat(chatId); setMenuAnchor(null); }}>{chat.muted ? 'Включить звук' : 'Выключить звук'}</MenuItem>
         <MenuItem onClick={() => { chat.archived ? unarchiveChat(chatId) : archiveChat(chatId); setMenuAnchor(null); }}>{chat.archived ? 'Вернуть из архива' : 'В архив'}</MenuItem>
-        <MenuItem onClick={() => { clearChat(chatId); setMenuAnchor(null); }}>Очистить чат</MenuItem>
+        <MenuItem
+          sx={chat.type === 'ai' ? { color: 'warning.main' } : undefined}
+          onClick={() => { void handleClearChatAction(); }}
+        >
+          {chat.type === 'ai' ? 'Очистить AI-чат (у всех)' : 'Очистить чат'}
+        </MenuItem>
         <MenuItem onClick={() => { deleteChat(chatId); setMenuAnchor(null); navigate('/chats'); }} sx={{ color: 'error.main' }}>Удалить чат</MenuItem>
       </Menu>
 
@@ -865,43 +898,35 @@ export default function ChatPage() {
           },
         }}
       >
-        <Box sx={{ display: 'grid', gap: 0.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, justifyContent: 'center' }}>
-            {QUICK_REACTIONS.map((item) => (
-              <ButtonBase
-                key={item}
-                onClick={() => { void applyReaction(item); }}
-                sx={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: '50%',
-                  fontSize: 20,
-                  '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' },
-                }}
-              >
-                {item}
-              </ButtonBase>
-            ))}
-          </Box>
-          <Box sx={{ display: 'flex', gap: 0.4, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Button size="small" onClick={() => void copySelectedMessage()}>Копировать</Button>
-            <Button size="small" disabled={!canEditMessage(selectedMessage)} onClick={startEditSelectedMessage}>Изменить</Button>
-            <Button size="small" onClick={() => selectedMessage && markMessageForReply(selectedMessage)}>Ответить</Button>
-            <Button
-              size="small"
-              color="error"
-              onClick={() => {
-                if (!selectedMessage) return;
-                deleteMessage(chatId, selectedMessage.id, false);
-                closeReactionPicker();
-                setSelectedMessage(null);
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, justifyContent: 'center' }}>
+          {QUICK_REACTIONS.map((item) => (
+            <ButtonBase
+              key={item}
+              onClick={() => { void applyReaction(item); }}
+              sx={{
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                fontSize: 20,
+                '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' },
               }}
             >
-              Удалить
-            </Button>
-            <Button size="small" onClick={() => { closeReactionPicker(); setSelectedMessage(null); }}>Закрыть</Button>
-            <Button size="small" onClick={openMessageActionsFromReactions}>Ещё</Button>
-          </Box>
+              {item}
+            </ButtonBase>
+          ))}
+          <IconButton
+            size="small"
+            onClick={openMessageActionsFromReactions}
+            aria-label="Действия"
+            sx={{
+              width: 32,
+              height: 32,
+              color: isDark ? '#D6E4F4' : '#4B5D70',
+              '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' },
+            }}
+          >
+            <MoreVertIcon sx={{ fontSize: 20 }} />
+          </IconButton>
         </Box>
       </Popover>
 

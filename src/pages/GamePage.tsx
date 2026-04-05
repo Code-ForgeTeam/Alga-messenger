@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, IconButton, Paper, Stack, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import { useNavigate } from 'react-router-dom';
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
 import TerminalRoundedIcon from '@mui/icons-material/TerminalRounded';
 import MemoryRoundedIcon from '@mui/icons-material/MemoryRounded';
@@ -78,6 +79,8 @@ const BOARD_ATTEMPTS = 42;
 
 const BEST_TIME_KEY = 'alga.mahjong.best-time-sec.v2';
 const WINS_KEY = 'alga.mahjong.wins.v2';
+const ONLINE_GAME_URL = String(import.meta.env.VITE_ONLINE_GAME_URL || '').trim();
+const ONLINE_LOAD_TIMEOUT_MS = 8000;
 
 const TILE_FACES: TileFace[] = [
   'code', 'terminal', 'memory', 'storage', 'bug', 'security', 'cloud', 'api',
@@ -227,7 +230,7 @@ const collapseTrayPairs = (items: TrayItem[]): { items: TrayItem[]; removedPairs
   return { items: working, removedPairs };
 };
 
-export default function GamePage() {
+function OfflinePyrgaGame() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const hintTimeoutRef = useRef<number | null>(null);
@@ -621,6 +624,148 @@ export default function GamePage() {
           )}
         </Box>
       </Paper>
+    </Box>
+  );
+}
+
+type GameMode = 'checking' | 'online' | 'offline' | 'unavailable';
+
+export default function GamePage() {
+  const navigate = useNavigate();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  const [mode, setMode] = useState<GameMode>(() => (ONLINE_GAME_URL ? 'checking' : 'unavailable'));
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (!ONLINE_GAME_URL) {
+      setMode('unavailable');
+      return;
+    }
+    setMode('checking');
+  }, [reloadKey]);
+
+  useEffect(() => {
+    if (mode !== 'checking') return;
+    const timer = window.setTimeout(() => {
+      setMode((current) => (current === 'checking' ? 'unavailable' : current));
+    }, ONLINE_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [mode, reloadKey]);
+
+  if (mode === 'offline') {
+    return <OfflinePyrgaGame />;
+  }
+
+  return (
+    <Box
+      sx={{
+        p: 1.5,
+        pb: 'max(env(safe-area-inset-bottom), 96px)',
+        height: '100%',
+        overflowY: 'auto',
+        bgcolor: isDark ? '#0D1A2E' : '#FFFFFF',
+      }}
+    >
+      <AppHeader title="Игра" />
+
+      {mode === 'unavailable' ? (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2,
+            borderRadius: 3,
+            border: '1px solid',
+            borderColor: isDark ? 'rgba(162,188,216,0.24)' : 'rgba(31,163,91,0.2)',
+            bgcolor: isDark ? 'rgba(17,33,50,0.78)' : '#F7FBF8',
+          }}
+        >
+          <Typography sx={{ fontSize: 18, fontWeight: 800, mb: 0.8 }}>
+            Не доступно! Хотите играть офлайн?
+          </Typography>
+          {!ONLINE_GAME_URL && (
+            <Typography color="text.secondary" sx={{ mb: 1.2 }}>
+              Онлайн-игра не настроена. Укажи `VITE_ONLINE_GAME_URL` в `.env.production`.
+            </Typography>
+          )}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <Button variant="contained" onClick={() => setMode('offline')}>
+              Да, офлайн
+            </Button>
+            {ONLINE_GAME_URL && (
+              <Button variant="outlined" onClick={() => setReloadKey((prev) => prev + 1)}>
+                Повторить
+              </Button>
+            )}
+            <Button variant="text" color="inherit" onClick={() => navigate('/chats')}>
+              Нет
+            </Button>
+          </Stack>
+        </Paper>
+      ) : (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 1.1,
+            borderRadius: 3,
+            border: '1px solid',
+            borderColor: isDark ? 'rgba(162,188,216,0.24)' : 'rgba(31,163,91,0.2)',
+            bgcolor: isDark ? 'rgba(17,33,50,0.78)' : '#F7FBF8',
+          }}
+        >
+          <Typography sx={{ px: 0.5, pb: 1, fontWeight: 700 }}>
+            Онлайн-режим игры
+          </Typography>
+          <Box
+            sx={{
+              position: 'relative',
+              minHeight: '72dvh',
+              borderRadius: 2.2,
+              overflow: 'hidden',
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(122,172,220,0.26)' : 'rgba(31,163,91,0.24)',
+              bgcolor: isDark ? '#081425' : '#F2F8F3',
+            }}
+          >
+            {mode === 'checking' && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'grid',
+                  placeItems: 'center',
+                  zIndex: 2,
+                  bgcolor: isDark ? 'rgba(8,20,37,0.72)' : 'rgba(242,248,243,0.82)',
+                }}
+              >
+                <Stack spacing={1} sx={{ alignItems: 'center' }}>
+                  <CircularProgress size={26} />
+                  <Typography variant="body2" color="text.secondary">
+                    Проверяем сервер игры...
+                  </Typography>
+                </Stack>
+              </Box>
+            )}
+            {ONLINE_GAME_URL && (
+              <Box
+                key={`online-game-${reloadKey}`}
+                component="iframe"
+                src={ONLINE_GAME_URL}
+                title="Alga Online Game"
+                onLoad={() => setMode('online')}
+                onError={() => setMode('unavailable')}
+                sx={{
+                  width: '100%',
+                  height: '72dvh',
+                  border: 0,
+                  display: 'block',
+                }}
+              />
+            )}
+          </Box>
+        </Paper>
+      )}
     </Box>
   );
 }
