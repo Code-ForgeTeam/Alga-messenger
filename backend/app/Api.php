@@ -391,6 +391,55 @@ final class Api
         $userId = $this->authUserId();
         $this->assertCreator($userId);
 
+        $template = strtolower(trim((string)($body['template'] ?? 'custom')));
+        if ($template !== 'update') {
+            $template = 'custom';
+        }
+
+        $title = trim((string)($body['title'] ?? ''));
+        $message = trim((string)($body['message'] ?? ''));
+        if ($template === 'update') {
+            $title = 'Доступно обновление';
+            $message = 'Обновление на сайте';
+        }
+        if ($title === '' && $message === '') {
+            $this->json(['error' => 'Event title or message is required'], 400);
+        }
+
+        $downloadUrlRaw = trim((string)($body['downloadUrl'] ?? ''));
+        $downloadUrl = $this->normalizeExternalUrl($downloadUrlRaw);
+        if ($template === 'update' && $downloadUrl === null) {
+            $this->json(['error' => 'Для обновления требуется корректная ссылка downloadUrl (http/https)'], 400);
+        }
+        if ($template !== 'update' && $downloadUrlRaw !== '' && $downloadUrl === null) {
+            $this->json(['error' => 'Некорректная ссылка downloadUrl'], 400);
+        }
+
+        $dispatch = $this->sendAdminEventPush([
+            'template' => $template,
+            'title' => $title !== '' ? $title : 'Alga',
+            'message' => $message,
+            'downloadUrl' => $downloadUrl,
+        ]);
+        if (empty($dispatch['ok'])) {
+            $this->json([
+                'error' => (string)($dispatch['error'] ?? 'Не удалось отправить push-ивент'),
+            ], 500);
+        }
+
+        $this->json([
+            'ok' => true,
+            'event' => [
+                'id' => $this->uuid(),
+                'template' => $template,
+                'title' => $title !== '' ? $title : null,
+                'message' => $message !== '' ? $message : null,
+                'downloadUrl' => $downloadUrl,
+            ],
+            'sent' => (int)($dispatch['sent'] ?? 0),
+        ], 201);
+        return;
+
         $canUseDb = $this->ensureNotificationsTables();
 
         $template = strtolower(trim((string)($body['template'] ?? 'custom')));
@@ -692,6 +741,26 @@ final class Api
             return null;
         }
         return '#' . strtoupper(ltrim($value, '#'));
+    }
+
+    private function normalizeExternalUrl(string $raw): ?string
+    {
+        $value = trim($raw);
+        if ($value === '') {
+            return null;
+        }
+
+        $validated = filter_var($value, FILTER_VALIDATE_URL);
+        if (!is_string($validated) || $validated === '') {
+            return null;
+        }
+
+        $scheme = strtolower((string)parse_url($validated, PHP_URL_SCHEME));
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            return null;
+        }
+
+        return $validated;
     }
 
     private function notificationsFallbackPath(): string
@@ -2915,6 +2984,201 @@ final class Api
             }
         } catch (\Throwable) {
             // ignore push failures
+        }
+    }
+
+    private function sendAdminEventPush(array $event): array
+    {
+        $serverKey = trim((string)Config::get('FCM_SERVER_KEY', ''));
+        $firebaseV1 = $this->firebaseV1Credentials();
+        $canUseV1 = $firebaseV1 !== null;
+        $canUseLegacy = $serverKey !== '';
+
+        if ((!$canUseV1 && !$canUseLegacy) || !function_exists('curl_init')) {
+            return [
+                'ok' => false,
+                'sent' => 0,
+                'error' => 'Push-уведомления не настроены на сервере.',
+            ];
+        }
+        if (!$this->ensurePushTokensTable()) {
+            return [
+                'ok' => false,
+                'sent' => 0,
+                'error' => 'Таблица push_tokens недоступна.',
+            ];
+        }
+
+        try {
+            $tokenStmt = $this->db()->query(
+                "SELECT user_id, token, platform
+                 FROM push_tokens
+                 WHERE token IS NOT NULL AND token <> ''"
+            );
+            $tokenRows = $tokenStmt ? ($tokenStmt->fetchAll() ?: []) : [];
+            $tokenPayloadRows = [];
+            $seenTokens = [];
+            foreach ($tokenRows as $row) {
+                $token = trim((string)($row['token'] ?? ''));
+                if ($token === '' || isset($seenTokens[$token])) {
+                    continue;
+                }
+                $seenTokens[$token] = true;
+                $tokenPayloadRows[] = [
+                    'token' => $token,
+                    'userId' => trim((string)($row['user_id'] ?? '')),
+                    'platform' => trim((string)($row['platform'] ?? '')),
+                ];
+            }
+            if (!$tokenPayloadRows) {
+                return ['ok' => true, 'sent' => 0];
+            }
+
+            $title = trim((string)($event['title'] ?? 'Alga'));
+            if ($title === '') {
+                $title = 'Alga';
+            }
+            $body = trim((string)($event['message'] ?? ''));
+            if ($body === '') {
+                $body = 'Откройте приложение Alga';
+            }
+            if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+                if (mb_strlen($body) > 160) {
+                    $body = mb_substr($body, 0, 157) . '...';
+                }
+            } elseif (strlen($body) > 160) {
+                $body = substr($body, 0, 157) . '...';
+            }
+
+            $template = strtolower(trim((string)($event['template'] ?? 'custom')));
+            if ($template !== 'update') {
+                $template = 'custom';
+            }
+            $downloadUrl = $this->normalizeExternalUrl((string)($event['downloadUrl'] ?? ''));
+
+            $dataPayload = [
+                'type' => 'admin_event',
+                'eventTemplate' => $template,
+            ];
+            if ($downloadUrl !== null) {
+                $dataPayload['downloadUrl'] = $downloadUrl;
+            }
+
+            $sent = 0;
+
+            if ($canUseV1 && $firebaseV1 !== null) {
+                $accessToken = $this->firebaseAccessToken($firebaseV1);
+                if ($accessToken !== null) {
+                    foreach ($tokenPayloadRows as $tokenRow) {
+                        $token = (string)$tokenRow['token'];
+                        $payload = [
+                            'message' => [
+                                'token' => $token,
+                                'notification' => [
+                                    'title' => $title,
+                                    'body' => $body,
+                                ],
+                                'data' => $dataPayload,
+                                'android' => [
+                                    'priority' => 'high',
+                                    'notification' => [
+                                        'channel_id' => 'events',
+                                        'sound' => 'default',
+                                    ],
+                                ],
+                                'apns' => [
+                                    'headers' => [
+                                        'apns-priority' => '10',
+                                    ],
+                                    'payload' => [
+                                        'aps' => [
+                                            'sound' => 'default',
+                                            'content-available' => 1,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ];
+
+                        $result = $this->sendFcmV1Payload($accessToken, $firebaseV1['projectId'], $payload);
+                        if (!$result['ok'] && (int)($result['status'] ?? 0) === 401) {
+                            $this->firebaseAccessTokenCache = null;
+                            $refreshed = $this->firebaseAccessToken($firebaseV1);
+                            if ($refreshed !== null) {
+                                $result = $this->sendFcmV1Payload($refreshed, $firebaseV1['projectId'], $payload);
+                            }
+                        }
+
+                        if (!empty($result['ok'])) {
+                            $sent++;
+                        }
+                        $errorCode = strtoupper((string)($result['errorCode'] ?? ''));
+                        if ($this->isInvalidPushTokenError($errorCode)) {
+                            $this->deletePushTokenByValue($token);
+                        }
+                    }
+
+                    return ['ok' => true, 'sent' => $sent];
+                }
+            }
+
+            if (!$canUseLegacy) {
+                return [
+                    'ok' => false,
+                    'sent' => 0,
+                    'error' => 'Не удалось получить Firebase access token.',
+                ];
+            }
+
+            foreach (array_chunk($tokenPayloadRows, 500) as $chunkRows) {
+                $chunkTokens = array_values(array_map(
+                    fn ($row) => (string)$row['token'],
+                    $chunkRows
+                ));
+                if (!$chunkTokens) {
+                    continue;
+                }
+
+                $payload = [
+                    'registration_ids' => $chunkTokens,
+                    'priority' => 'high',
+                    'notification' => [
+                        'title' => $title,
+                        'body' => $body,
+                        'sound' => 'default',
+                        'android_channel_id' => 'events',
+                    ],
+                    'data' => $dataPayload,
+                    'content_available' => true,
+                    'mutable_content' => true,
+                    'android_channel_id' => 'events',
+                ];
+
+                $legacyResult = $this->sendFcmPayload($serverKey, $payload);
+                $sent += max(0, (int)($legacyResult['response']['success'] ?? 0));
+
+                $results = $legacyResult['response']['results'] ?? [];
+                if (!is_array($results)) {
+                    $results = [];
+                }
+                foreach ($results as $index => $result) {
+                    if (!is_array($result)) {
+                        continue;
+                    }
+                    $errorCode = strtoupper((string)($result['error'] ?? ''));
+                    if ($this->isInvalidPushTokenError($errorCode) && isset($chunkTokens[$index])) {
+                        $this->deletePushTokenByValue($chunkTokens[$index]);
+                    }
+                }
+            }
+
+            return ['ok' => true, 'sent' => $sent];
+        } catch (\Throwable) {
+            return [
+                'ok' => false,
+                'sent' => 0,
+                'error' => 'Не удалось отправить push-ивент.',
+            ];
         }
     }
 

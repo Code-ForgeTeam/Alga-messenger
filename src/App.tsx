@@ -542,8 +542,34 @@ export default function App() {
     let removeRegistrationError: (() => void) | null = null;
     let removeReceived: (() => void) | null = null;
     let removeAction: (() => void) | null = null;
+    const normalizePushUrl = (rawUrl: unknown): string | null => {
+      const value = String(rawUrl ?? '').trim();
+      if (!value) return null;
+      try {
+        const parsed = new URL(value);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return null;
+        }
+        return parsed.toString();
+      } catch {
+        return null;
+      }
+    };
+    const openPushUrl = (rawUrl: unknown): boolean => {
+      const normalized = normalizePushUrl(rawUrl);
+      if (!normalized) return false;
+      window.open(normalized, '_blank', 'noopener,noreferrer');
+      return true;
+    };
     const navigateFromPush = (payload: any) => {
       const data = payload?.notification?.data ?? payload?.data ?? {};
+      const pushType = String(data?.type ?? '').trim().toLowerCase();
+      if (pushType === 'admin_event') {
+        const template = String(data?.eventTemplate ?? data?.template ?? '').trim().toLowerCase();
+        const downloadUrl = data?.downloadUrl ?? data?.url ?? data?.link;
+        if (template === 'update' && openPushUrl(downloadUrl)) return;
+        if (openPushUrl(downloadUrl)) return;
+      }
       const targetChatId = String(data?.chatId ?? '').trim();
       if (!targetChatId) return;
       const targetPath = `/chat/${targetChatId}`;
@@ -572,6 +598,14 @@ export default function App() {
             id: 'messages',
             name: 'Messages',
             description: 'Уведомления о новых сообщениях',
+            importance: 5,
+            visibility: 1,
+            sound: 'default',
+          }).catch(() => null);
+          await PushNotifications.createChannel({
+            id: 'events',
+            name: 'Events',
+            description: 'Service and update notifications',
             importance: 5,
             visibility: 1,
             sound: 'default',

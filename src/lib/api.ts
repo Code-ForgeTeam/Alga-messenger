@@ -126,6 +126,7 @@ export const adminApi = {
     template?: 'update' | 'custom';
     title?: string;
     message?: string;
+    downloadUrl?: string;
     durationMs?: number;
     showOnce?: boolean;
     bgColor?: string;

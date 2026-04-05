@@ -57,6 +57,20 @@ const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: str
 const UPDATE_EVENT_TITLE = 'Доступно обновление';
 const UPDATE_EVENT_MESSAGE = 'Обновление на сайте';
 
+function normalizeHttpUrl(raw: string): string | null {
+  const value = raw.trim();
+  if (value === '') return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -76,6 +90,7 @@ export default function AdminPage() {
   const [eventTemplate, setEventTemplate] = useState<'update' | 'custom'>('update');
   const [eventTitle, setEventTitle] = useState(UPDATE_EVENT_TITLE);
   const [eventMessage, setEventMessage] = useState(UPDATE_EVENT_MESSAGE);
+  const [eventDownloadUrl, setEventDownloadUrl] = useState('');
   const [eventDurationSec, setEventDurationSec] = useState('5');
   const [isEventBusy, setIsEventBusy] = useState(false);
 
@@ -179,6 +194,7 @@ export default function AdminPage() {
   const sendEvent = async () => {
     const title = eventTemplate === 'update' ? UPDATE_EVENT_TITLE : eventTitle.trim();
     const message = eventTemplate === 'update' ? UPDATE_EVENT_MESSAGE : eventMessage.trim();
+    const normalizedDownloadUrl = normalizeHttpUrl(eventDownloadUrl);
     if (eventTemplate === 'custom' && title === '' && message === '') {
       pushSnackbar({
         message: 'Заполните заголовок или текст ивента',
@@ -188,8 +204,22 @@ export default function AdminPage() {
       return;
     }
 
-    const seconds = Number(eventDurationSec);
-    const durationMs = Number.isFinite(seconds) ? Math.max(2, Math.min(15, Math.round(seconds))) * 1000 : 5000;
+    if (eventTemplate === 'update' && !normalizedDownloadUrl) {
+      pushSnackbar({
+        message: 'Укажите корректную ссылку http:// или https:// на файл обновления',
+        timeout: 2800,
+        tone: 'error',
+      });
+      return;
+    }
+    if (eventTemplate === 'custom' && eventDownloadUrl.trim() !== '' && !normalizedDownloadUrl) {
+      pushSnackbar({
+        message: 'Ссылка должна начинаться с http:// или https://',
+        timeout: 2600,
+        tone: 'error',
+      });
+      return;
+    }
 
     setIsEventBusy(true);
     try {
@@ -197,13 +227,14 @@ export default function AdminPage() {
         template: eventTemplate,
         title,
         message,
-        durationMs,
+        downloadUrl: normalizedDownloadUrl ?? undefined,
         showOnce: true,
       });
       pushSnackbar({ message: 'Ивент отправлен', timeout: 2200, tone: 'success' });
       if (eventTemplate === 'custom') {
         setEventTitle('');
         setEventMessage('');
+        setEventDownloadUrl('');
       } else {
         setEventTitle(UPDATE_EVENT_TITLE);
         setEventMessage(UPDATE_EVENT_MESSAGE);
@@ -370,6 +401,20 @@ export default function AdminPage() {
 
                   <TextField
                     size="small"
+                    label="Ссылка на артефакт (APK)"
+                    placeholder="http://example.com/Alga.apk"
+                    value={eventDownloadUrl}
+                    onChange={(e) => setEventDownloadUrl(e.target.value)}
+                    required={eventTemplate === 'update'}
+                    helperText={
+                      eventTemplate === 'update'
+                        ? 'При нажатии на push с обновлением откроется эта ссылка.'
+                        : 'Необязательно: можно указать ссылку для кастомного ивента.'
+                    }
+                  />
+
+                  <TextField
+                    size="small"
                     type="number"
                     label="Время показа (сек)"
                     value={eventDurationSec}
@@ -378,7 +423,12 @@ export default function AdminPage() {
                   />
 
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8}>
-                    <Button sx={{ flex: 1 }} variant="contained" onClick={sendEvent} disabled={isEventBusy}>
+                    <Button
+                      sx={{ flex: 1 }}
+                      variant="contained"
+                      onClick={sendEvent}
+                      disabled={isEventBusy || (eventTemplate === 'update' && eventDownloadUrl.trim() === '')}
+                    >
                       {isEventBusy ? 'Отправка...' : 'Отправить ивент'}
                     </Button>
                     <Button
