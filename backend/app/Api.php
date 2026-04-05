@@ -16,6 +16,7 @@ final class Api
     private ?bool $pushTokensTableReady = null;
     private ?bool $storyTablesReady = null;
     private ?bool $notificationsTablesReady = null;
+    private ?array $chatColumns = null;
     private ?array $notificationColumns = null;
     private ?array $firebaseAccessTokenCache = null;
 
@@ -55,6 +56,7 @@ final class Api
         if ($path === '/api/users/me' && $method === 'PUT') { $this->updateMe($body); }
         if ($path === '/api/users/search' && $method === 'GET') { $this->searchUsers(); }
         if ($path === '/api/notifications' && $method === 'GET') { $this->activeNotifications(); }
+        if ($path === '/api/notifications/dismiss-all' && $method === 'POST') { $this->dismissAllNotifications(); }
 
         if (preg_match('#^/api/users/by-username/([^/]+)$#', $path, $m) && $method === 'GET') {
             $this->userByUsername(urldecode($m[1]));
@@ -621,6 +623,77 @@ final class Api
         $this->json(['ok' => true]);
     }
 
+    private function dismissAllNotifications(): void
+    {
+        $userId = $this->authUserId();
+        $dismissed = 0;
+
+        if ($this->ensureNotificationsTables()) {
+            try {
+                $rowsStmt = $this->db()->prepare(
+                    'SELECT n.id, n.show_once
+                     FROM notifications n
+                     WHERE n.active = 1
+                       AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP)
+                       AND NOT EXISTS (
+                         SELECT 1 FROM notification_dismissals d
+                         WHERE d.notification_id = n.id AND d.user_id = ?
+                       )'
+                );
+                $rowsStmt->execute([$userId]);
+                $rows = $rowsStmt->fetchAll() ?: [];
+
+                foreach ($rows as $row) {
+                    $notificationId = trim((string)($row['id'] ?? ''));
+                    if ($notificationId === '') {
+                        continue;
+                    }
+                    $showOnce = !empty($row['show_once']);
+
+                    if ($showOnce) {
+                        try {
+                            $this->db()->beginTransaction();
+                            $delDismiss = $this->db()->prepare('DELETE FROM notification_dismissals WHERE notification_id = ?');
+                            $delDismiss->execute([$notificationId]);
+                            $delNotif = $this->db()->prepare('DELETE FROM notifications WHERE id = ?');
+                            $delNotif->execute([$notificationId]);
+                            $this->db()->commit();
+                        } catch (\Throwable) {
+                            if ($this->db()->inTransaction()) {
+                                $this->db()->rollBack();
+                            }
+                        }
+                    } else {
+                        try {
+                            $dismissStmt = $this->db()->prepare(
+                                'INSERT INTO notification_dismissals (notification_id, user_id, dismissed_at)
+                                 VALUES (?, ?, CURRENT_TIMESTAMP)
+                                 ON DUPLICATE KEY UPDATE dismissed_at = CURRENT_TIMESTAMP'
+                            );
+                            $dismissStmt->execute([$notificationId, $userId]);
+                        } catch (\Throwable) {
+                            // fallback below
+                        }
+                    }
+
+                    $dismissed++;
+                }
+            } catch (\Throwable) {
+                // fallback below
+            }
+        }
+
+        $fallbackDismissed = $this->dismissAllNotificationsFallback($userId);
+        if ($fallbackDismissed > $dismissed) {
+            $dismissed = $fallbackDismissed;
+        }
+
+        $this->json([
+            'ok' => true,
+            'dismissed' => $dismissed,
+        ]);
+    }
+
     private function ensureNotificationsTables(): bool
     {
         if ($this->notificationsTablesReady !== null) {
@@ -943,6 +1016,46 @@ final class Api
         }
     }
 
+    private function dismissAllNotificationsFallback(string $userId): int
+    {
+        $rows = $this->readNotificationsFallback();
+        if (!$rows) {
+            return 0;
+        }
+
+        $changed = false;
+        $dismissed = 0;
+        $next = [];
+        foreach ($rows as $row) {
+            if (!$this->isFallbackNotificationActive($row)) {
+                $next[] = $row;
+                continue;
+            }
+
+            $showOnce = !empty($row['showOnce']);
+            if ($showOnce) {
+                $changed = true;
+                $dismissed++;
+                continue;
+            }
+
+            $dismissedBy = is_array($row['dismissedBy'] ?? null) ? $row['dismissedBy'] : [];
+            if (!in_array($userId, $dismissedBy, true)) {
+                $dismissedBy[] = $userId;
+                $row['dismissedBy'] = array_values(array_unique($dismissedBy));
+                $changed = true;
+                $dismissed++;
+            }
+            $next[] = $row;
+        }
+
+        if ($changed) {
+            $this->writeNotificationsFallback($next);
+        }
+
+        return $dismissed;
+    }
+
     private function deactivateNotificationsFallback(): int
     {
         $rows = $this->readNotificationsFallback();
@@ -1009,8 +1122,13 @@ final class Api
         }
 
         $chatId = $this->uuid();
-        $stmt = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, ?)');
-        $stmt->execute([$chatId, $name === '' ? null : $name, $type]);
+        if ($this->hasChatColumn('owner_id')) {
+            $stmt = $this->db()->prepare('INSERT INTO chats (id, name, type, owner_id) VALUES (?, ?, ?, ?)');
+            $stmt->execute([$chatId, $name === '' ? null : $name, $type, $ownerId]);
+        } else {
+            $stmt = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, ?)');
+            $stmt->execute([$chatId, $name === '' ? null : $name, $type]);
+        }
 
         $useGroupAdmins = $type === 'group' && $this->hasChatParticipantColumn('is_admin');
         $insertParticipant = $useGroupAdmins
@@ -1240,6 +1358,18 @@ final class Api
         if (strcasecmp($targetId, $actorId) === 0) {
             $this->json(['error' => 'Use leave group action for yourself'], 400);
         }
+        if ($this->hasChatColumn('owner_id')) {
+            try {
+                $ownerStmt = $this->db()->prepare('SELECT owner_id FROM chats WHERE id = ? LIMIT 1');
+                $ownerStmt->execute([$chatId]);
+                $ownerId = trim((string)$ownerStmt->fetchColumn());
+                if ($ownerId !== '' && strcasecmp($ownerId, $targetId) === 0) {
+                    $this->json(['error' => 'Group creator cannot be removed'], 400);
+                }
+            } catch (\Throwable) {
+                // ignore owner check issues
+            }
+        }
 
         $targetSelect = $this->hasChatParticipantColumn('is_admin')
             ? 'SELECT user_id, is_admin FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
@@ -1313,6 +1443,77 @@ final class Api
         $userId = $this->authUserId();
         $this->assertChatParticipant($chatId, $userId);
 
+        $typeStmt = $this->db()->prepare('SELECT type FROM chats WHERE id = ? LIMIT 1');
+        $typeStmt->execute([$chatId]);
+        $chatType = strtolower((string)$typeStmt->fetchColumn());
+
+        if ($chatType === 'ai') {
+            $allAiMessageIds = [];
+            try {
+                $allIdsStmt = $this->db()->query(
+                    'SELECT m.id
+                     FROM messages m
+                     JOIN chats c ON c.id = m.chat_id
+                     WHERE c.type = "ai"'
+                );
+                $allAiMessageIds = array_values(array_filter(array_map(
+                    fn ($row) => (string)($row['id'] ?? ''),
+                    $allIdsStmt->fetchAll() ?: []
+                )));
+            } catch (\Throwable) {
+                $allAiMessageIds = [];
+            }
+
+            $this->deleteAttachmentFilesByMessageIds($allAiMessageIds);
+
+            try {
+                $this->db()->exec(
+                    'DELETE m
+                     FROM messages m
+                     JOIN chats c ON c.id = m.chat_id
+                     WHERE c.type = "ai"'
+                );
+            } catch (\Throwable) {
+                // fallback for databases with restricted multi-table DELETE
+                $this->db()->exec('DELETE FROM messages WHERE chat_id IN (SELECT id FROM chats WHERE type = "ai")');
+            }
+
+            if ($this->hasChatParticipantColumn('unread_count')) {
+                try {
+                    $this->db()->exec(
+                        'UPDATE chat_participants cp
+                         JOIN chats c ON c.id = cp.chat_id
+                         SET cp.unread_count = 0
+                         WHERE c.type = "ai"'
+                    );
+                } catch (\Throwable) {
+                    // ignore unread sync errors
+                }
+            }
+
+            if ($this->ensureChatReadStateTable()) {
+                try {
+                    $this->db()->exec(
+                        'UPDATE chat_read_state rs
+                         JOIN chats c ON c.id = rs.chat_id
+                         SET rs.last_read_at = CURRENT_TIMESTAMP,
+                             rs.updated_at = CURRENT_TIMESTAMP
+                         WHERE c.type = "ai"'
+                    );
+                } catch (\Throwable) {
+                    // ignore read-state sync errors
+                }
+            }
+
+            try {
+                $this->db()->exec('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE type = "ai"');
+            } catch (\Throwable) {
+                // ignore timestamp sync errors
+            }
+
+            $this->json(['ok' => true, 'scope' => 'all-ai-chats']);
+        }
+
         $idsStmt = $this->db()->prepare('SELECT id FROM messages WHERE chat_id = ?');
         $idsStmt->execute([$chatId]);
         $messageIds = array_values(array_filter(array_map(
@@ -1336,6 +1537,21 @@ final class Api
         $deleteForAll = (bool)($body['deleteForAll'] ?? false);
 
         $this->assertChatParticipant($chatId, $userId);
+        if (!$deleteForAll && $this->hasChatColumn('owner_id')) {
+            try {
+                $ownerCheckStmt = $this->db()->prepare('SELECT type, owner_id FROM chats WHERE id = ? LIMIT 1');
+                $ownerCheckStmt->execute([$chatId]);
+                $ownerRow = $ownerCheckStmt->fetch() ?: [];
+                if (
+                    strtolower((string)($ownerRow['type'] ?? '')) === 'group' &&
+                    strcasecmp(trim((string)($ownerRow['owner_id'] ?? '')), $userId) === 0
+                ) {
+                    $this->json(['error' => 'Group creator cannot leave the group'], 400);
+                }
+            } catch (\Throwable) {
+                // ignore owner check errors
+            }
+        }
 
         if ($deleteForAll) {
             $idsStmt = $this->db()->prepare('SELECT id FROM messages WHERE chat_id = ?');
@@ -1484,8 +1700,13 @@ final class Api
 
         if (!$existing) {
             $chatId = $this->uuid();
-            $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, "saved")');
-            $insertChat->execute([$chatId, 'Saved']);
+            if ($this->hasChatColumn('owner_id')) {
+                $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type, owner_id) VALUES (?, ?, "saved", ?)');
+                $insertChat->execute([$chatId, 'Saved', $userId]);
+            } else {
+                $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, "saved")');
+                $insertChat->execute([$chatId, 'Saved']);
+            }
 
             if ($this->hasChatParticipantColumn('pinned')) {
                 $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, pinned) VALUES (?, ?, 1)');
@@ -1914,8 +2135,13 @@ final class Api
 
         if (!$existing) {
             $chatId = $this->uuid();
-            $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, "ai")');
-            $insertChat->execute([$chatId, 'AI']);
+            if ($this->hasChatColumn('owner_id')) {
+                $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type, owner_id) VALUES (?, ?, "ai", ?)');
+                $insertChat->execute([$chatId, 'AI', $userId]);
+            } else {
+                $insertChat = $this->db()->prepare('INSERT INTO chats (id, name, type) VALUES (?, ?, "ai")');
+                $insertChat->execute([$chatId, 'AI']);
+            }
 
             if ($this->hasChatParticipantColumn('pinned')) {
                 $insertParticipant = $this->db()->prepare('INSERT INTO chat_participants (chat_id, user_id, pinned) VALUES (?, ?, 1)');
@@ -3038,6 +3264,40 @@ final class Api
         }
 
         try {
+            $ownerId = '';
+            if ($this->hasChatColumn('owner_id')) {
+                $ownerStmt = $this->db()->prepare('SELECT owner_id FROM chats WHERE id = ? LIMIT 1');
+                $ownerStmt->execute([$chatId]);
+                $ownerId = trim((string)$ownerStmt->fetchColumn());
+            }
+
+            $preferred = trim((string)$preferredUserId);
+            if ($ownerId === '' && $preferred !== '' && $this->hasChatColumn('owner_id')) {
+                try {
+                    $setOwnerStmt = $this->db()->prepare('UPDATE chats SET owner_id = ? WHERE id = ?');
+                    $setOwnerStmt->execute([$preferred, $chatId]);
+                    $ownerId = $preferred;
+                } catch (\Throwable) {
+                    $ownerId = '';
+                }
+            }
+
+            if ($ownerId !== '') {
+                $ownerParticipantStmt = $this->db()->prepare(
+                    'SELECT 1 FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
+                );
+                $ownerParticipantStmt->execute([$chatId, $ownerId]);
+                if ($ownerParticipantStmt->fetchColumn()) {
+                    $enforceOwnerStmt = $this->db()->prepare(
+                        'UPDATE chat_participants
+                         SET is_admin = CASE WHEN user_id = ? THEN 1 ELSE 0 END
+                         WHERE chat_id = ?'
+                    );
+                    $enforceOwnerStmt->execute([$ownerId, $chatId]);
+                    return;
+                }
+            }
+
             $countAdminsStmt = $this->db()->prepare(
                 'SELECT COUNT(*) FROM chat_participants WHERE chat_id = ? AND is_admin = 1'
             );
@@ -3047,7 +3307,6 @@ final class Api
             }
 
             $targetUserId = '';
-            $preferred = trim((string)$preferredUserId);
             if ($preferred !== '') {
                 $checkPreferredStmt = $this->db()->prepare(
                     'SELECT user_id FROM chat_participants WHERE chat_id = ? AND user_id = ? LIMIT 1'
@@ -4658,6 +4917,12 @@ final class Api
         return isset($columns[strtolower($column)]);
     }
 
+    private function hasChatColumn(string $column): bool
+    {
+        $columns = $this->chatColumns();
+        return isset($columns[strtolower($column)]);
+    }
+
     private function hasUserColumn(string $column): bool
     {
         $columns = $this->userColumns();
@@ -4734,6 +4999,48 @@ final class Api
         }
 
         return $this->hasUserColumn('is_banned') && $this->hasUserColumn('ban_reason');
+    }
+
+    private function chatColumns(): array
+    {
+        if ($this->chatColumns !== null) {
+            return $this->chatColumns;
+        }
+
+        $columns = [];
+        try {
+            $stmt = $this->db()->query('SHOW COLUMNS FROM chats');
+            foreach ($stmt->fetchAll() as $row) {
+                $name = strtolower((string)($row['Field'] ?? ''));
+                if ($name !== '') {
+                    $columns[$name] = true;
+                }
+            }
+
+            $optional = [
+                'owner_id' => 'CHAR(36) NULL',
+            ];
+            foreach ($optional as $name => $definition) {
+                if (isset($columns[$name])) {
+                    continue;
+                }
+                try {
+                    $this->db()->exec("ALTER TABLE chats ADD COLUMN {$name} {$definition}");
+                    $columns[$name] = true;
+                } catch (\Throwable) {
+                    // keep graceful fallback for shared hosting with no ALTER privileges
+                }
+            }
+        } catch (\Throwable) {
+            $columns = [
+                'id' => true,
+                'name' => true,
+                'type' => true,
+            ];
+        }
+
+        $this->chatColumns = $columns;
+        return $columns;
     }
 
     private function chatParticipantColumns(): array

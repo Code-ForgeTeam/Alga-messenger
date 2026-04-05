@@ -54,6 +54,7 @@ interface NotificationState {
   addBanner: (banner: NotificationBanner) => void;
   removeBanner: (id: string) => void;
   dismissBanner: (id: string) => Promise<void>;
+  dismissAllBanners: () => Promise<void>;
 }
 
 export const useNotificationStore = create<NotificationState>((set, get) => ({
@@ -90,6 +91,17 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     get().removeBanner(id);
     try {
       await notificationsApi.dismiss(id);
+    } catch {
+      // silent
+    }
+  },
+
+  dismissAllBanners: async () => {
+    const ids = get().banners.map((banner) => String(banner.id || '').trim()).filter(Boolean);
+    ids.forEach((id) => markBannerDismissedLocal(id));
+    set({ banners: [] });
+    try {
+      await notificationsApi.dismissAll();
     } catch {
       // silent
     }

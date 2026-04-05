@@ -314,6 +314,7 @@ export default function App() {
   const initSocketHandlers = useChatStore((s) => s.initSocketHandlers);
   const loadChats = useChatStore((s) => s.loadChats);
   const loadBanners = useNotificationStore((s) => s.loadBanners);
+  const dismissAllBanners = useNotificationStore((s) => s.dismissAllBanners);
   const { bgEffect, effectIntensity, launchIntroEnabled } = useSettingsStore();
   const { pathname } = useLocation();
   const isChatRoute = pathname.startsWith('/chat/');
@@ -504,6 +505,7 @@ export default function App() {
   useEffect(() => {
     if (!auth.isAuthenticated) return;
     initSocketHandlers();
+    dismissAllBanners().catch(() => null);
     loadChats();
     useSettingsStore.getState().loadPrivacyFromServer();
     loadBanners(APP_VERSION_CODE);
@@ -519,7 +521,7 @@ export default function App() {
     }, 120000);
 
     return () => window.clearInterval(pollId);
-  }, [auth.isAuthenticated, initSocketHandlers, loadChats, loadBanners]);
+  }, [auth.isAuthenticated, initSocketHandlers, loadChats, loadBanners, dismissAllBanners]);
 
   useEffect(() => {
     if (!auth.isAuthenticated) return;
@@ -533,6 +535,52 @@ export default function App() {
       Notification.requestPermission().catch(() => null);
     }
   }, [auth.isAuthenticated]);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated) return;
+
+    let disposed = false;
+    let removeBackButton: (() => void) | null = null;
+
+    const initBackButton = async () => {
+      try {
+        const [{ Capacitor }, { App: CapacitorApp }] = await Promise.all([
+          import('@capacitor/core'),
+          import('@capacitor/app'),
+        ]);
+        if (disposed) return;
+        if (Capacitor.getPlatform() === 'web') return;
+
+        const handle = await CapacitorApp.addListener('backButton', () => {
+          if (pathname === '/chats' || pathname === '/auth') {
+            CapacitorApp.exitApp();
+            return;
+          }
+          navigate('/chats', { replace: true });
+        });
+
+        removeBackButton = () => {
+          try {
+            const result = handle.remove();
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              void (result as Promise<void>).catch(() => null);
+            }
+          } catch {
+            // ignore
+          }
+        };
+      } catch {
+        // ignore when capacitor app plugin is unavailable
+      }
+    };
+
+    void initBackButton();
+
+    return () => {
+      disposed = true;
+      removeBackButton?.();
+    };
+  }, [auth.isAuthenticated, navigate, pathname]);
 
   useEffect(() => {
     if (!auth.isAuthenticated) return;
@@ -654,6 +702,7 @@ export default function App() {
 
         const receivedHandle = await PushNotifications.addListener('pushNotificationReceived', () => {
           if (disposed) return;
+          dismissAllBanners().catch(() => null);
           loadChats({ silent: true }).catch(() => null);
         });
         removeReceived = () => {
@@ -670,6 +719,7 @@ export default function App() {
         const actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
           if (disposed) return;
           PushNotifications.removeAllDeliveredNotifications().catch(() => null);
+          dismissAllBanners().catch(() => null);
           loadChats({ silent: true }).catch(() => null);
           navigateFromPush(notification);
         });
@@ -688,6 +738,7 @@ export default function App() {
           if (disposed || !isActive) return;
           PushNotifications.removeAllDeliveredNotifications().catch(() => null);
           pushApi.unregisterToken('').catch(() => null);
+          dismissAllBanners().catch(() => null);
           PushNotifications.register().catch(() => null);
           loadChats({ silent: true }).catch(() => null);
         });
@@ -718,7 +769,7 @@ export default function App() {
       removeAction?.();
       removeAppState?.();
     };
-  }, [auth.isAuthenticated, loadChats, navigate]);
+  }, [auth.isAuthenticated, loadChats, navigate, dismissAllBanners]);
 
   const dismissUpdateDialog = () => {
     if (apkUpdate) {

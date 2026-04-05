@@ -121,6 +121,7 @@ export const notificationsApi = {
   getActive: async (versionCode: number) =>
     (await api.get('/notifications', { params: { vc: versionCode } })).data,
   dismiss: async (id: string) => (await api.post(`/notifications/${id}/dismiss`)).data,
+  dismissAll: async () => (await api.post('/notifications/dismiss-all')).data,
 };
 
 export const adminApi = {

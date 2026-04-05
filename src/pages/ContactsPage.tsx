@@ -32,6 +32,8 @@ export default function ContactsPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const contacts = useContactsStore((s) => s.contacts);
+  const addContact = useContactsStore((s) => s.addContact);
+  const removeContact = useContactsStore((s) => s.removeContact);
   const renameContact = useContactsStore((s) => s.renameContact);
   const resetContactName = useContactsStore((s) => s.resetContactName);
   const pushSnackbar = useSnackbarStore((s) => s.push);
@@ -97,6 +99,20 @@ export default function ContactsPage() {
       timeout: 4200,
       onUndo: () => renameContact(contactId, prevName),
     });
+  };
+
+  const deleteContact = () => {
+    if (!selectedContact) return;
+    const target = selectedContact;
+    if (!window.confirm(`Удалить контакт ${target.displayName}?`)) return;
+    removeContact(target.id);
+    closeContactMenu();
+    pushSnackbar({
+      message: 'Контакт удален',
+      timeout: 4200,
+      onUndo: () => addContact(target.user, target.displayName),
+    });
+    setSelectedContact(null);
   };
 
   return (
@@ -190,6 +206,7 @@ export default function ContactsPage() {
       >
         <MenuItem onClick={openRenameDialog}>Изменить имя локально</MenuItem>
         <MenuItem onClick={resetLocalName}>Сбросить имя</MenuItem>
+        <MenuItem sx={{ color: 'error.main' }} onClick={deleteContact}>Удалить контакт</MenuItem>
       </Menu>
 
       <Dialog open={renameOpen} onClose={() => setRenameOpen(false)} fullWidth maxWidth="xs">
