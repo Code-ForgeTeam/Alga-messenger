@@ -121,6 +121,8 @@ export default function ChatsPage() {
   const isDark = theme.palette.mode === 'dark';
   const setTheme = useSettingsStore((s) => s.setTheme);
   const chatCompactMode = useSettingsStore((s) => s.chatCompactMode);
+  const savedChatHidden = useSettingsStore((s) => s.savedChatHidden);
+  const setSavedChatHidden = useSettingsStore((s) => s.setSavedChatHidden);
   const navigate = useNavigate();
   const {
     chats,
@@ -511,7 +513,7 @@ export default function ChatsPage() {
 
   const visible = useMemo(() => {
     const needle = q.toLowerCase().trim();
-    const base = chats.filter((c) => !c.archived && c.type !== 'ai');
+    const base = chats.filter((c) => !c.archived && c.type !== 'ai' && !(savedChatHidden && c.type === 'saved'));
     if (!needle) return base;
 
     return base.filter((chat) => {
@@ -520,7 +522,7 @@ export default function ChatsPage() {
       const name = chat.name || contactName || peer?.fullName || peer?.username || '';
       return name.toLowerCase().includes(needle);
     });
-  }, [chats, q, getContactByUserId, user?.id]);
+  }, [chats, q, getContactByUserId, user?.id, savedChatHidden]);
 
   const selectedChat = useMemo(
     () => (selectedChatId ? chats.find((item) => item.id === selectedChatId) || null : null),
@@ -553,7 +555,7 @@ export default function ChatsPage() {
       if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
         navigator.vibrate(16);
       }
-    }, 3000);
+    }, 650);
   };
 
   const handleChatClick = (chatId: string) => {
@@ -1376,6 +1378,18 @@ export default function ChatsPage() {
         >
           {selectedChat?.pinned ? 'Открепить' : 'Закрепить'}
         </MenuItem>
+        {selectedChat?.type === 'saved' && (
+          <MenuItem
+            onClick={() => {
+              setSavedChatHidden(true);
+              setSelectedChatId(null);
+              setChatActionsAnchor(null);
+              pushSnackbar({ message: 'Избранное скрыто из списка чатов', timeout: 1800 });
+            }}
+          >
+            Скрыть из списка чатов
+          </MenuItem>
+        )}
         {selectedChat?.type !== 'saved' && (
           <MenuItem
             onClick={() => {

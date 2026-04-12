@@ -109,6 +109,7 @@ final class Api
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteMessage($m[1], $body); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reaction$#', $path, $m) && $method === 'POST') { $this->setMessageReaction($m[1], $body); }
         if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reaction$#', $path, $m) && $method === 'DELETE') { $this->removeMessageReaction($m[1]); }
+        if (preg_match('#^/api/messages/([a-zA-Z0-9\-]+)/reactions$#', $path, $m) && $method === 'GET') { $this->messageReactions($m[1]); }
         if (preg_match('#^/api/notifications/([a-zA-Z0-9\-]+)/dismiss$#', $path, $m) && $method === 'POST') { $this->dismissNotification($m[1]); }
 
         $this->json(['error' => 'Not found', 'path' => $path], 404);
@@ -2288,6 +2289,50 @@ final class Api
             'messageId' => $messageId,
             'reactions' => $this->messageReactionSummary($messageId, $userId),
         ]);
+    }
+
+    private function messageReactions(string $messageId): void
+    {
+        $viewerId = $this->authUserId();
+        $message = $this->findMessageForParticipant($messageId, $viewerId);
+        if (!$message) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        if (!$this->ensureMessageReactionsTable()) {
+            $this->json(['items' => []]);
+        }
+
+        $limit = (int)($_GET['limit'] ?? 300);
+        if ($limit < 1) $limit = 1;
+        if ($limit > 500) $limit = 500;
+
+        $stmt = $this->db()->prepare(
+            'SELECT mr.user_id, mr.reaction, mr.created_at, u.username, u.full_name, u.avatar
+             FROM message_reactions mr
+             JOIN users u ON u.id = mr.user_id
+             WHERE mr.message_id = ?
+             ORDER BY mr.created_at DESC
+             LIMIT ' . $limit
+        );
+        $stmt->execute([$messageId]);
+        $rows = $stmt->fetchAll() ?: [];
+        $items = array_map(function (array $row): array {
+            $userId = (string)($row['user_id'] ?? '');
+            return [
+                'userId' => $userId,
+                'reaction' => (string)($row['reaction'] ?? ''),
+                'reactedAt' => isset($row['created_at']) ? date('c', strtotime((string)$row['created_at'])) : null,
+                'user' => [
+                    'id' => $userId,
+                    'username' => (string)($row['username'] ?? ''),
+                    'fullName' => (string)($row['full_name'] ?? ''),
+                    'avatar' => $row['avatar'] ?? null,
+                ],
+            ];
+        }, $rows);
+
+        $this->json(['items' => $items]);
     }
 
 

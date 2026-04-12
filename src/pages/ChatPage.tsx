@@ -26,6 +26,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import PhotoCameraRoundedIcon from '@mui/icons-material/PhotoCameraRounded';
 import CollectionsRoundedIcon from '@mui/icons-material/CollectionsRounded';
+import InsertEmoticonRoundedIcon from '@mui/icons-material/InsertEmoticonRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { messageApi, uploadApi, userApi } from '../lib/api';
@@ -34,6 +35,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useContactsStore } from '../stores/contactsStore';
 import type { Attachment, Message, User } from '../lib/types';
 import { useSnackbarStore } from '../stores/snackbarStore';
+import { useSettingsStore } from '../stores/settingsStore';
 
 const formatPresence = (status?: User['status'], lastSeen?: string): string => {
   if (status === 'online') return 'в сети';
@@ -63,6 +65,10 @@ const formatGroupMembers = (total: number): string => {
 
 const QUICK_REACTIONS = ['❤️', '👍', '👎', '🔥'] as const;
 type QuickReaction = (typeof QUICK_REACTIONS)[number];
+const QUICK_EMOJIS = ['😀', '😁', '😂', '😊', '😍', '😘', '🤔', '😎', '🥳', '🙏', '👍', '🔥', '❤️', '👏', '🤝', '😢', '😡'];
+const RECENT_EMOJI_STORAGE_KEY = 'alga:recent-emojis';
+const REACTION_VIEWER_LIMIT = 300;
+const GALLERY_PAGE_SIZE = 40;
 const USERNAME_MENTION_RE = /@([A-Za-z0-9_]{3,32})/g;
 const MESSAGE_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
@@ -147,7 +153,19 @@ type DeviceGalleryItem = {
   path?: string;
 };
 
-const IMAGE_FILE_RE = /\.(jpe?g|png|gif|webp|heic|heif|bmp|avif)$/i;
+type ReactionViewerItem = {
+  userId: string;
+  reaction: string;
+  reactedAt?: string;
+  user: {
+    id: string;
+    username?: string;
+    fullName?: string;
+    avatar?: string;
+  };
+};
+
+const IMAGE_FILE_RE = /\.(jpe?g|jfif|png|gif|webp|heic|heif|bmp|avif)$/i;
 
 const normalizeNativePath = (value: string): string => {
   const raw = String(value || '').trim();
@@ -156,6 +174,16 @@ const normalizeNativePath = (value: string): string => {
     return raw;
   }
   return `/${raw.replace(/^\/+/, '')}`;
+};
+
+const galleryPathPriority = (pathValue: string): number => {
+  const value = String(pathValue || '').toLowerCase();
+  if (value.includes('/dcim/camera')) return 0;
+  if (value.includes('/camera')) return 1;
+  if (value.includes('/pictures')) return 2;
+  if (value.includes('/screenshots')) return 3;
+  if (value.includes('/download')) return 4;
+  return 9;
 };
 
 export default function ChatPage() {
@@ -184,6 +212,8 @@ export default function ChatPage() {
   const me = useAuthStore((s) => s.user);
   const getContactByUserId = useContactsStore((s) => s.getContactByUserId);
   const pushSnackbar = useSnackbarStore((s) => s.push);
+  const savedChatHidden = useSettingsStore((s) => s.savedChatHidden);
+  const setSavedChatHidden = useSettingsStore((s) => s.setSavedChatHidden);
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const [text, setText] = useState('');
@@ -202,11 +232,23 @@ export default function ChatPage() {
   const [mediaPickerThumbs, setMediaPickerThumbs] = useState<string[]>([]);
   const [deviceGalleryItems, setDeviceGalleryItems] = useState<DeviceGalleryItem[]>([]);
   const [deviceGalleryLoading, setDeviceGalleryLoading] = useState(false);
+  const [galleryVisibleCount, setGalleryVisibleCount] = useState(GALLERY_PAGE_SIZE);
+  const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
+  const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
+  const [reactionViewerOpen, setReactionViewerOpen] = useState(false);
+  const [reactionViewerLoading, setReactionViewerLoading] = useState(false);
+  const [reactionViewerMessageId, setReactionViewerMessageId] = useState<string | null>(null);
+  const [reactionViewerItems, setReactionViewerItems] = useState<ReactionViewerItem[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const messageInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryListRef = useRef<HTMLDivElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const lastRenderedMessageIdRef = useRef<string>('');
+  const galleryLastLoadedAtRef = useRef<number>(0);
+  const galleryLoadInFlightRef = useRef<boolean>(false);
+  const reactionHoldTimerRef = useRef<number | null>(null);
   const mentionCacheRef = useRef<Record<string, string>>({});
   const edgeSwipeRef = useRef<{ active: boolean; startX: number; startY: number; swiped: boolean }>({
     active: false,
@@ -218,6 +260,30 @@ export default function ChatPage() {
   const reactionTimerRef = useRef<number | null>(null);
 
   const chat = chats.find((c) => c.id === chatId);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_EMOJI_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const normalized = parsed
+        .map((item) => String(item || '').trim())
+        .filter((item, index, arr) => item !== '' && arr.indexOf(item) === index)
+        .slice(0, 18);
+      setRecentEmojis(normalized);
+    } catch {
+      // ignore invalid local data
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENT_EMOJI_STORAGE_KEY, JSON.stringify(recentEmojis.slice(0, 18)));
+    } catch {
+      // local storage can be unavailable
+    }
+  }, [recentEmojis]);
 
   useEffect(() => {
     setCurrentChat(chatId);
@@ -239,6 +305,11 @@ export default function ChatPage() {
     lastRenderedMessageIdRef.current = '';
     setSelectedMessage(null);
     setEditingMessage(null);
+    setReactionViewerOpen(false);
+    setReactionViewerLoading(false);
+    setReactionViewerMessageId(null);
+    setReactionViewerItems([]);
+    setEmojiAnchor(null);
   }, [chatId]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
@@ -274,18 +345,37 @@ export default function ChatPage() {
   }, [chatId, chatMessages, me?.id, markAsRead]);
 
   const reactions = useMemo(() => {
-    const map: Record<string, { mine?: string; top?: string; total: number }> = {};
+    const map: Record<string, { mine?: string; total: number; entries: Array<{ value: string; total: number }> }> = {};
     for (const item of chatMessages) {
       const raw = (item as any)?.reactions;
       const mine = typeof raw?.mine === 'string' ? raw.mine : undefined;
       const counts = raw?.counts && typeof raw.counts === 'object' ? (raw.counts as Record<string, number>) : {};
-      const entries = Object.entries(counts || {}).filter(([key]) => !!key);
-      const top = entries.sort((a, b) => (b[1] || 0) - (a[1] || 0))[0]?.[0];
-      const total = entries.reduce((sum, [, value]) => sum + Number(value || 0), 0);
-      map[item.id] = { mine, top, total };
+      const entries = Object.entries(counts || {})
+        .map(([value, total]) => ({
+          value: String(value || '').trim(),
+          total: Number(total || 0),
+        }))
+        .filter((entry) => entry.value !== '' && Number.isFinite(entry.total) && entry.total > 0)
+        .sort((a, b) => b.total - a.total || a.value.localeCompare(b.value))
+        .slice(0, 8);
+      const total = entries.reduce((sum, entry) => sum + entry.total, 0);
+      map[item.id] = { mine, total, entries };
     }
     return map;
   }, [chatMessages]);
+
+  const emojiPalette = useMemo(() => {
+    const merged = [...recentEmojis, ...QUICK_EMOJIS];
+    return merged
+      .map((item) => String(item || '').trim())
+      .filter((item, index, arr) => item !== '' && arr.indexOf(item) === index)
+      .slice(0, 24);
+  }, [recentEmojis]);
+
+  const visibleDeviceGalleryItems = useMemo(
+    () => deviceGalleryItems.slice(0, galleryVisibleCount),
+    [deviceGalleryItems, galleryVisibleCount],
+  );
 
   const rows = useMemo(() => {
     const result: Array<{ type: 'date'; key: string; label: string } | { type: 'message'; key: string; value: Message }> = [];
@@ -420,7 +510,22 @@ export default function ChatPage() {
     return `data:image/jpeg;base64,${normalized}`;
   };
 
+  const base64ToFile = (base64: string, fileName: string, mimeType: string): File => {
+    const cleaned = String(base64 || '').replace(/\s+/g, '');
+    const binary = atob(cleaned);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new File([bytes], fileName, { type: mimeType });
+  };
+
   const loadDeviceGallery = async () => {
+    if (galleryLoadInFlightRef.current) return;
+    const hadCachedItems = deviceGalleryItems.length > 0;
+    if (hadCachedItems && Date.now() - galleryLastLoadedAtRef.current < 20000) return;
+
+    galleryLoadInFlightRef.current = true;
     setDeviceGalleryLoading(true);
     try {
       const [{ Capacitor }, mediaModule, filesystemModule] = await Promise.all([
@@ -435,23 +540,82 @@ export default function ChatPage() {
       }
 
       const { Media } = mediaModule;
+      const normalizeFromMediaResult = (items: any[]): DeviceGalleryItem[] => {
+        const next: DeviceGalleryItem[] = [];
+        const seen = new Set<string>();
+        for (const media of items) {
+          const identifier = String(media?.identifier || '').trim();
+          const data = String(media?.data || '').trim();
+          const pathValue = normalizeNativePath(String(media?.path || identifier || ''));
+          const previewUrl = data
+            ? toDataUrl(data)
+            : pathValue
+              ? (
+                pathValue.startsWith('http://') ||
+                pathValue.startsWith('https://') ||
+                pathValue.startsWith('data:')
+                  ? pathValue
+                  : Capacitor.convertFileSrc(pathValue)
+              )
+              : '';
+          const key = identifier || pathValue || previewUrl;
+          if (!key || !previewUrl || seen.has(key)) continue;
+          seen.add(key);
+          next.push({
+            identifier: identifier || key,
+            path: pathValue || undefined,
+            data: data || undefined,
+            previewUrl,
+            creationDate: String(media?.creationDate || '').trim() || undefined,
+          });
+        }
+        return next
+          .sort((a, b) => new Date(b.creationDate || 0).getTime() - new Date(a.creationDate || 0).getTime())
+          .slice(0, 220);
+      };
       if (platform === 'android') {
+        try {
+          const mediaResult = await Media.getMedias({
+            quantity: 260,
+            thumbnailWidth: 260,
+            thumbnailHeight: 260,
+            thumbnailQuality: 60,
+            types: 'photos',
+            sort: [{ key: 'creationDate', ascending: false }],
+          });
+          const fromMedia = normalizeFromMediaResult(Array.isArray(mediaResult?.medias) ? mediaResult.medias : []);
+          if (fromMedia.length > 0) {
+            setDeviceGalleryItems(fromMedia);
+            setGalleryVisibleCount(GALLERY_PAGE_SIZE);
+            galleryLastLoadedAtRef.current = Date.now();
+            return;
+          }
+        } catch {
+          // fallback to filesystem scan below
+        }
+
         const { Filesystem } = filesystemModule;
         const albums = await Media.getAlbums();
         const albumPaths = (Array.isArray(albums?.albums) ? albums.albums : [])
           .map((album) => normalizeNativePath(String(album?.identifier || '')))
           .filter((value, index, arr) => value !== '' && arr.indexOf(value) === index)
+          .sort((a, b) => galleryPathPriority(a) - galleryPathPriority(b) || a.localeCompare(b))
           .slice(0, 20);
 
         const next: DeviceGalleryItem[] = [];
         const seen = new Set<string>();
-        for (const albumPath of albumPaths) {
-          if (next.length >= 180) break;
+        for (let albumIndex = 0; albumIndex < albumPaths.length; albumIndex += 1) {
+          if (next.length >= 260) break;
+          const albumPath = albumPaths[albumIndex];
           try {
             const listed = await Filesystem.readdir({ path: albumPath });
-            const files = Array.isArray(listed?.files) ? listed.files : [];
+            const files = (Array.isArray(listed?.files) ? listed.files : [])
+              .filter((fileInfo) => String(fileInfo?.type || '') === 'file')
+              .filter((fileInfo) => IMAGE_FILE_RE.test(String(fileInfo?.name || '').trim()))
+              .sort((a, b) => Number(b?.mtime || 0) - Number(a?.mtime || 0))
+              .slice(0, 40);
             for (const fileInfo of files) {
-              if (next.length >= 180) break;
+              if (next.length >= 260) break;
               if (String(fileInfo?.type || '') !== 'file') continue;
               const name = String(fileInfo?.name || '').trim();
               if (!IMAGE_FILE_RE.test(name)) continue;
@@ -468,6 +632,10 @@ export default function ChatPage() {
                 creationDate: Number.isFinite(mtime) && mtime > 0 ? new Date(mtime).toISOString() : undefined,
               });
             }
+
+            if (albumIndex > 0 && albumIndex % 2 === 0) {
+              await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+            }
           } catch {
             // skip unreadable album path and continue
           }
@@ -475,43 +643,33 @@ export default function ChatPage() {
 
         const sorted = next
           .sort((a, b) => new Date(b.creationDate || 0).getTime() - new Date(a.creationDate || 0).getTime())
-          .slice(0, 120);
+          .slice(0, 220);
         setDeviceGalleryItems(sorted);
+        setGalleryVisibleCount(GALLERY_PAGE_SIZE);
+        galleryLastLoadedAtRef.current = Date.now();
         return;
       }
 
       const response = await Media.getMedias({
-        quantity: 120,
-        thumbnailWidth: 280,
-        thumbnailHeight: 280,
-        thumbnailQuality: 70,
+        quantity: 220,
+        thumbnailWidth: 260,
+        thumbnailHeight: 260,
+        thumbnailQuality: 58,
         types: 'photos',
-        sort: [
-          {
-            key: 'creationDate',
-            ascending: false,
-          },
-        ],
+        sort: [{ key: 'creationDate', ascending: false }],
       });
 
-      const items = Array.isArray(response?.medias) ? response.medias : [];
-      const normalized: DeviceGalleryItem[] = [];
-      for (const media of items) {
-        const identifier = String(media?.identifier || '').trim();
-        const data = String(media?.data || '').trim();
-        if (!identifier || !data) continue;
-        normalized.push({
-          identifier,
-          data,
-          previewUrl: toDataUrl(data),
-          creationDate: media?.creationDate,
-        });
-      }
+      const normalized = normalizeFromMediaResult(Array.isArray(response?.medias) ? response.medias : []);
       setDeviceGalleryItems(normalized);
+      setGalleryVisibleCount(GALLERY_PAGE_SIZE);
+      galleryLastLoadedAtRef.current = Date.now();
     } catch {
-      setDeviceGalleryItems([]);
-      pushSnackbar({ message: 'Не удалось загрузить фото устройства', timeout: 2200, tone: 'error' });
+      if (!hadCachedItems) {
+        setDeviceGalleryItems([]);
+      }
+      if (!hadCachedItems) pushSnackbar({ message: 'Не удалось загрузить фото устройства', timeout: 2200, tone: 'error' });
     } finally {
+      galleryLoadInFlightRef.current = false;
       setDeviceGalleryLoading(false);
     }
   };
@@ -644,16 +802,21 @@ export default function ChatPage() {
         return;
       }
 
+      setMediaPickerOpen(false);
       const photo = await Camera.getPhoto({
         source: CameraSource.Camera,
-        resultType: CameraResultType.Uri,
-        quality: 92,
+        resultType: CameraResultType.Base64,
+        quality: 78,
+        width: 1600,
+        height: 1600,
       });
-      const webPath = String(photo?.webPath || '').trim();
-      if (!webPath) return;
-
-      const file = await fileFromWebPath(webPath, `camera-${Date.now()}`);
-      setMediaPickerThumbs((prev) => [webPath, ...prev].slice(0, 24));
+      const base64 = String(photo?.base64String || '').trim();
+      if (!base64) return;
+      const format = String(photo?.format || 'jpg').trim().toLowerCase();
+      const ext = format === 'png' ? 'png' : 'jpg';
+      const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+      const file = base64ToFile(base64, `camera-${Date.now()}.${ext}`, mime);
+      setMediaPickerThumbs((prev) => [`data:${mime};base64,${base64}`, ...prev].slice(0, 24));
       await appendAndUploadFiles([file]);
     } catch {
       pushSnackbar({ message: 'Не удалось сделать снимок', timeout: 2200, tone: 'error' });
@@ -675,6 +838,15 @@ export default function ChatPage() {
     } finally {
       setMediaPickerBusy(false);
     }
+  };
+
+  const handleGalleryScroll = () => {
+    const node = galleryListRef.current;
+    if (!node || deviceGalleryLoading) return;
+    if (galleryVisibleCount >= deviceGalleryItems.length) return;
+    const nearBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 120;
+    if (!nearBottom) return;
+    setGalleryVisibleCount((prev) => Math.min(deviceGalleryItems.length, prev + GALLERY_PAGE_SIZE));
   };
 
   const submit = async () => {
@@ -1051,9 +1223,10 @@ export default function ChatPage() {
       };
 
       const saveInNativeGallery = async (): Promise<boolean> => {
-        const [{ Capacitor }, mediaModule] = await Promise.all([
+        const [{ Capacitor }, mediaModule, filesystemModule] = await Promise.all([
           import('@capacitor/core'),
           import('@capacitor-community/media'),
+          import('@capacitor/filesystem'),
         ]);
         const platform = Capacitor.getPlatform();
         if (platform === 'web') {
@@ -1061,29 +1234,34 @@ export default function ChatPage() {
         }
 
         const { Media } = mediaModule;
+        const { Filesystem, Directory } = filesystemModule;
         const albumIdentifier = platform === 'android' ? await resolveAndroidAlbumIdentifier(Media) : undefined;
-        const saveByPath = async (pathValue: string) => {
-          if (attachment.type === 'video') {
-            await Media.saveVideo(albumIdentifier ? { path: pathValue, albumIdentifier } : { path: pathValue });
-            return;
-          }
-          await Media.savePhoto(albumIdentifier ? { path: pathValue, albumIdentifier } : { path: pathValue });
-        };
-
-        try {
-          await saveByPath(url);
-          return true;
-        } catch {
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`HTTP_${response.status}`);
-          }
-          const blob = await response.blob();
-          const mime = String(blob.type || (attachment.type === 'video' ? 'video/mp4' : 'image/jpeg'));
-          const base64 = await blobToBase64(blob);
-          await saveByPath(`data:${mime};base64,${base64}`);
-          return true;
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP_${response.status}`);
         }
+        const blob = await response.blob();
+        const mime = String(blob.type || (attachment.type === 'video' ? 'video/mp4' : 'image/jpeg'));
+        const fileName = inferFileName(attachment, url, mime);
+        const localPath = `alga-downloads/${Date.now()}-${sanitizeFileName(fileName)}`;
+        const base64 = await blobToBase64(blob);
+        await Filesystem.writeFile({
+          path: localPath,
+          data: base64,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+        const uriResult = await Filesystem.getUri({ path: localPath, directory: Directory.Cache });
+        const uri = String(uriResult?.uri || '').trim();
+        if (!uri) {
+          throw new Error('LOCAL_PATH_EMPTY');
+        }
+        if (attachment.type === 'video') {
+          await Media.saveVideo(albumIdentifier ? { path: uri, albumIdentifier } : { path: uri });
+        } else {
+          await Media.savePhoto(albumIdentifier ? { path: uri, albumIdentifier } : { path: uri });
+        }
+        return true;
       };
 
       try {
@@ -1259,6 +1437,7 @@ export default function ChatPage() {
   };
 
   useEffect(() => () => clearMessageGesture(), []);
+  useEffect(() => () => clearReactionHoldTimer(), []);
 
   const openProfileFromHeader = () => {
     if (chat?.type === 'group') {
@@ -1304,6 +1483,79 @@ export default function ChatPage() {
     if (!selectedMessage || !reactionAnchor) return;
     setMsgMenuAnchor(reactionAnchor);
     closeReactionPicker({ keepSelected: true });
+  };
+
+  function clearReactionHoldTimer() {
+    if (reactionHoldTimerRef.current !== null) {
+      window.clearTimeout(reactionHoldTimerRef.current);
+      reactionHoldTimerRef.current = null;
+    }
+  }
+
+  const openReactionViewer = async (messageId: string) => {
+    setReactionViewerOpen(true);
+    setReactionViewerLoading(true);
+    setReactionViewerMessageId(messageId);
+    try {
+      const response = await messageApi.getReactions(messageId, REACTION_VIEWER_LIMIT);
+      const list = Array.isArray(response?.items) ? response.items : [];
+      const normalized: ReactionViewerItem[] = list
+        .map((item: any) => ({
+          userId: String(item?.userId || item?.user_id || item?.user?.id || '').trim(),
+          reaction: String(item?.reaction || '').trim(),
+          reactedAt: item?.reactedAt || item?.reacted_at || undefined,
+          user: {
+            id: String(item?.user?.id || item?.userId || item?.user_id || '').trim(),
+            username: String(item?.user?.username || '').trim() || undefined,
+            fullName: String(item?.user?.fullName || item?.user?.full_name || '').trim() || undefined,
+            avatar: String(item?.user?.avatar || '').trim() || undefined,
+          },
+        }))
+        .filter((item: ReactionViewerItem) => item.userId !== '' && item.reaction !== '')
+        .slice(0, REACTION_VIEWER_LIMIT);
+      setReactionViewerItems(normalized);
+    } catch {
+      setReactionViewerItems([]);
+      pushSnackbar({ message: 'Не удалось загрузить реакции', timeout: 2200, tone: 'error' });
+    } finally {
+      setReactionViewerLoading(false);
+    }
+  };
+
+  const closeReactionViewer = () => {
+    setReactionViewerOpen(false);
+    setReactionViewerLoading(false);
+    setReactionViewerMessageId(null);
+    setReactionViewerItems([]);
+  };
+
+  const startReactionViewerHold = (messageId: string) => {
+    clearReactionHoldTimer();
+    reactionHoldTimerRef.current = window.setTimeout(() => {
+      void openReactionViewer(messageId);
+    }, 280);
+  };
+
+  const insertEmoji = (value: string) => {
+    const emoji = String(value || '').trim();
+    if (!emoji) return;
+
+    setText((prev) => {
+      const input = messageInputRef.current;
+      if (!input) return `${prev}${emoji}`;
+      const start = Number.isFinite(input.selectionStart ?? NaN) ? (input.selectionStart as number) : prev.length;
+      const end = Number.isFinite(input.selectionEnd ?? NaN) ? (input.selectionEnd as number) : start;
+      const next = `${prev.slice(0, start)}${emoji}${prev.slice(end)}`;
+      window.requestAnimationFrame(() => {
+        input.focus();
+        const cursor = start + emoji.length;
+        input.setSelectionRange(cursor, cursor);
+      });
+      return next;
+    });
+
+    setRecentEmojis((prev) => [emoji, ...prev.filter((item) => item !== emoji)].slice(0, 18));
+    setEmojiAnchor(null);
   };
 
   const handleClearChatAction = async () => {
@@ -1455,6 +1707,21 @@ export default function ChatPage() {
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
         <MenuItem onClick={() => { pinChat(chatId); setMenuAnchor(null); }}>{chat.pinned ? 'Открепить' : 'Закрепить'}</MenuItem>
         <MenuItem onClick={() => { muteChat(chatId); setMenuAnchor(null); }}>{chat.muted ? 'Включить звук' : 'Выключить звук'}</MenuItem>
+        {chat.type === 'saved' && (
+          <MenuItem
+            onClick={() => {
+              const willHide = !savedChatHidden;
+              setSavedChatHidden(willHide);
+              pushSnackbar({
+                message: willHide ? 'Избранное скрыто из списка чатов' : 'Избранное возвращено в список чатов',
+                timeout: 1800,
+              });
+              setMenuAnchor(null);
+            }}
+          >
+            {savedChatHidden ? 'Вернуть в список чатов' : 'Скрыть из списка чатов'}
+          </MenuItem>
+        )}
         <MenuItem onClick={() => { chat.archived ? unarchiveChat(chatId) : archiveChat(chatId); setMenuAnchor(null); }}>{chat.archived ? 'Вернуть из архива' : 'В архив'}</MenuItem>
         <MenuItem
           sx={chat.type === 'ai' ? { color: 'warning.main' } : undefined}
@@ -1616,6 +1883,69 @@ export default function ChatPage() {
         </Box>
       </Dialog>
 
+      <Drawer
+        anchor="bottom"
+        open={reactionViewerOpen}
+        onClose={closeReactionViewer}
+        PaperProps={{
+          sx: {
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+            bgcolor: isDark ? '#0E1C2E' : '#FFFFFF',
+            pb: 'max(env(safe-area-inset-bottom), 10px)',
+          },
+        }}
+      >
+        <Box sx={{ p: 1.2 }}>
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>Реакции</Typography>
+          {reactionViewerLoading ? (
+            <Box sx={{ py: 3, display: 'grid', placeItems: 'center' }}>
+              <CircularProgress size={22} />
+            </Box>
+          ) : reactionViewerItems.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 1.5 }}>
+              Пока нет реакций для этого сообщения.
+            </Typography>
+          ) : (
+            <Box sx={{ maxHeight: '55dvh', overflowY: 'auto', display: 'grid', gap: 0.75 }}>
+              {reactionViewerItems.map((item, index) => (
+                <Box
+                  key={`${item.userId}-${item.reaction}-${index}`}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    p: 0.8,
+                    borderRadius: 2,
+                    bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                  }}
+                >
+                  <Avatar src={item.user.avatar} sx={{ width: 34, height: 34 }}>
+                    {(item.user.fullName || item.user.username || 'U').slice(0, 1).toUpperCase()}
+                  </Avatar>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography noWrap sx={{ fontWeight: 700, fontSize: 14 }}>
+                      {item.user.fullName || (item.user.username ? `@${item.user.username}` : 'Пользователь')}
+                    </Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.76 }}>
+                      {item.reactedAt
+                        ? new Date(item.reactedAt).toLocaleString('ru-RU', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : 'Недавно'}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: 22, lineHeight: 1 }}>{item.reaction}</Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Box>
+      </Drawer>
+
       <Box ref={messageListRef} sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
         {isLoadingMessages && chatMessages.length === 0 ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}><CircularProgress /></Box>
@@ -1633,7 +1963,7 @@ export default function ChatPage() {
 
             const m = row.value;
             const reaction = reactions[m.id];
-            const reactionGlyph = reaction?.mine || reaction?.top;
+            const reactionEntries = reaction?.entries || [];
             const messageAttachments = Array.isArray((m as any).attachments)
               ? ((m as any).attachments as Attachment[])
               : [];
@@ -1929,26 +2259,56 @@ export default function ChatPage() {
                       )
                     )}
                   </Box>
-                  {!!reactionGlyph && (
+                  {!!reactionEntries.length && (
                     <Box
                       sx={{
                         mt: 0.45,
                         ml: 'auto',
-                        minWidth: 26,
-                        height: 22,
-                        px: reaction?.total && reaction.total > 1 ? 0.65 : 0,
-                        borderRadius: 11,
+                        maxWidth: '100%',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 0.25,
-                        bgcolor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)',
+                        justifyContent: 'flex-end',
+                        flexWrap: 'wrap',
+                        gap: 0.35,
                       }}
                     >
-                      <Typography sx={{ fontSize: 14, lineHeight: 1 }}>{reactionGlyph}</Typography>
-                      {reaction?.total && reaction.total > 1 && (
-                        <Typography sx={{ fontSize: 11, lineHeight: 1, fontWeight: 700 }}>{reaction.total}</Typography>
-                      )}
+                      {reactionEntries.map((entry) => {
+                        const mine = reaction?.mine === entry.value;
+                        return (
+                          <ButtonBase
+                            key={`${m.id}-reaction-${entry.value}`}
+                            onPointerDown={() => startReactionViewerHold(m.id)}
+                            onPointerUp={clearReactionHoldTimer}
+                            onPointerLeave={clearReactionHoldTimer}
+                            onPointerCancel={clearReactionHoldTimer}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              clearReactionHoldTimer();
+                              void openReactionViewer(m.id);
+                            }}
+                            sx={{
+                              minHeight: 22,
+                              px: 0.6,
+                              borderRadius: 11,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 0.3,
+                              border: '1px solid',
+                              borderColor: mine
+                                ? (isDark ? 'rgba(121,184,255,0.75)' : 'rgba(31,163,91,0.65)')
+                                : (isDark ? 'rgba(255,255,255,0.17)' : 'rgba(0,0,0,0.08)'),
+                              bgcolor: mine
+                                ? (isDark ? 'rgba(121,184,255,0.2)' : 'rgba(31,163,91,0.14)')
+                                : (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.05)'),
+                            }}
+                          >
+                            <Typography sx={{ fontSize: 14, lineHeight: 1 }}>{entry.value}</Typography>
+                            {entry.total > 1 && (
+                              <Typography sx={{ fontSize: 11, lineHeight: 1, fontWeight: 700 }}>{entry.total}</Typography>
+                            )}
+                          </ButtonBase>
+                        );
+                      })}
                     </Box>
                   )}
                     </Box>
@@ -2169,10 +2529,13 @@ export default function ChatPage() {
             </ButtonBase>
           </Box>
           <Box
+            ref={galleryListRef}
+            onScroll={handleGalleryScroll}
             sx={{
               mt: 1.1,
               maxHeight: 240,
               overflowY: 'auto',
+              overscrollBehavior: 'contain',
               borderRadius: 2,
               border: '1px solid',
               borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)',
@@ -2185,7 +2548,7 @@ export default function ChatPage() {
               </Box>
             ) : deviceGalleryItems.length > 0 ? (
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 0.55 }}>
-                {deviceGalleryItems.map((item) => (
+                {visibleDeviceGalleryItems.map((item) => (
                   <ButtonBase
                     key={item.identifier}
                     disabled={mediaPickerBusy}
@@ -2201,6 +2564,8 @@ export default function ChatPage() {
                       component="img"
                       src={item.previewUrl}
                       alt="gallery"
+                      loading="lazy"
+                      decoding="async"
                       sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                     />
                   </ButtonBase>
@@ -2232,6 +2597,46 @@ export default function ChatPage() {
         </Box>
       </Drawer>
 
+      <Popover
+        open={!!emojiAnchor}
+        anchorEl={emojiAnchor}
+        onClose={() => setEmojiAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 2.5,
+              p: 0.8,
+              maxWidth: 270,
+              bgcolor: isDark ? '#102033' : '#FFFFFF',
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.1)',
+            },
+          },
+        }}
+      >
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 0.4 }}>
+          {emojiPalette.map((emoji) => (
+            <ButtonBase
+              key={`emoji-${emoji}`}
+              onClick={() => insertEmoji(emoji)}
+              sx={{
+                width: 34,
+                height: 34,
+                borderRadius: 1.5,
+                fontSize: 21,
+                '&:hover': {
+                  bgcolor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)',
+                },
+              }}
+            >
+              {emoji}
+            </ButtonBase>
+          ))}
+        </Box>
+      </Popover>
+
       <Box sx={{ px: 1, pt: 1, pb: 'max(env(safe-area-inset-bottom), 8px)', display: 'flex', gap: 1, alignItems: 'center', bgcolor: isDark ? 'rgba(14,29,47,0.95)' : '#FFFFFF', borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider' }}>
         <input
           ref={inputRef}
@@ -2258,6 +2663,9 @@ export default function ChatPage() {
           onChange={(e) => onPickFiles(e.target.files)}
         />
         <IconButton onClick={() => setMediaPickerOpen(true)} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><AttachFileIcon /></IconButton>
+        <IconButton onClick={(event) => setEmojiAnchor(event.currentTarget)} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}>
+          <InsertEmoticonRoundedIcon />
+        </IconButton>
         <TextField
           fullWidth
           size="small"
@@ -2266,6 +2674,7 @@ export default function ChatPage() {
           maxRows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          inputRef={messageInputRef}
           placeholder={editingMessage ? 'Изменить сообщение...' : 'Сообщение...'}
           sx={{
             '& .MuiOutlinedInput-root': {

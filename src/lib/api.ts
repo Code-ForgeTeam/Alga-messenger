@@ -111,6 +111,8 @@ export const messageApi = {
     (await api.post(`/messages/${messageId}/reaction`, { reaction })).data,
   removeReaction: async (messageId: string) =>
     (await api.delete(`/messages/${messageId}/reaction`)).data,
+  getReactions: async (messageId: string, limit = 300) =>
+    (await api.get(`/messages/${messageId}/reactions`, { params: { limit } })).data,
   delete: async (messageId: string, deleteForAll = false) =>
     (await api.delete(`/messages/${messageId}`, { data: { deleteForAll } })).data,
   update: async (messageId: string, text: string) =>

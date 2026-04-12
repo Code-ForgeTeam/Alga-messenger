@@ -35,6 +35,7 @@ interface SettingsState {
   effectIntensity: number;
   launchIntroEnabled: boolean;
   chatCompactMode: boolean;
+  savedChatHidden: boolean;
   storageAutoDownload: {
     wifi: MediaAutoDownload;
     cellular: MediaAutoDownload;
@@ -49,6 +50,7 @@ interface SettingsState {
   setEffectIntensity: (value: number) => void;
   setLaunchIntroEnabled: (value: boolean) => void;
   setChatCompactMode: (value: boolean) => void;
+  setSavedChatHidden: (value: boolean) => void;
   setStorageAutoDownload: (
     network: 'wifi' | 'cellular',
     media: keyof MediaAutoDownload,
@@ -90,6 +92,7 @@ export const useSettingsStore = create<SettingsState>()(
       effectIntensity: 100,
       launchIntroEnabled: true,
       chatCompactMode: false,
+      savedChatHidden: false,
       storageAutoDownload: {
         wifi: {
           photos: true,
@@ -115,6 +118,7 @@ export const useSettingsStore = create<SettingsState>()(
       setEffectIntensity: (effectIntensity) => set({ effectIntensity }),
       setLaunchIntroEnabled: (launchIntroEnabled) => set({ launchIntroEnabled }),
       setChatCompactMode: (chatCompactMode) => set({ chatCompactMode }),
+      setSavedChatHidden: (savedChatHidden) => set({ savedChatHidden }),
       setStorageAutoDownload: (network, media, value) =>
         set((state) => ({
           storageAutoDownload: {
@@ -179,13 +183,19 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'alga:settings',
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
         if (!persistedState || typeof persistedState !== 'object') return persistedState;
         if (version < 2 && (persistedState as any).bgEffect === 'leaves') {
           return {
             ...(persistedState as Record<string, unknown>),
             bgEffect: 'flowers',
+          };
+        }
+        if (version < 3 && (persistedState as any).savedChatHidden === undefined) {
+          return {
+            ...(persistedState as Record<string, unknown>),
+            savedChatHidden: false,
           };
         }
         return persistedState;
@@ -200,6 +210,7 @@ export const useSettingsStore = create<SettingsState>()(
         effectIntensity: state.effectIntensity,
         launchIntroEnabled: state.launchIntroEnabled,
         chatCompactMode: state.chatCompactMode,
+        savedChatHidden: state.savedChatHidden,
         storageAutoDownload: state.storageAutoDownload,
         aiProvider: state.aiProvider,
         aiApiKey: state.aiApiKey,
