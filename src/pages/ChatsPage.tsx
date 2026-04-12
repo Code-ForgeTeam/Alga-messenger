@@ -2,6 +2,7 @@
 import {
   Avatar,
   Box,
+  ButtonBase,
   Button,
   CircularProgress,
   Dialog,
@@ -23,6 +24,10 @@ import {
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import AddCircleRoundedIcon from '@mui/icons-material/AddCircleRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded';
+import ArrowForwardIosRoundedIcon from '@mui/icons-material/ArrowForwardIosRounded';
 import PersonIcon from '@mui/icons-material/Person';
 import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded';
 import BookmarkRoundedIcon from '@mui/icons-material/BookmarkRounded';
@@ -45,9 +50,24 @@ import { useSnackbarStore } from '../stores/snackbarStore';
 import { useTheme } from '@mui/material/styles';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAdminStore } from '../stores/adminStore';
-import { userApi } from '../lib/api';
-import type { Chat } from '../lib/types';
+import { storyApi, uploadApi, userApi } from '../lib/api';
+import type { Chat, Story } from '../lib/types';
 import { isCreatorUser } from '../lib/creator';
+
+const STORY_MEDIA_LIMIT = 10;
+
+type StoryGroup = {
+  userId: string;
+  user: Story['user'];
+  items: Story[];
+  latestCreatedAt: number;
+  viewed: boolean;
+};
+
+type StorySlide = {
+  story: Story;
+  mediaUrl: string | null;
+};
 
 const formatChatDate = (value?: string) => {
   if (!value) return '';
@@ -75,6 +95,25 @@ function getChatAvatar(chat: Chat, myId?: string, localDisplayName?: string) {
   const title = getChatName(chat, myId, localDisplayName);
   return { initial: title.slice(0, 1).toUpperCase(), src: chat.avatar || peer?.avatar };
 }
+
+const asStoryMediaUrls = (story: Story): string[] => {
+  const list = Array.isArray(story.mediaUrls) ? story.mediaUrls : [];
+  const normalized = list
+    .map((value) => String(value || '').trim())
+    .filter((value, index, arr) => value !== '' && arr.indexOf(value) === index);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  const fallback = String(story.mediaUrl || '').trim();
+  return fallback ? [fallback] : [];
+};
+
+const formatStoryTime = (iso?: string): string => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+};
 
 export default function ChatsPage() {
   const theme = useTheme();
@@ -105,8 +144,18 @@ export default function ChatsPage() {
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [waveTitleActive, setWaveTitleActive] = useState(false);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [storyComposerOpen, setStoryComposerOpen] = useState(false);
+  const [storyText, setStoryText] = useState('');
+  const [storyFiles, setStoryFiles] = useState<File[]>([]);
+  const [storyViewerOpen, setStoryViewerOpen] = useState(false);
+  const [storyViewerGroup, setStoryViewerGroup] = useState<StoryGroup | null>(null);
+  const [storyViewerSlides, setStoryViewerSlides] = useState<StorySlide[]>([]);
+  const [storyViewerIndex, setStoryViewerIndex] = useState(0);
+  const [storySubmitting, setStorySubmitting] = useState(false);
   const holdTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef<string | null>(null);
+  const storyInputRef = useRef<HTMLInputElement | null>(null);
   const menuItemSx = {
     borderRadius: 2.5,
     px: 1.2,
@@ -175,6 +224,219 @@ export default function ChatsPage() {
     window.addEventListener('alga:intro-finished', onIntroFinished as EventListener);
     return () => window.removeEventListener('alga:intro-finished', onIntroFinished as EventListener);
   }, []);
+
+  const storyPreviewUrls = useMemo(
+    () => storyFiles.map((file) => URL.createObjectURL(file)),
+    [storyFiles],
+  );
+
+  useEffect(() => {
+    return () => {
+      storyPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [storyPreviewUrls]);
+
+  const loadStories = async () => {
+    if (!user?.id) {
+      setStories([]);
+      return;
+    }
+
+    try {
+      const feed = await storyApi.getFeed();
+      const items = Array.isArray(feed) ? (feed as Story[]) : [];
+      setStories(items);
+    } catch {
+      // keep the last successful state
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadStories().catch(() => null);
+
+    const timerId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      loadStories().catch(() => null);
+    }, 20000);
+    return () => window.clearInterval(timerId);
+  }, [user?.id]);
+
+  const groupedStories = useMemo(() => {
+    const groups = new Map<string, StoryGroup>();
+    const now = Date.now();
+
+    stories.forEach((story) => {
+      const userId = String(story.userId || '').trim();
+      if (!userId) return;
+      const expiresAt = new Date(story.expiresAt).getTime();
+      if (Number.isFinite(expiresAt) && expiresAt <= now) return;
+
+      const existing = groups.get(userId);
+      if (!existing) {
+        groups.set(userId, {
+          userId,
+          user: story.user,
+          items: [story],
+          latestCreatedAt: new Date(story.createdAt).getTime() || now,
+          viewed: Boolean(story.isViewed),
+        });
+        return;
+      }
+
+      existing.items.push(story);
+      existing.latestCreatedAt = Math.max(existing.latestCreatedAt, new Date(story.createdAt).getTime() || now);
+      if (!story.isViewed) {
+        existing.viewed = false;
+      }
+    });
+
+    const list = Array.from(groups.values()).map((group) => ({
+      ...group,
+      items: group.items.slice().sort((a, b) => {
+        const aTime = new Date(a.createdAt).getTime() || 0;
+        const bTime = new Date(b.createdAt).getTime() || 0;
+        return aTime - bTime;
+      }),
+    }));
+
+    list.sort((a, b) => b.latestCreatedAt - a.latestCreatedAt);
+    return list;
+  }, [stories]);
+
+  const myStoryGroup = useMemo(
+    () => groupedStories.find((group) => String(group.userId) === String(user?.id)),
+    [groupedStories, user?.id],
+  );
+
+  const storyGroupsForStrip = useMemo(() => {
+    if (!myStoryGroup) return groupedStories;
+    return [myStoryGroup, ...groupedStories.filter((group) => group.userId !== myStoryGroup.userId)];
+  }, [groupedStories, myStoryGroup]);
+
+  const pickStoryFiles = (list: FileList | null) => {
+    if (!list?.length) return;
+    const incoming = Array.from(list).filter((file) => file.type.startsWith('image/'));
+    if (!incoming.length) {
+      pushSnackbar({ message: 'Можно выбрать только фото', timeout: 2200, tone: 'error' });
+      return;
+    }
+
+    setStoryFiles((prev) => {
+      const next = [...prev];
+      for (const file of incoming) {
+        if (next.length >= STORY_MEDIA_LIMIT) break;
+        next.push(file);
+      }
+      if (prev.length + incoming.length > STORY_MEDIA_LIMIT) {
+        pushSnackbar({ message: 'Максимум 10 фото в статусе', timeout: 2200 });
+      }
+      return next;
+    });
+  };
+
+  const openStoryComposer = () => {
+    setStoryComposerOpen(true);
+  };
+
+  const closeStoryComposer = () => {
+    setStoryComposerOpen(false);
+    setStoryText('');
+    setStoryFiles([]);
+    if (storyInputRef.current) {
+      storyInputRef.current.value = '';
+    }
+  };
+
+  const submitStory = async () => {
+    const trimmedText = storyText.trim();
+    if (!trimmedText && storyFiles.length === 0) {
+      pushSnackbar({ message: 'Добавьте текст или фото для статуса', timeout: 2200 });
+      return;
+    }
+    if (storyFiles.length > STORY_MEDIA_LIMIT) {
+      pushSnackbar({ message: 'Максимум 10 фото в статусе', timeout: 2200 });
+      return;
+    }
+
+    setStorySubmitting(true);
+    try {
+      let mediaUrls: string[] = [];
+      if (storyFiles.length > 0) {
+        const uploaded = await uploadApi.uploadStoryFiles(storyFiles);
+        mediaUrls = (Array.isArray(uploaded) ? uploaded : [])
+          .map((item) => String(item?.url || '').trim())
+          .filter((url, index, arr) => url !== '' && arr.indexOf(url) === index);
+      }
+
+      await storyApi.create({
+        text: trimmedText || undefined,
+        mediaUrls,
+      });
+
+      closeStoryComposer();
+      await loadStories();
+      pushSnackbar({ message: 'Статус опубликован на 24 часа', timeout: 2200, tone: 'success' });
+    } catch {
+      pushSnackbar({ message: 'Не удалось опубликовать статус', timeout: 2600, tone: 'error' });
+    } finally {
+      setStorySubmitting(false);
+    }
+  };
+
+  const openStoryViewer = (group: StoryGroup) => {
+    if (!group.items.length) return;
+    const slides: StorySlide[] = group.items.flatMap((item) => {
+      const mediaUrls = asStoryMediaUrls(item);
+      if (mediaUrls.length === 0) {
+        return [{ story: item, mediaUrl: null }];
+      }
+      return mediaUrls.map((mediaUrl) => ({ story: item, mediaUrl }));
+    });
+    if (!slides.length) return;
+
+    const firstNotViewedIndex = slides.findIndex((item) => !item.story.isViewed);
+    setStoryViewerGroup(group);
+    setStoryViewerSlides(slides);
+    setStoryViewerIndex(firstNotViewedIndex >= 0 ? firstNotViewedIndex : 0);
+    setStoryViewerOpen(true);
+  };
+
+  const closeStoryViewer = () => {
+    setStoryViewerOpen(false);
+    setStoryViewerGroup(null);
+    setStoryViewerSlides([]);
+    setStoryViewerIndex(0);
+  };
+
+  const activeStorySlide = useMemo(() => {
+    if (!storyViewerSlides.length) return null;
+    const index = Math.max(0, Math.min(storyViewerIndex, storyViewerSlides.length - 1));
+    return storyViewerSlides[index] || null;
+  }, [storyViewerIndex, storyViewerSlides]);
+
+  const activeStory = activeStorySlide?.story || null;
+
+  useEffect(() => {
+    if (!storyViewerOpen || !activeStory || !user?.id) return;
+    if (String(activeStory.userId) === String(user.id) || activeStory.isViewed) return;
+
+    storyApi
+      .markViewed(activeStory.id)
+      .then(() => loadStories())
+      .catch(() => null);
+  }, [storyViewerOpen, activeStory?.id, activeStory?.isViewed, activeStory?.userId, user?.id]);
+
+  const stepStory = (direction: -1 | 1) => {
+    const max = storyViewerSlides.length - 1;
+    if (max < 0) return;
+    setStoryViewerIndex((prev) => {
+      const next = prev + direction;
+      if (next < 0) return 0;
+      if (next > max) return max;
+      return next;
+    });
+  };
 
   const visible = useMemo(() => {
     const needle = q.toLowerCase().trim();
@@ -348,6 +610,94 @@ export default function ChatsPage() {
         InputProps={{ startAdornment: <SearchRoundedIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
         sx={{ '& .MuiOutlinedInput-root': { borderRadius: 4, bgcolor: isDark ? 'rgba(26,40,56,0.95)' : '#F5F7F8' } }}
       />
+
+      <Box sx={{ mt: 1.1, mb: 0.45 }}>
+        <Box sx={{ display: 'flex', gap: 1.1, overflowX: 'auto', pb: 0.2 }}>
+          <ButtonBase
+            onClick={() => {
+              if (myStoryGroup?.items?.length) {
+                openStoryViewer(myStoryGroup);
+                return;
+              }
+              openStoryComposer();
+            }}
+            sx={{
+              minWidth: 72,
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 0.45,
+              borderRadius: 2.2,
+              p: 0.6,
+            }}
+          >
+            <Box sx={{ position: 'relative' }}>
+              <Avatar
+                src={user?.avatar}
+                sx={{
+                  width: 58,
+                  height: 58,
+                  border: '2px solid',
+                  borderColor: isDark ? 'rgba(114,169,231,0.65)' : 'rgba(31,163,91,0.7)',
+                }}
+              >
+                {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
+              </Avatar>
+              <AddCircleRoundedIcon
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openStoryComposer();
+                }}
+                sx={{
+                  position: 'absolute',
+                  right: -2,
+                  bottom: -2,
+                  fontSize: 22,
+                  color: isDark ? '#6EB7FF' : '#1FA35B',
+                  bgcolor: isDark ? '#0A1A32' : '#fff',
+                  borderRadius: '50%',
+                }}
+              />
+            </Box>
+            <Typography variant="caption" noWrap sx={{ maxWidth: 72 }}>
+              Мой статус
+            </Typography>
+          </ButtonBase>
+
+          {storyGroupsForStrip
+            .filter((group) => group.userId !== String(user?.id || ''))
+            .map((group) => (
+              <ButtonBase
+                key={group.userId}
+                onClick={() => openStoryViewer(group)}
+                sx={{
+                  minWidth: 72,
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 0.45,
+                  borderRadius: 2.2,
+                  p: 0.6,
+                }}
+              >
+                <Avatar
+                  src={group.user?.avatar}
+                  sx={{
+                    width: 58,
+                    height: 58,
+                    border: '2.5px solid',
+                    borderColor: group.viewed
+                      ? (isDark ? 'rgba(146,167,191,0.5)' : 'rgba(132,149,165,0.6)')
+                      : (isDark ? '#62AFFF' : '#1FA35B'),
+                  }}
+                >
+                  {(group.user?.fullName || group.user?.username || 'U').slice(0, 1).toUpperCase()}
+                </Avatar>
+                <Typography variant="caption" noWrap sx={{ maxWidth: 74 }}>
+                  {group.user?.fullName || `@${group.user?.username || 'user'}`}
+                </Typography>
+              </ButtonBase>
+            ))}
+        </Box>
+      </Box>
 
       <List sx={{ mt: 1 }}>
         {visible.map((chat) => {
@@ -655,6 +1005,202 @@ export default function ChatsPage() {
           </Box>
         </Box>
       </Drawer>
+
+      <Dialog open={storyComposerOpen} onClose={closeStoryComposer} fullWidth maxWidth="sm">
+        <DialogTitle>Новый статус (24 часа)</DialogTitle>
+        <DialogContent sx={{ pt: 1.2 }}>
+          <input
+            ref={storyInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(event) => {
+              pickStoryFiles(event.target.files);
+              if (storyInputRef.current) {
+                storyInputRef.current.value = '';
+              }
+            }}
+          />
+
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            maxRows={4}
+            label="Подпись"
+            placeholder="Что нового?"
+            value={storyText}
+            onChange={(event) => setStoryText(event.target.value)}
+            sx={{ mb: 1.2 }}
+          />
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.8 }}>
+            <Typography variant="body2" color="text.secondary">
+              Фото: {storyFiles.length}/{STORY_MEDIA_LIMIT}
+            </Typography>
+            <Button
+              size="small"
+              onClick={() => storyInputRef.current?.click()}
+              disabled={storyFiles.length >= STORY_MEDIA_LIMIT}
+            >
+              Добавить фото
+            </Button>
+          </Box>
+
+          <Box sx={{ display: 'flex', gap: 0.9, overflowX: 'auto', pb: 0.4 }}>
+            {storyPreviewUrls.map((url, index) => (
+              <Box
+                key={`${url}-${index}`}
+                sx={{
+                  position: 'relative',
+                  width: 74,
+                  height: 74,
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                  border: '1px solid',
+                  borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)',
+                  flexShrink: 0,
+                }}
+              >
+                <Box component="img" src={url} alt={`story-${index}`} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <IconButton
+                  size="small"
+                  onClick={() => setStoryFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                  sx={{
+                    position: 'absolute',
+                    right: 2,
+                    top: 2,
+                    width: 20,
+                    height: 20,
+                    color: '#fff',
+                    bgcolor: 'rgba(0,0,0,0.55)',
+                    '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' },
+                  }}
+                >
+                  <CloseRoundedIcon sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Box>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeStoryComposer}>Отмена</Button>
+          <Button variant="contained" onClick={submitStory} disabled={storySubmitting}>
+            {storySubmitting ? 'Публикация...' : 'Опубликовать'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={storyViewerOpen} onClose={closeStoryViewer} fullScreen>
+        <Box
+          sx={{
+            height: '100%',
+            bgcolor: '#000',
+            color: '#fff',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.2, pt: 'max(env(safe-area-inset-top), 12px)' }}>
+            <Avatar src={activeStory?.user?.avatar} sx={{ width: 36, height: 36 }}>
+              {(activeStory?.user?.fullName || activeStory?.user?.username || 'U').slice(0, 1).toUpperCase()}
+            </Avatar>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography sx={{ fontWeight: 700 }} noWrap>
+                {activeStory?.user?.fullName || `@${activeStory?.user?.username || 'user'}`}
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.82 }}>
+                {formatStoryTime(activeStory?.createdAt)}
+              </Typography>
+            </Box>
+            <IconButton onClick={closeStoryViewer} sx={{ color: '#fff' }}>
+              <CloseRoundedIcon />
+            </IconButton>
+          </Box>
+
+          <Box sx={{ px: 1.2, pb: 0.6 }}>
+            <Box sx={{ display: 'flex', gap: 0.55 }}>
+              {storyViewerSlides.map((item, index) => (
+                <Box
+                  key={`${item.story.id}-${index}`}
+                  sx={{
+                    flex: 1,
+                    height: 3,
+                    borderRadius: 99,
+                    bgcolor: index <= storyViewerIndex ? '#fff' : 'rgba(255,255,255,0.35)',
+                  }}
+                />
+              ))}
+            </Box>
+          </Box>
+
+          <Box sx={{ flex: 1, position: 'relative', display: 'grid', placeItems: 'center' }}>
+            {activeStorySlide?.mediaUrl ? (
+              <Box
+                component="img"
+                src={activeStorySlide.mediaUrl}
+                alt="story"
+                sx={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            ) : activeStory ? (
+              <Typography sx={{ px: 3, textAlign: 'center', fontSize: 22, fontWeight: 700 }}>
+                {activeStory.text || 'Статус'}
+              </Typography>
+            ) : null}
+
+            {!!activeStory?.text && !!activeStorySlide?.mediaUrl && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: 16,
+                  right: 16,
+                  bottom: 'max(env(safe-area-inset-bottom), 24px)',
+                  p: 1.1,
+                  borderRadius: 2,
+                  bgcolor: 'rgba(0,0,0,0.48)',
+                }}
+              >
+                <Typography sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {activeStory.text}
+                </Typography>
+              </Box>
+            )}
+
+            <IconButton
+              onClick={() => stepStory(-1)}
+              disabled={storyViewerIndex <= 0}
+              sx={{
+                position: 'absolute',
+                left: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#fff',
+                bgcolor: 'rgba(0,0,0,0.35)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.5)' },
+              }}
+            >
+              <ArrowBackIosNewRoundedIcon />
+            </IconButton>
+            <IconButton
+              onClick={() => stepStory(1)}
+              disabled={storyViewerSlides.length === 0 || storyViewerIndex >= storyViewerSlides.length - 1}
+              sx={{
+                position: 'absolute',
+                right: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#fff',
+                bgcolor: 'rgba(0,0,0,0.35)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.5)' },
+              }}
+            >
+              <ArrowForwardIosRoundedIcon />
+            </IconButton>
+          </Box>
+        </Box>
+      </Dialog>
 
       <Menu anchorEl={chatActionsAnchor} open={!!chatActionsAnchor} onClose={() => setChatActionsAnchor(null)}>
         <MenuItem

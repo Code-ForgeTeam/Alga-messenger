@@ -78,6 +78,7 @@ export interface Story {
   userId: string;
   text?: string | null;
   mediaUrl?: string | null;
+  mediaUrls?: string[];
   createdAt: string;
   expiresAt: string;
   isViewed: boolean;

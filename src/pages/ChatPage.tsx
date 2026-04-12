@@ -23,6 +23,8 @@ import DoneAllIcon from '@mui/icons-material/DoneAll';
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import PhotoCameraRoundedIcon from '@mui/icons-material/PhotoCameraRounded';
+import CollectionsRoundedIcon from '@mui/icons-material/CollectionsRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { messageApi, uploadApi, userApi } from '../lib/api';
@@ -120,6 +122,22 @@ const inferFileName = (attachment: Attachment, url: string, mimeType: string): s
   return `${baseName}.${guessExtension(mimeType, attachment.type)}`;
 };
 
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read blob'));
+    reader.onload = () => {
+      const value = String(reader.result || '');
+      const [, base64] = value.split(',', 2);
+      if (!base64) {
+        reject(new Error('Invalid base64 result'));
+        return;
+      }
+      resolve(base64);
+    };
+    reader.readAsDataURL(blob);
+  });
+
 export default function ChatPage() {
   const { chatId = '' } = useParams();
   const navigate = useNavigate();
@@ -159,7 +177,12 @@ export default function ChatPage() {
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [mediaPickerBusy, setMediaPickerBusy] = useState(false);
+  const [mediaPickerThumbs, setMediaPickerThumbs] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const lastRenderedMessageIdRef = useRef<string>('');
   const mentionCacheRef = useRef<Record<string, string>>({});
@@ -311,7 +334,7 @@ export default function ChatPage() {
     return map;
   }, [chat?.participants, chat?.isAdmin, me]);
 
-  const onPickFiles = async (list: FileList | null) => {
+  const onPickFilesLegacy = async (list: FileList | null) => {
     if (!list?.length) return;
     const arr = Array.from(list);
     setFiles((prev) => [...prev, ...arr]);
@@ -325,6 +348,124 @@ export default function ChatPage() {
       if (inputRef.current) {
         inputRef.current.value = '';
       }
+    }
+  };
+
+  const appendAndUploadFiles = async (arr: File[]) => {
+    if (!arr.length) return;
+    setFiles((prev) => [...prev, ...arr]);
+    try {
+      const uploadedFiles = await uploadApi.uploadFiles(arr);
+      setUploaded((prev) => [...prev, ...(Array.isArray(uploadedFiles) ? uploadedFiles : [])]);
+      setMediaPickerOpen(false);
+    } catch {
+      setFiles((prev) => prev.slice(0, Math.max(0, prev.length - arr.length)));
+      pushSnackbar({ message: 'Не удалось загрузить вложение', timeout: 2200, tone: 'error' });
+    }
+  };
+
+  const onPickFiles = async (list: FileList | null) => {
+    if (!list?.length) return;
+    const arr = Array.from(list);
+    await appendAndUploadFiles(arr);
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
+    if (galleryInputRef.current) {
+      galleryInputRef.current.value = '';
+    }
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
+  };
+
+  const fileFromWebPath = async (webPath: string, fallbackName: string): Promise<File> => {
+    const response = await fetch(webPath);
+    if (!response.ok) {
+      throw new Error(`FETCH_${response.status}`);
+    }
+    const blob = await response.blob();
+    const mime = String(blob.type || '');
+    const extension = guessExtension(mime, mime.startsWith('video/') ? 'video' : 'image');
+    const fileName = fallbackName.includes('.') ? fallbackName : `${fallbackName}.${extension}`;
+    return new File([blob], fileName, { type: mime || (extension === 'mp4' ? 'video/mp4' : 'image/jpeg') });
+  };
+
+  const handlePickFromGallery = async () => {
+    setMediaPickerBusy(true);
+    try {
+      const [{ Capacitor }, cameraModule] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor/camera'),
+      ]);
+      const { Camera } = cameraModule;
+
+      if (Capacitor.getPlatform() === 'web') {
+        galleryInputRef.current?.click();
+        return;
+      }
+
+      const picked = await Camera.pickImages({ quality: 90, limit: 20 });
+      const photos = Array.isArray(picked?.photos) ? picked.photos : [];
+      const filesFromGallery: File[] = [];
+      const thumbs: string[] = [];
+
+      for (let index = 0; index < photos.length; index += 1) {
+        const photo = photos[index];
+        const webPath = String(photo?.webPath || '').trim();
+        if (!webPath) continue;
+        thumbs.push(webPath);
+        try {
+          const file = await fileFromWebPath(webPath, `gallery-${Date.now()}-${index}`);
+          filesFromGallery.push(file);
+        } catch {
+          // keep best-effort conversion for each selected file
+        }
+      }
+
+      if (!filesFromGallery.length) {
+        pushSnackbar({ message: 'Не удалось получить фото из галереи', timeout: 2200, tone: 'error' });
+        return;
+      }
+
+      setMediaPickerThumbs((prev) => [...thumbs, ...prev].slice(0, 24));
+      await appendAndUploadFiles(filesFromGallery);
+    } catch {
+      pushSnackbar({ message: 'Не удалось открыть галерею', timeout: 2200, tone: 'error' });
+    } finally {
+      setMediaPickerBusy(false);
+    }
+  };
+
+  const handleTakePhotoNow = async () => {
+    setMediaPickerBusy(true);
+    try {
+      const [{ Capacitor }, cameraModule] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor/camera'),
+      ]);
+      const { Camera, CameraResultType, CameraSource } = cameraModule;
+
+      if (Capacitor.getPlatform() === 'web') {
+        cameraInputRef.current?.click();
+        return;
+      }
+
+      const photo = await Camera.getPhoto({
+        source: CameraSource.Camera,
+        resultType: CameraResultType.Uri,
+        quality: 92,
+      });
+      const webPath = String(photo?.webPath || '').trim();
+      if (!webPath) return;
+
+      const file = await fileFromWebPath(webPath, `camera-${Date.now()}`);
+      setMediaPickerThumbs((prev) => [webPath, ...prev].slice(0, 24));
+      await appendAndUploadFiles([file]);
+    } catch {
+      pushSnackbar({ message: 'Не удалось сделать снимок', timeout: 2200, tone: 'error' });
+    } finally {
+      setMediaPickerBusy(false);
     }
   };
 
@@ -371,6 +512,12 @@ export default function ChatPage() {
       files.map((file) => (file.type.startsWith('image/') ? URL.createObjectURL(file) : '')),
     [files],
   );
+
+  const mediaPickerGalleryThumbs = useMemo(() => {
+    const fromPending = filePreviewUrls.filter((url) => !!url);
+    const merged = [...fromPending, ...mediaPickerThumbs];
+    return merged.filter((url, index, arr) => !!url && arr.indexOf(url) === index).slice(0, 24);
+  }, [filePreviewUrls, mediaPickerThumbs]);
 
   useEffect(() => {
     return () => {
@@ -442,7 +589,7 @@ export default function ChatPage() {
     setSelectedMessage(null);
   };
 
-  const downloadAttachment = async (attachment: Attachment) => {
+  const downloadAttachmentLegacy = async (attachment: Attachment) => {
     const url = String(attachment?.url || '').trim();
     if (!url) return;
 
@@ -535,6 +682,100 @@ export default function ChatPage() {
           : (attachment.type === 'video' ? 'Не удалось сохранить видео' : 'Не удалось сохранить фото'),
         timeout: fallbackTriggered ? 2200 : 2600,
         tone: fallbackTriggered ? 'success' : 'error',
+      });
+    }
+  };
+
+  const downloadAttachment = async (attachment: Attachment) => {
+    const url = String(attachment?.url || '').trim();
+    if (!url) return;
+
+    const fallbackFileName = sanitizeFileName(String(attachment.name || 'attachment'));
+    const triggerDownload = (href: string, fileName: string) => {
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.download = fileName;
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    };
+
+    const saveOnNative = async (): Promise<boolean> => {
+      const [{ Capacitor }, { Directory, Filesystem }] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor/filesystem'),
+      ]);
+      if (Capacitor.getPlatform() === 'web') {
+        return false;
+      }
+
+      try {
+        await Filesystem.requestPermissions();
+      } catch {
+        // permissions can be unavailable on some devices
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP_${response.status}`);
+      }
+      const blob = await response.blob();
+      const mimeType = String(blob.type || '');
+      const fileName = inferFileName(attachment, url, mimeType);
+      const base64 = await blobToBase64(blob);
+
+      const folder = attachment.type === 'video' ? 'Alga/Videos' : 'Alga/Photos';
+      const path = `${folder}/${fileName}`;
+      const directories = [Directory.Documents, Directory.External, Directory.Data] as const;
+
+      for (const directory of directories) {
+        try {
+          await Filesystem.writeFile({
+            path,
+            data: base64,
+            directory,
+            recursive: true,
+          });
+          return true;
+        } catch {
+          // try next location
+        }
+      }
+
+      return false;
+    };
+
+    try {
+      const nativeSaved = await saveOnNative();
+      if (nativeSaved) {
+        pushSnackbar({
+          message: attachment.type === 'video' ? 'Видео сохранено' : 'Фото сохранено',
+          timeout: 2200,
+          tone: 'success',
+        });
+        return;
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP_${response.status}`);
+      }
+      const blob = await response.blob();
+      const fileName = inferFileName(attachment, url, String(blob.type || ''));
+      const objectUrl = URL.createObjectURL(blob);
+      triggerDownload(objectUrl, fileName);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
+      pushSnackbar({
+        message: attachment.type === 'video' ? 'Видео сохранено' : 'Фото сохранено',
+        timeout: 2200,
+        tone: 'success',
+      });
+    } catch {
+      pushSnackbar({
+        message: attachment.type === 'video' ? 'Не удалось сохранить видео' : 'Не удалось сохранить фото',
+        timeout: 2600,
+        tone: 'error',
       });
     }
   };
@@ -1463,6 +1704,86 @@ export default function ChatPage() {
         </Box>
       )}
 
+      <Dialog open={mediaPickerOpen} onClose={() => setMediaPickerOpen(false)} fullWidth maxWidth="sm">
+        <Box sx={{ p: 1.5 }}>
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>Выбор медиа</Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
+            <ButtonBase
+              disabled={mediaPickerBusy}
+              onClick={() => void handleTakePhotoNow()}
+              sx={{
+                minHeight: 88,
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              <Box sx={{ textAlign: 'center' }}>
+                <PhotoCameraRoundedIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
+                <Typography variant="caption">Снимок</Typography>
+              </Box>
+            </ButtonBase>
+            <ButtonBase
+              disabled={mediaPickerBusy}
+              onClick={() => void handlePickFromGallery()}
+              sx={{
+                minHeight: 88,
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              <Box sx={{ textAlign: 'center' }}>
+                <CollectionsRoundedIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
+                <Typography variant="caption">Галерея</Typography>
+              </Box>
+            </ButtonBase>
+            <ButtonBase
+              disabled={mediaPickerBusy}
+              onClick={() => inputRef.current?.click()}
+              sx={{
+                minHeight: 88,
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              <Box sx={{ textAlign: 'center' }}>
+                <AttachFileIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
+                <Typography variant="caption">Файл</Typography>
+              </Box>
+            </ButtonBase>
+          </Box>
+          {!!mediaPickerGalleryThumbs.length && (
+            <Box sx={{ display: 'flex', gap: 0.8, mt: 1.2, overflowX: 'auto', pb: 0.2 }}>
+              {mediaPickerGalleryThumbs.map((thumb, index) => (
+                <Box
+                  key={`${thumb}-${index}`}
+                  component="img"
+                  src={thumb}
+                  alt={`media-${index}`}
+                  sx={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: 1.4,
+                    objectFit: 'cover',
+                    border: '1px solid',
+                    borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.12)',
+                    flexShrink: 0,
+                  }}
+                />
+              ))}
+            </Box>
+          )}
+        </Box>
+      </Dialog>
+
       <Box sx={{ px: 1, pt: 1, pb: 'max(env(safe-area-inset-bottom), 8px)', display: 'flex', gap: 1, alignItems: 'center', bgcolor: isDark ? 'rgba(14,29,47,0.95)' : '#FFFFFF', borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider' }}>
         <input
           ref={inputRef}
@@ -1472,7 +1793,23 @@ export default function ChatPage() {
           style={{ display: 'none' }}
           onChange={(e) => onPickFiles(e.target.files)}
         />
-        <IconButton onClick={() => inputRef.current?.click()} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><AttachFileIcon /></IconButton>
+        <input
+          ref={galleryInputRef}
+          type="file"
+          multiple
+          accept="image/*,video/*"
+          style={{ display: 'none' }}
+          onChange={(e) => onPickFiles(e.target.files)}
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={(e) => onPickFiles(e.target.files)}
+        />
+        <IconButton onClick={() => setMediaPickerOpen(true)} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><AttachFileIcon /></IconButton>
         <TextField
           fullWidth
           size="small"

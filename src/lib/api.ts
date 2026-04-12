@@ -152,7 +152,7 @@ export const pushApi = {
 export const storyApi = {
   getFeed: async () => (await api.get('/stories')).data,
   getMine: async () => (await api.get('/stories/mine')).data,
-  create: async (payload: { text?: string; mediaUrl?: string; durationHours?: number }) =>
+  create: async (payload: { text?: string; mediaUrl?: string; mediaUrls?: string[] }) =>
     (await api.post('/stories', payload)).data,
   markViewed: async (storyId: string) => (await api.post(`/stories/${storyId}/view`)).data,
   delete: async (storyId: string) => (await api.delete(`/stories/${storyId}`)).data,
@@ -214,6 +214,16 @@ export const uploadApi = {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
     ).data;
+  },
+  uploadStoryFiles: async (files: File[]) => {
+    const form = new FormData();
+    files.forEach((file) => form.append('files', file));
+
+    const response = await api.post('/upload/story', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    return response.data.files;
   },
   getFileInfo: async (id: string) => (await api.get(`/upload/info/${id}`)).data,
   deleteFile: async (id: string) => (await api.delete(`/upload/${id}`)).data,

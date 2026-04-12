@@ -7,6 +7,9 @@ use PDO;
 
 final class Api
 {
+    private const STORY_MAX_MEDIA_ITEMS = 10;
+    private const STORY_LIFETIME_HOURS = 24;
+
     private ?PDO $db = null;
     private ?array $chatParticipantColumns = null;
     private ?array $userColumns = null;
@@ -94,6 +97,7 @@ final class Api
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
         if ($path === '/api/upload' && $method === 'POST') { $this->uploadFiles(); }
         if ($path === '/api/upload/avatar' && $method === 'POST') { $this->uploadAvatar(); }
+        if ($path === '/api/upload/story' && $method === 'POST') { $this->uploadStoryFiles(); }
         if ($path === '/api/upload/group-avatar' && $method === 'POST') { $this->uploadGroupAvatar(); }
         if ($path === '/api/upload/storage-stats' && $method === 'GET') { $this->uploadStorageStats(); }
         if ($path === '/api/upload/clear-cache' && $method === 'DELETE') { $this->clearUploadCache(); }
@@ -345,10 +349,19 @@ final class Api
 
         $publicDir = dirname(__DIR__) . '/public';
         $clearedFilesBytes = $this->clearDirectoryContents($publicDir . '/uploads/messages');
+        $clearedFilesBytes += $this->clearDirectoryContents($publicDir . '/uploads/stories');
 
         if ($this->ensureAttachmentsTable()) {
             try {
                 $this->db()->exec('DELETE FROM attachments');
+            } catch (\Throwable) {
+                // ignore table cleanup errors on restricted hosting
+            }
+        }
+
+        if ($this->ensureStoryTables()) {
+            try {
+                $this->db()->exec('DELETE FROM stories');
             } catch (\Throwable) {
                 // ignore table cleanup errors on restricted hosting
             }
@@ -1883,28 +1896,53 @@ final class Api
         }
         $this->cleanupExpiredStories();
 
-        $stmt = $this->db()->prepare(
-            'SELECT s.id, s.user_id, s.text, s.media_url, s.created_at, s.expires_at,
-                    u.username, u.full_name, u.avatar,
-                    EXISTS(
-                        SELECT 1
-                        FROM story_views sv
-                        WHERE sv.story_id = s.id AND sv.user_id = ?
-                        LIMIT 1
-                    ) AS is_viewed,
-                    (
-                        SELECT COUNT(*)
-                        FROM story_views sv2
-                        WHERE sv2.story_id = s.id
-                    ) AS views_count
-             FROM stories s
-             JOIN users u ON u.id = s.user_id
-             WHERE s.expires_at > CURRENT_TIMESTAMP
-             ORDER BY s.created_at DESC
-             LIMIT 200'
-        );
-        $stmt->execute([$viewerId]);
-        $rows = $stmt->fetchAll() ?: [];
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT s.id, s.user_id, s.text, s.media_url, s.media_urls, s.created_at, s.expires_at,
+                        u.username, u.full_name, u.avatar,
+                        EXISTS(
+                            SELECT 1
+                            FROM story_views sv
+                            WHERE sv.story_id = s.id AND sv.user_id = ?
+                            LIMIT 1
+                        ) AS is_viewed,
+                        (
+                            SELECT COUNT(*)
+                            FROM story_views sv2
+                            WHERE sv2.story_id = s.id
+                        ) AS views_count
+                 FROM stories s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.expires_at > CURRENT_TIMESTAMP
+                 ORDER BY s.created_at DESC
+                 LIMIT 200'
+            );
+            $stmt->execute([$viewerId]);
+            $rows = $stmt->fetchAll() ?: [];
+        } catch (\Throwable) {
+            $stmt = $this->db()->prepare(
+                'SELECT s.id, s.user_id, s.text, s.media_url, NULL AS media_urls, s.created_at, s.expires_at,
+                        u.username, u.full_name, u.avatar,
+                        EXISTS(
+                            SELECT 1
+                            FROM story_views sv
+                            WHERE sv.story_id = s.id AND sv.user_id = ?
+                            LIMIT 1
+                        ) AS is_viewed,
+                        (
+                            SELECT COUNT(*)
+                            FROM story_views sv2
+                            WHERE sv2.story_id = s.id
+                        ) AS views_count
+                 FROM stories s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.expires_at > CURRENT_TIMESTAMP
+                 ORDER BY s.created_at DESC
+                 LIMIT 200'
+            );
+            $stmt->execute([$viewerId]);
+            $rows = $stmt->fetchAll() ?: [];
+        }
 
         $this->json(array_map(fn ($row) => $this->storyToPayload($row, $viewerId), $rows));
     }
@@ -1917,23 +1955,43 @@ final class Api
         }
         $this->cleanupExpiredStories();
 
-        $stmt = $this->db()->prepare(
-            'SELECT s.id, s.user_id, s.text, s.media_url, s.created_at, s.expires_at,
-                    u.username, u.full_name, u.avatar,
-                    1 AS is_viewed,
-                    (
-                        SELECT COUNT(*)
-                        FROM story_views sv2
-                        WHERE sv2.story_id = s.id
-                    ) AS views_count
-             FROM stories s
-             JOIN users u ON u.id = s.user_id
-             WHERE s.user_id = ? AND s.expires_at > CURRENT_TIMESTAMP
-             ORDER BY s.created_at DESC
-             LIMIT 100'
-        );
-        $stmt->execute([$viewerId]);
-        $rows = $stmt->fetchAll() ?: [];
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT s.id, s.user_id, s.text, s.media_url, s.media_urls, s.created_at, s.expires_at,
+                        u.username, u.full_name, u.avatar,
+                        1 AS is_viewed,
+                        (
+                            SELECT COUNT(*)
+                            FROM story_views sv2
+                            WHERE sv2.story_id = s.id
+                        ) AS views_count
+                 FROM stories s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.user_id = ? AND s.expires_at > CURRENT_TIMESTAMP
+                 ORDER BY s.created_at DESC
+                 LIMIT 100'
+            );
+            $stmt->execute([$viewerId]);
+            $rows = $stmt->fetchAll() ?: [];
+        } catch (\Throwable) {
+            $stmt = $this->db()->prepare(
+                'SELECT s.id, s.user_id, s.text, s.media_url, NULL AS media_urls, s.created_at, s.expires_at,
+                        u.username, u.full_name, u.avatar,
+                        1 AS is_viewed,
+                        (
+                            SELECT COUNT(*)
+                            FROM story_views sv2
+                            WHERE sv2.story_id = s.id
+                        ) AS views_count
+                 FROM stories s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.user_id = ? AND s.expires_at > CURRENT_TIMESTAMP
+                 ORDER BY s.created_at DESC
+                 LIMIT 100'
+            );
+            $stmt->execute([$viewerId]);
+            $rows = $stmt->fetchAll() ?: [];
+        }
 
         $this->json(array_map(fn ($row) => $this->storyToPayload($row, $viewerId), $rows));
     }
@@ -1946,37 +2004,73 @@ final class Api
         }
 
         $text = trim((string)($body['text'] ?? ''));
-        $mediaUrl = trim((string)($body['mediaUrl'] ?? ''));
-        $durationHours = max(1, min(48, (int)($body['durationHours'] ?? 24)));
-        if ($text === '' && $mediaUrl === '') {
+        $mediaUrls = $this->normalizeStoryMediaUrls($body['mediaUrls'] ?? null, $body['mediaUrl'] ?? null);
+        if ($text === '' && count($mediaUrls) === 0) {
             $this->json(['error' => 'Story text or mediaUrl is required'], 400);
+        }
+        if (count($mediaUrls) > self::STORY_MAX_MEDIA_ITEMS) {
+            $this->json(['error' => 'Maximum 10 photos per status'], 400);
         }
 
         $storyId = $this->uuid();
-        $expiresAt = date('Y-m-d H:i:s', time() + ($durationHours * 3600));
-        $insert = $this->db()->prepare(
-            'INSERT INTO stories (id, user_id, text, media_url, expires_at) VALUES (?, ?, ?, ?, ?)'
-        );
-        $insert->execute([
-            $storyId,
-            $userId,
-            $text === '' ? null : $text,
-            $mediaUrl === '' ? null : $mediaUrl,
-            $expiresAt,
-        ]);
+        $expiresAt = date('Y-m-d H:i:s', time() + (self::STORY_LIFETIME_HOURS * 3600));
+        $primaryMediaUrl = count($mediaUrls) > 0 ? $mediaUrls[0] : null;
+        $mediaUrlsJson = count($mediaUrls) > 0
+            ? json_encode($mediaUrls, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            : null;
 
-        $stmt = $this->db()->prepare(
-            'SELECT s.id, s.user_id, s.text, s.media_url, s.created_at, s.expires_at,
-                    u.username, u.full_name, u.avatar,
-                    1 AS is_viewed,
-                    0 AS views_count
-             FROM stories s
-             JOIN users u ON u.id = s.user_id
-             WHERE s.id = ?
-             LIMIT 1'
-        );
-        $stmt->execute([$storyId]);
-        $row = $stmt->fetch();
+        try {
+            $insert = $this->db()->prepare(
+                'INSERT INTO stories (id, user_id, text, media_url, media_urls, expires_at) VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            $insert->execute([
+                $storyId,
+                $userId,
+                $text === '' ? null : $text,
+                $primaryMediaUrl,
+                $mediaUrlsJson,
+                $expiresAt,
+            ]);
+        } catch (\Throwable) {
+            $insert = $this->db()->prepare(
+                'INSERT INTO stories (id, user_id, text, media_url, expires_at) VALUES (?, ?, ?, ?, ?)'
+            );
+            $insert->execute([
+                $storyId,
+                $userId,
+                $text === '' ? null : $text,
+                $primaryMediaUrl,
+                $expiresAt,
+            ]);
+        }
+
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT s.id, s.user_id, s.text, s.media_url, s.media_urls, s.created_at, s.expires_at,
+                        u.username, u.full_name, u.avatar,
+                        1 AS is_viewed,
+                        0 AS views_count
+                 FROM stories s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.id = ?
+                 LIMIT 1'
+            );
+            $stmt->execute([$storyId]);
+            $row = $stmt->fetch();
+        } catch (\Throwable) {
+            $stmt = $this->db()->prepare(
+                'SELECT s.id, s.user_id, s.text, s.media_url, NULL AS media_urls, s.created_at, s.expires_at,
+                        u.username, u.full_name, u.avatar,
+                        1 AS is_viewed,
+                        0 AS views_count
+                 FROM stories s
+                 JOIN users u ON u.id = s.user_id
+                 WHERE s.id = ?
+                 LIMIT 1'
+            );
+            $stmt->execute([$storyId]);
+            $row = $stmt->fetch();
+        }
         if (!$row) {
             $this->json(['error' => 'Failed to create story'], 500);
         }
@@ -2020,9 +2114,15 @@ final class Api
             $this->json(['error' => 'Not found'], 404);
         }
 
-        $stmt = $this->db()->prepare('SELECT id, user_id FROM stories WHERE id = ? LIMIT 1');
-        $stmt->execute([$storyId]);
-        $story = $stmt->fetch();
+        try {
+            $stmt = $this->db()->prepare('SELECT id, user_id, media_url, media_urls FROM stories WHERE id = ? LIMIT 1');
+            $stmt->execute([$storyId]);
+            $story = $stmt->fetch();
+        } catch (\Throwable) {
+            $stmt = $this->db()->prepare('SELECT id, user_id, media_url, NULL AS media_urls FROM stories WHERE id = ? LIMIT 1');
+            $stmt->execute([$storyId]);
+            $story = $stmt->fetch();
+        }
         if (!$story) {
             $this->json(['error' => 'Not found'], 404);
         }
@@ -2030,6 +2130,8 @@ final class Api
         if ((string)$story['user_id'] !== $userId && !$this->isCreatorMatch($userId)) {
             $this->json(['error' => 'Forbidden'], 403);
         }
+
+        $this->deleteStoryMediaFilesFromRow($story);
 
         $delete = $this->db()->prepare('DELETE FROM stories WHERE id = ?');
         $delete->execute([$storyId]);
@@ -2043,6 +2145,16 @@ final class Api
         }
 
         try {
+            try {
+                $stmt = $this->db()->query('SELECT id, media_url, media_urls FROM stories WHERE expires_at <= CURRENT_TIMESTAMP');
+            } catch (\Throwable) {
+                $stmt = $this->db()->query('SELECT id, media_url, NULL AS media_urls FROM stories WHERE expires_at <= CURRENT_TIMESTAMP');
+            }
+            $expired = $stmt ? ($stmt->fetchAll() ?: []) : [];
+            foreach ($expired as $storyRow) {
+                $this->deleteStoryMediaFilesFromRow($storyRow);
+            }
+
             $this->db()->exec('DELETE FROM stories WHERE expires_at <= CURRENT_TIMESTAMP');
         } catch (\Throwable) {
             // ignore cleanup errors
@@ -2051,11 +2163,18 @@ final class Api
 
     private function storyToPayload(array $row, string $viewerId): array
     {
+        $mediaUrls = $this->decodeStoryMediaUrls($row);
+        $fallbackMedia = trim((string)($row['media_url'] ?? ''));
+        if ($fallbackMedia !== '' && !in_array($fallbackMedia, $mediaUrls, true)) {
+            $mediaUrls[] = $fallbackMedia;
+        }
+
         return [
             'id' => (string)($row['id'] ?? ''),
             'userId' => (string)($row['user_id'] ?? ''),
             'text' => $row['text'] ?? null,
-            'mediaUrl' => $row['media_url'] ?? null,
+            'mediaUrl' => $mediaUrls[0] ?? ($row['media_url'] ?? null),
+            'mediaUrls' => $mediaUrls,
             'createdAt' => isset($row['created_at']) ? date('c', strtotime((string)$row['created_at'])) : date('c'),
             'expiresAt' => isset($row['expires_at']) ? date('c', strtotime((string)$row['expires_at'])) : null,
             'isViewed' => ((string)($row['user_id'] ?? '') === $viewerId) ? true : ((int)($row['is_viewed'] ?? 0) > 0),
@@ -2942,6 +3061,90 @@ final class Api
                 'avatar' => $m['senderAvatar'] ?? null,
             ],
         ];
+    }
+
+    private function normalizeStoryMediaUrls(mixed $mediaUrlsInput, mixed $singleMediaUrlInput): array
+    {
+        $urls = [];
+        if (is_array($mediaUrlsInput)) {
+            foreach ($mediaUrlsInput as $raw) {
+                $value = trim((string)$raw);
+                if ($value === '') {
+                    continue;
+                }
+                $urls[] = $value;
+            }
+        }
+
+        $single = trim((string)$singleMediaUrlInput);
+        if ($single !== '') {
+            $urls[] = $single;
+        }
+
+        $allowedPrefixes = ['/uploads/stories/'];
+        $normalized = [];
+        foreach ($urls as $value) {
+            $relative = $this->extractUploadsRelativePath($value);
+            if ($relative === null) {
+                continue;
+            }
+            $allowed = false;
+            foreach ($allowedPrefixes as $prefix) {
+                if ($this->startsWith($relative, $prefix)) {
+                    $allowed = true;
+                    break;
+                }
+            }
+            if (!$allowed || in_array($value, $normalized, true)) {
+                continue;
+            }
+            $normalized[] = $value;
+            if (count($normalized) >= self::STORY_MAX_MEDIA_ITEMS) {
+                break;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function decodeStoryMediaUrls(array $row): array
+    {
+        $raw = $row['media_urls'] ?? null;
+        if (!is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($decoded as $item) {
+            $value = trim((string)$item);
+            if ($value === '' || in_array($value, $result, true)) {
+                continue;
+            }
+            $result[] = $value;
+            if (count($result) >= self::STORY_MAX_MEDIA_ITEMS) {
+                break;
+            }
+        }
+
+        return $result;
+    }
+
+    private function deleteStoryMediaFilesFromRow(array $storyRow): void
+    {
+        $urls = $this->decodeStoryMediaUrls($storyRow);
+        $single = trim((string)($storyRow['media_url'] ?? ''));
+        if ($single !== '' && !in_array($single, $urls, true)) {
+            $urls[] = $single;
+        }
+
+        foreach ($urls as $url) {
+            $this->deleteUploadedFileByUrl($url, ['/uploads/stories/']);
+        }
     }
 
     private function messageSenderPayload(string $userId): array
@@ -4149,6 +4352,7 @@ final class Api
                     user_id CHAR(36) NOT NULL,
                     text TEXT NULL,
                     media_url VARCHAR(2048) NULL,
+                    media_urls LONGTEXT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     expires_at DATETIME NOT NULL,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -4169,6 +4373,22 @@ final class Api
                     CONSTRAINT fk_story_view_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
             );
+
+            try {
+                $columns = [];
+                $stmt = $this->db()->query('SHOW COLUMNS FROM stories');
+                foreach (($stmt ? $stmt->fetchAll() : []) as $row) {
+                    $name = strtolower((string)($row['Field'] ?? ''));
+                    if ($name !== '') {
+                        $columns[$name] = true;
+                    }
+                }
+                if (!isset($columns['media_urls'])) {
+                    $this->db()->exec('ALTER TABLE stories ADD COLUMN media_urls LONGTEXT NULL');
+                }
+            } catch (\Throwable) {
+                // keep working even when SHOW/ALTER is restricted
+            }
 
             $this->storyTablesReady = true;
         } catch (\Throwable) {
@@ -4269,6 +4489,83 @@ final class Api
 
         if (!$result) {
             $this->json(['error' => 'No valid files uploaded'], 400);
+        }
+
+        $this->json(['files' => $result], 201);
+    }
+
+    private function uploadStoryFiles(): void
+    {
+        $this->authUserId();
+
+        if (!isset($_FILES['files']) || !is_array($_FILES['files'])) {
+            $this->json(['error' => 'Files are required'], 400);
+        }
+
+        $files = $this->normalizeUploadedFiles($_FILES['files']);
+        if (!$files) {
+            $this->json(['error' => 'Files are required'], 400);
+        }
+        if (count($files) > self::STORY_MAX_MEDIA_ITEMS) {
+            $this->json(['error' => 'Maximum 10 photos per status'], 400);
+        }
+
+        $uploadDir = dirname(__DIR__) . '/public/uploads/stories';
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+            $this->json(['error' => 'Cannot create upload directory'], 500);
+        }
+
+        $maxSize = 15 * 1024 * 1024;
+        $mimeToExt = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            'image/gif' => 'gif',
+            'image/heic' => 'heic',
+            'image/heif' => 'heif',
+        ];
+
+        $result = [];
+        foreach ($files as $file) {
+            if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                continue;
+            }
+
+            $tmp = (string)($file['tmp_name'] ?? '');
+            if ($tmp === '' || !is_uploaded_file($tmp)) {
+                continue;
+            }
+
+            $size = (int)($file['size'] ?? 0);
+            if ($size <= 0 || $size > $maxSize) {
+                continue;
+            }
+
+            $mime = (string)(mime_content_type($tmp) ?: '');
+            $ext = $mimeToExt[$mime] ?? '';
+            if ($ext === '') {
+                continue;
+            }
+
+            $id = $this->uuid();
+            $fileName = $id . '.' . $ext;
+            $dest = $uploadDir . '/' . $fileName;
+            if (!move_uploaded_file($tmp, $dest)) {
+                continue;
+            }
+
+            $relative = '/uploads/stories/' . $fileName;
+            $result[] = [
+                'id' => $id,
+                'name' => (string)($file['name'] ?? $fileName),
+                'url' => $this->buildPublicUrl($relative),
+                'type' => 'image',
+                'size' => $size,
+            ];
+        }
+
+        if (!$result) {
+            $this->json(['error' => 'No valid image files uploaded'], 400);
         }
 
         $this->json(['files' => $result], 201);
