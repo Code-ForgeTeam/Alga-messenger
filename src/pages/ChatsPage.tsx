@@ -386,13 +386,19 @@ export default function ChatsPage() {
 
   const openStoryViewer = (group: StoryGroup) => {
     if (!group.items.length) return;
-    const slides: StorySlide[] = group.items.flatMap((item) => {
+
+    const slides: StorySlide[] = [];
+    for (const item of group.items) {
       const mediaUrls = asStoryMediaUrls(item);
       if (mediaUrls.length === 0) {
-        return [{ story: item, mediaUrl: null }];
+        slides.push({ story: item, mediaUrl: null });
+        continue;
       }
-      return mediaUrls.map((mediaUrl) => ({ story: item, mediaUrl }));
-    });
+      for (const mediaUrl of mediaUrls) {
+        slides.push({ story: item, mediaUrl });
+      }
+    }
+
     if (!slides.length) return;
 
     const firstNotViewedIndex = slides.findIndex((item) => !item.story.isViewed);
