@@ -40,6 +40,7 @@ import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { useNavigate } from 'react-router-dom';
 import { useRef } from 'react';
 import { useChatStore } from '../stores/chatStore';
@@ -51,7 +52,7 @@ import { useTheme } from '@mui/material/styles';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAdminStore } from '../stores/adminStore';
 import { storyApi, uploadApi, userApi } from '../lib/api';
-import type { Chat, Story } from '../lib/types';
+import type { Chat, Story, StoryViewer } from '../lib/types';
 import { isCreatorUser } from '../lib/creator';
 
 const STORY_MEDIA_LIMIT = 10;
@@ -153,6 +154,9 @@ export default function ChatsPage() {
   const [storyViewerSlides, setStoryViewerSlides] = useState<StorySlide[]>([]);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [storySubmitting, setStorySubmitting] = useState(false);
+  const [storyViewers, setStoryViewers] = useState<StoryViewer[]>([]);
+  const [storyViewersLoading, setStoryViewersLoading] = useState(false);
+  const [storyViewersSheetOpen, setStoryViewersSheetOpen] = useState(false);
   const holdTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef<string | null>(null);
   const storyInputRef = useRef<HTMLInputElement | null>(null);
@@ -413,6 +417,9 @@ export default function ChatsPage() {
     setStoryViewerGroup(null);
     setStoryViewerSlides([]);
     setStoryViewerIndex(0);
+    setStoryViewers([]);
+    setStoryViewersSheetOpen(false);
+    setStoryViewersLoading(false);
   };
 
   const activeStorySlide = useMemo(() => {
@@ -422,6 +429,13 @@ export default function ChatsPage() {
   }, [storyViewerIndex, storyViewerSlides]);
 
   const activeStory = activeStorySlide?.story || null;
+  const isOwnActiveStory = Boolean(activeStory && user?.id && String(activeStory.userId) === String(user.id));
+  const activeStoryViewsCount = useMemo(() => {
+    if (!isOwnActiveStory) return 0;
+    const groupCount =
+      storyViewerGroup?.items?.reduce((total, item) => total + Math.max(0, Number(item?.viewsCount || 0)), 0) || 0;
+    return Math.max(storyViewers.length, Number(activeStory?.viewsCount || 0), groupCount);
+  }, [activeStory?.viewsCount, isOwnActiveStory, storyViewerGroup?.items, storyViewers.length]);
 
   useEffect(() => {
     if (!storyViewerOpen || !activeStory || !user?.id) return;
@@ -432,6 +446,57 @@ export default function ChatsPage() {
       .then(() => loadStories())
       .catch(() => null);
   }, [storyViewerOpen, activeStory?.id, activeStory?.isViewed, activeStory?.userId, user?.id]);
+
+  useEffect(() => {
+    if (!storyViewerOpen || !activeStory || !isOwnActiveStory) {
+      setStoryViewers([]);
+      setStoryViewersLoading(false);
+      return;
+    }
+
+    let active = true;
+    setStoryViewersLoading(true);
+    storyApi
+      .getViewers(activeStory.id)
+      .then((response) => {
+        if (!active) return;
+        const items = Array.isArray(response?.items) ? response.items : [];
+        const normalized: StoryViewer[] = items
+          .map((item: any) => {
+            const userId = String(item?.userId || item?.user?.id || '').trim();
+            if (!userId) return null;
+            return {
+              userId,
+              viewedAt: String(item?.viewedAt || '').trim(),
+              user: {
+                id: userId,
+                username: String(item?.user?.username || '').trim(),
+                fullName: String(item?.user?.fullName || '').trim(),
+                avatar: item?.user?.avatar || undefined,
+              },
+            } as StoryViewer;
+          })
+          .filter((item: StoryViewer | null): item is StoryViewer => Boolean(item));
+        setStoryViewers(normalized);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStoryViewers([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setStoryViewersLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [storyViewerOpen, activeStory?.id, isOwnActiveStory]);
+
+  useEffect(() => {
+    if (isOwnActiveStory) return;
+    setStoryViewersSheetOpen(false);
+  }, [isOwnActiveStory]);
 
   const stepStory = (direction: -1 | 1) => {
     const max = storyViewerSlides.length - 1;
@@ -1204,9 +1269,104 @@ export default function ChatsPage() {
             >
               <ArrowForwardIosRoundedIcon />
             </IconButton>
+
+            {isOwnActiveStory && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 'max(env(safe-area-inset-bottom), 14px)',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  px: 2,
+                }}
+              >
+                <ButtonBase
+                  onClick={() => setStoryViewersSheetOpen(true)}
+                  sx={{
+                    minHeight: 36,
+                    px: 1.2,
+                    borderRadius: 99,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.7,
+                    bgcolor: 'rgba(0,0,0,0.42)',
+                    border: '1px solid rgba(255,255,255,0.22)',
+                  }}
+                >
+                  <VisibilityRoundedIcon sx={{ fontSize: 18 }} />
+                  <Typography sx={{ fontSize: 13, fontWeight: 700 }}>
+                    {storyViewersLoading ? 'Загрузка...' : `Просмотры: ${activeStoryViewsCount}`}
+                  </Typography>
+                </ButtonBase>
+              </Box>
+            )}
           </Box>
         </Box>
       </Dialog>
+
+      <Drawer
+        anchor="bottom"
+        open={storyViewersSheetOpen}
+        onClose={() => setStoryViewersSheetOpen(false)}
+        PaperProps={{
+          sx: {
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+            bgcolor: isDark ? '#0E1C2E' : '#FFFFFF',
+            pb: 'max(env(safe-area-inset-bottom), 10px)',
+          },
+        }}
+      >
+        <Box sx={{ p: 1.2 }}>
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>Кто смотрел статус</Typography>
+          {storyViewersLoading ? (
+            <Box sx={{ py: 3, display: 'grid', placeItems: 'center' }}>
+              <CircularProgress size={22} />
+            </Box>
+          ) : storyViewers.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 1.5 }}>
+              Пока никто не посмотрел этот статус.
+            </Typography>
+          ) : (
+            <Box sx={{ maxHeight: '55dvh', overflowY: 'auto', display: 'grid', gap: 0.75 }}>
+              {storyViewers.map((viewer) => (
+                <Box
+                  key={`${viewer.userId}-${viewer.viewedAt}`}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    p: 0.8,
+                    borderRadius: 2,
+                    bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                  }}
+                >
+                  <Avatar src={viewer.user.avatar} sx={{ width: 34, height: 34 }}>
+                    {(viewer.user.fullName || viewer.user.username || 'U').slice(0, 1).toUpperCase()}
+                  </Avatar>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography noWrap sx={{ fontWeight: 700, fontSize: 14 }}>
+                      {viewer.user.fullName || `@${viewer.user.username || 'user'}`}
+                    </Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.76 }}>
+                      {viewer.viewedAt
+                        ? new Date(viewer.viewedAt).toLocaleString('ru-RU', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : 'Недавно'}
+                    </Typography>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Box>
+      </Drawer>
 
       <Menu anchorEl={chatActionsAnchor} open={!!chatActionsAnchor} onClose={() => setChatActionsAnchor(null)}>
         <MenuItem

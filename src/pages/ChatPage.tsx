@@ -6,6 +6,7 @@ import {
   ButtonBase,
   CircularProgress,
   Dialog,
+  Drawer,
   IconButton,
   Menu,
   MenuItem,
@@ -138,6 +139,25 @@ const blobToBase64 = (blob: Blob): Promise<string> =>
     reader.readAsDataURL(blob);
   });
 
+type DeviceGalleryItem = {
+  identifier: string;
+  previewUrl: string;
+  creationDate?: string;
+  data?: string;
+  path?: string;
+};
+
+const IMAGE_FILE_RE = /\.(jpe?g|png|gif|webp|heic|heif|bmp|avif)$/i;
+
+const normalizeNativePath = (value: string): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('content://') || raw.startsWith('file://') || raw.startsWith('/')) {
+    return raw;
+  }
+  return `/${raw.replace(/^\/+/, '')}`;
+};
+
 export default function ChatPage() {
   const { chatId = '' } = useParams();
   const navigate = useNavigate();
@@ -180,6 +200,8 @@ export default function ChatPage() {
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [mediaPickerBusy, setMediaPickerBusy] = useState(false);
   const [mediaPickerThumbs, setMediaPickerThumbs] = useState<string[]>([]);
+  const [deviceGalleryItems, setDeviceGalleryItems] = useState<DeviceGalleryItem[]>([]);
+  const [deviceGalleryLoading, setDeviceGalleryLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -391,7 +413,162 @@ export default function ChatPage() {
     return new File([blob], fileName, { type: mime || (extension === 'mp4' ? 'video/mp4' : 'image/jpeg') });
   };
 
-  const handlePickFromGallery = async () => {
+  const toDataUrl = (value: string): string => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    if (normalized.startsWith('data:')) return normalized;
+    return `data:image/jpeg;base64,${normalized}`;
+  };
+
+  const loadDeviceGallery = async () => {
+    setDeviceGalleryLoading(true);
+    try {
+      const [{ Capacitor }, mediaModule, filesystemModule] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor-community/media'),
+        import('@capacitor/filesystem'),
+      ]);
+      const platform = Capacitor.getPlatform();
+      if (platform === 'web') {
+        setDeviceGalleryItems([]);
+        return;
+      }
+
+      const { Media } = mediaModule;
+      if (platform === 'android') {
+        const { Filesystem } = filesystemModule;
+        const albums = await Media.getAlbums();
+        const albumPaths = (Array.isArray(albums?.albums) ? albums.albums : [])
+          .map((album) => normalizeNativePath(String(album?.identifier || '')))
+          .filter((value, index, arr) => value !== '' && arr.indexOf(value) === index)
+          .slice(0, 20);
+
+        const next: DeviceGalleryItem[] = [];
+        const seen = new Set<string>();
+        for (const albumPath of albumPaths) {
+          if (next.length >= 180) break;
+          try {
+            const listed = await Filesystem.readdir({ path: albumPath });
+            const files = Array.isArray(listed?.files) ? listed.files : [];
+            for (const fileInfo of files) {
+              if (next.length >= 180) break;
+              if (String(fileInfo?.type || '') !== 'file') continue;
+              const name = String(fileInfo?.name || '').trim();
+              if (!IMAGE_FILE_RE.test(name)) continue;
+              const uriRaw =
+                normalizeNativePath(String(fileInfo?.uri || '')) ||
+                normalizeNativePath(`${albumPath}/${name}`);
+              if (!uriRaw || seen.has(uriRaw)) continue;
+              seen.add(uriRaw);
+              const mtime = Number(fileInfo?.mtime || 0);
+              next.push({
+                identifier: uriRaw,
+                path: uriRaw,
+                previewUrl: Capacitor.convertFileSrc(uriRaw),
+                creationDate: Number.isFinite(mtime) && mtime > 0 ? new Date(mtime).toISOString() : undefined,
+              });
+            }
+          } catch {
+            // skip unreadable album path and continue
+          }
+        }
+
+        const sorted = next
+          .sort((a, b) => new Date(b.creationDate || 0).getTime() - new Date(a.creationDate || 0).getTime())
+          .slice(0, 120);
+        setDeviceGalleryItems(sorted);
+        return;
+      }
+
+      const response = await Media.getMedias({
+        quantity: 120,
+        thumbnailWidth: 280,
+        thumbnailHeight: 280,
+        thumbnailQuality: 70,
+        types: 'photos',
+        sort: [
+          {
+            key: 'creationDate',
+            ascending: false,
+          },
+        ],
+      });
+
+      const items = Array.isArray(response?.medias) ? response.medias : [];
+      const normalized: DeviceGalleryItem[] = [];
+      for (const media of items) {
+        const identifier = String(media?.identifier || '').trim();
+        const data = String(media?.data || '').trim();
+        if (!identifier || !data) continue;
+        normalized.push({
+          identifier,
+          data,
+          previewUrl: toDataUrl(data),
+          creationDate: media?.creationDate,
+        });
+      }
+      setDeviceGalleryItems(normalized);
+    } catch {
+      setDeviceGalleryItems([]);
+      pushSnackbar({ message: 'Не удалось загрузить фото устройства', timeout: 2200, tone: 'error' });
+    } finally {
+      setDeviceGalleryLoading(false);
+    }
+  };
+
+  const fileFromDeviceGalleryItem = async (item: DeviceGalleryItem): Promise<File> => {
+    const [{ Capacitor }, mediaModule] = await Promise.all([
+      import('@capacitor/core'),
+      import('@capacitor-community/media'),
+    ]);
+    const platform = Capacitor.getPlatform();
+
+    let assetPath = normalizeNativePath(item.path || '');
+    if (platform === 'ios' && !assetPath) {
+      try {
+        const { Media } = mediaModule;
+        const resolved = await Media.getMediaByIdentifier({ identifier: item.identifier });
+        assetPath = normalizeNativePath(String(resolved?.path || ''));
+      } catch {
+        // fallback to thumbnail data below
+      }
+    }
+    if (!assetPath && platform !== 'ios') {
+      assetPath = normalizeNativePath(item.identifier);
+    }
+
+    if (assetPath) {
+      try {
+        const localUrl =
+          assetPath.startsWith('http://') ||
+          assetPath.startsWith('https://') ||
+          assetPath.startsWith('data:')
+            ? assetPath
+            : Capacitor.convertFileSrc(assetPath);
+        const response = await fetch(localUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          const mime = String(blob.type || 'image/jpeg');
+          const ext = guessExtension(mime, 'image');
+          return new File([blob], `gallery-${Date.now()}.${ext}`, { type: mime || 'image/jpeg' });
+        }
+      } catch {
+        // fallback to thumbnail data below
+      }
+    }
+
+    const fallbackSource = item.data ? toDataUrl(item.data) : item.previewUrl;
+    if (!fallbackSource) {
+      throw new Error('NO_GALLERY_SOURCE');
+    }
+    const response = await fetch(fallbackSource);
+    const blob = await response.blob();
+    const mime = String(blob.type || 'image/jpeg');
+    const ext = guessExtension(mime, 'image');
+    return new File([blob], `gallery-${Date.now()}.${ext}`, { type: mime || 'image/jpeg' });
+  };
+
+  const handlePickFromGalleryLegacy = async () => {
     setMediaPickerBusy(true);
     try {
       const [{ Capacitor }, cameraModule] = await Promise.all([
@@ -437,6 +614,22 @@ export default function ChatPage() {
     }
   };
 
+  const handlePickFromGallery = async () => {
+    setMediaPickerBusy(true);
+    try {
+      const { Capacitor } = await import('@capacitor/core');
+      if (Capacitor.getPlatform() === 'web') {
+        galleryInputRef.current?.click();
+        return;
+      }
+      await loadDeviceGallery();
+    } catch {
+      pushSnackbar({ message: 'Не удалось открыть галерею', timeout: 2200, tone: 'error' });
+    } finally {
+      setMediaPickerBusy(false);
+    }
+  };
+
   const handleTakePhotoNow = async () => {
     setMediaPickerBusy(true);
     try {
@@ -464,6 +657,21 @@ export default function ChatPage() {
       await appendAndUploadFiles([file]);
     } catch {
       pushSnackbar({ message: 'Не удалось сделать снимок', timeout: 2200, tone: 'error' });
+    } finally {
+      setMediaPickerBusy(false);
+    }
+  };
+
+  const handlePickFromInlineGallery = async (item: DeviceGalleryItem) => {
+    setMediaPickerBusy(true);
+    try {
+      const file = await fileFromDeviceGalleryItem(item);
+      if (item.previewUrl) {
+        setMediaPickerThumbs((prev) => [item.previewUrl, ...prev].slice(0, 24));
+      }
+      await appendAndUploadFiles([file]);
+    } catch {
+      pushSnackbar({ message: 'Не удалось добавить фото', timeout: 2200, tone: 'error' });
     } finally {
       setMediaPickerBusy(false);
     }
@@ -518,6 +726,11 @@ export default function ChatPage() {
     const merged = [...fromPending, ...mediaPickerThumbs];
     return merged.filter((url, index, arr) => !!url && arr.indexOf(url) === index).slice(0, 24);
   }, [filePreviewUrls, mediaPickerThumbs]);
+
+  useEffect(() => {
+    if (!mediaPickerOpen) return;
+    loadDeviceGallery().catch(() => null);
+  }, [mediaPickerOpen]);
 
   useEffect(() => {
     return () => {
@@ -589,7 +802,7 @@ export default function ChatPage() {
     setSelectedMessage(null);
   };
 
-  const downloadAttachmentLegacy = async (attachment: Attachment) => {
+  const downloadAttachmentLegacyA = async (attachment: Attachment) => {
     const url = String(attachment?.url || '').trim();
     if (!url) return;
 
@@ -686,7 +899,7 @@ export default function ChatPage() {
     }
   };
 
-  const downloadAttachment = async (attachment: Attachment) => {
+  const downloadAttachmentLegacyB = async (attachment: Attachment) => {
     const url = String(attachment?.url || '').trim();
     if (!url) return;
 
@@ -777,6 +990,189 @@ export default function ChatPage() {
         timeout: 2600,
         tone: 'error',
       });
+    }
+  };
+
+  const downloadAttachment = async (attachment: Attachment) => {
+    const url = String(attachment?.url || '').trim();
+    if (!url) return;
+    {
+      const notifySaved = () =>
+        pushSnackbar({
+          message: attachment.type === 'video' ? 'Видео сохранено' : 'Фото сохранено',
+          timeout: 2200,
+          tone: 'success',
+        });
+
+      const notifyError = () =>
+        pushSnackbar({
+          message: attachment.type === 'video' ? 'Не удалось сохранить видео' : 'Не удалось сохранить фото',
+          timeout: 2600,
+          tone: 'error',
+        });
+
+      const resolveAndroidAlbumIdentifier = async (Media: any): Promise<string | undefined> => {
+        const targetName = 'Alga';
+        const findExisting = async (): Promise<string | undefined> => {
+          try {
+            const albums = await Media.getAlbums();
+            const list = Array.isArray(albums?.albums) ? albums.albums : [];
+            const found = list.find(
+              (album: any) =>
+                String(album?.name || '').trim().toLowerCase() === targetName.toLowerCase() &&
+                String(album?.identifier || '').trim() !== '',
+            );
+            return found ? String(found.identifier) : undefined;
+          } catch {
+            return undefined;
+          }
+        };
+
+        const existing = await findExisting();
+        if (existing) return existing;
+
+        try {
+          await Media.createAlbum({ name: targetName });
+        } catch {
+          // album may already exist
+        }
+
+        const created = await findExisting();
+        if (created) return created;
+
+        try {
+          const pathResult = await Media.getAlbumsPath();
+          const basePath = String(pathResult?.path || '').replace(/[\\/]+$/, '');
+          if (!basePath) return undefined;
+          return `${basePath}/${targetName}`;
+        } catch {
+          return undefined;
+        }
+      };
+
+      const saveInNativeGallery = async (): Promise<boolean> => {
+        const [{ Capacitor }, mediaModule] = await Promise.all([
+          import('@capacitor/core'),
+          import('@capacitor-community/media'),
+        ]);
+        const platform = Capacitor.getPlatform();
+        if (platform === 'web') {
+          return false;
+        }
+
+        const { Media } = mediaModule;
+        const albumIdentifier = platform === 'android' ? await resolveAndroidAlbumIdentifier(Media) : undefined;
+        const saveByPath = async (pathValue: string) => {
+          if (attachment.type === 'video') {
+            await Media.saveVideo(albumIdentifier ? { path: pathValue, albumIdentifier } : { path: pathValue });
+            return;
+          }
+          await Media.savePhoto(albumIdentifier ? { path: pathValue, albumIdentifier } : { path: pathValue });
+        };
+
+        try {
+          await saveByPath(url);
+          return true;
+        } catch {
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`HTTP_${response.status}`);
+          }
+          const blob = await response.blob();
+          const mime = String(blob.type || (attachment.type === 'video' ? 'video/mp4' : 'image/jpeg'));
+          const base64 = await blobToBase64(blob);
+          await saveByPath(`data:${mime};base64,${base64}`);
+          return true;
+        }
+      };
+
+      try {
+        const nativeSaved = await saveInNativeGallery();
+        if (nativeSaved) {
+          notifySaved();
+          return;
+        }
+      } catch {
+        notifyError();
+        return;
+      }
+
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP_${response.status}`);
+        }
+        const blob = await response.blob();
+        const fileName = inferFileName(attachment, url, String(blob.type || ''));
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = fileName;
+        anchor.rel = 'noopener noreferrer';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
+        notifySaved();
+      } catch {
+        notifyError();
+      }
+      return;
+    }
+
+    const showSaved = () =>
+      pushSnackbar({
+        message: attachment.type === 'video' ? 'Видео сохранено' : 'Фото сохранено',
+        timeout: 2200,
+        tone: 'success',
+      });
+
+    const showError = () =>
+      pushSnackbar({
+        message: attachment.type === 'video' ? 'Не удалось сохранить видео' : 'Не удалось сохранить фото',
+        timeout: 2600,
+        tone: 'error',
+      });
+
+    try {
+      const [{ Capacitor }, mediaModule] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor-community/media'),
+      ]);
+      const platform = Capacitor.getPlatform();
+      if (platform !== 'web') {
+        const { Media } = mediaModule;
+        if (attachment.type === 'video') {
+          await Media.saveVideo({ path: url });
+        } else {
+          await Media.savePhoto({ path: url });
+        }
+        showSaved();
+        return;
+      }
+    } catch {
+      // fallback below
+    }
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP_${response.status}`);
+      }
+      const blob = await response.blob();
+      const fileName = inferFileName(attachment, url, String(blob.type || ''));
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
+      showSaved();
+    } catch {
+      showError();
     }
   };
 
@@ -1704,15 +2100,27 @@ export default function ChatPage() {
         </Box>
       )}
 
-      <Dialog open={mediaPickerOpen} onClose={() => setMediaPickerOpen(false)} fullWidth maxWidth="sm">
-        <Box sx={{ p: 1.5 }}>
+      <Drawer
+        anchor="bottom"
+        open={mediaPickerOpen}
+        onClose={() => setMediaPickerOpen(false)}
+        PaperProps={{
+          sx: {
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+            bgcolor: isDark ? '#0E1C2E' : '#FFFFFF',
+            pb: 'max(env(safe-area-inset-bottom), 10px)',
+          },
+        }}
+      >
+        <Box sx={{ p: 1.25, '& > .MuiTypography-root:first-of-type': { display: 'none' } }}>
           <Typography sx={{ fontWeight: 700, mb: 1 }}>Выбор медиа</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
             <ButtonBase
               disabled={mediaPickerBusy}
               onClick={() => void handleTakePhotoNow()}
               sx={{
-                minHeight: 88,
+                minHeight: 62,
                 borderRadius: 2,
                 border: '1px solid',
                 borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
@@ -1720,7 +2128,7 @@ export default function ChatPage() {
                 placeItems: 'center',
               }}
             >
-              <Box sx={{ textAlign: 'center' }}>
+              <Box sx={{ textAlign: 'center', '& .MuiTypography-root': { display: 'none' } }}>
                 <PhotoCameraRoundedIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
                 <Typography variant="caption">Снимок</Typography>
               </Box>
@@ -1729,7 +2137,7 @@ export default function ChatPage() {
               disabled={mediaPickerBusy}
               onClick={() => void handlePickFromGallery()}
               sx={{
-                minHeight: 88,
+                minHeight: 62,
                 borderRadius: 2,
                 border: '1px solid',
                 borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
@@ -1737,7 +2145,7 @@ export default function ChatPage() {
                 placeItems: 'center',
               }}
             >
-              <Box sx={{ textAlign: 'center' }}>
+              <Box sx={{ textAlign: 'center', '& .MuiTypography-root': { display: 'none' } }}>
                 <CollectionsRoundedIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
                 <Typography variant="caption">Галерея</Typography>
               </Box>
@@ -1746,7 +2154,7 @@ export default function ChatPage() {
               disabled={mediaPickerBusy}
               onClick={() => inputRef.current?.click()}
               sx={{
-                minHeight: 88,
+                minHeight: 62,
                 borderRadius: 2,
                 border: '1px solid',
                 borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
@@ -1754,35 +2162,75 @@ export default function ChatPage() {
                 placeItems: 'center',
               }}
             >
-              <Box sx={{ textAlign: 'center' }}>
+              <Box sx={{ textAlign: 'center', '& .MuiTypography-root': { display: 'none' } }}>
                 <AttachFileIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
                 <Typography variant="caption">Файл</Typography>
               </Box>
             </ButtonBase>
           </Box>
-          {!!mediaPickerGalleryThumbs.length && (
-            <Box sx={{ display: 'flex', gap: 0.8, mt: 1.2, overflowX: 'auto', pb: 0.2 }}>
-              {mediaPickerGalleryThumbs.map((thumb, index) => (
-                <Box
-                  key={`${thumb}-${index}`}
-                  component="img"
-                  src={thumb}
-                  alt={`media-${index}`}
-                  sx={{
-                    width: 60,
-                    height: 60,
-                    borderRadius: 1.4,
-                    objectFit: 'cover',
-                    border: '1px solid',
-                    borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.12)',
-                    flexShrink: 0,
-                  }}
-                />
-              ))}
-            </Box>
-          )}
+          <Box
+            sx={{
+              mt: 1.1,
+              maxHeight: 240,
+              overflowY: 'auto',
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)',
+              p: 0.65,
+            }}
+          >
+            {deviceGalleryLoading ? (
+              <Box sx={{ py: 3, display: 'grid', placeItems: 'center' }}>
+                <CircularProgress size={20} />
+              </Box>
+            ) : deviceGalleryItems.length > 0 ? (
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 0.55 }}>
+                {deviceGalleryItems.map((item) => (
+                  <ButtonBase
+                    key={item.identifier}
+                    disabled={mediaPickerBusy}
+                    onClick={() => void handlePickFromInlineGallery(item)}
+                    sx={{
+                      borderRadius: 1.2,
+                      overflow: 'hidden',
+                      width: '100%',
+                      aspectRatio: '1 / 1',
+                    }}
+                  >
+                    <Box
+                      component="img"
+                      src={item.previewUrl}
+                      alt="gallery"
+                      sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  </ButtonBase>
+                ))}
+              </Box>
+            ) : mediaPickerGalleryThumbs.length > 0 ? (
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 0.55 }}>
+                {mediaPickerGalleryThumbs.map((thumb, index) => (
+                  <Box
+                    key={`${thumb}-${index}`}
+                    component="img"
+                    src={thumb}
+                    alt={`media-${index}`}
+                    sx={{
+                      width: '100%',
+                      aspectRatio: '1 / 1',
+                      borderRadius: 1.2,
+                      objectFit: 'cover',
+                    }}
+                  />
+                ))}
+              </Box>
+            ) : (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', py: 2, textAlign: 'center' }}>
+                Галерея пока недоступна. Нажми на иконку галереи.
+              </Typography>
+            )}
+          </Box>
         </Box>
-      </Dialog>
+      </Drawer>
 
       <Box sx={{ px: 1, pt: 1, pb: 'max(env(safe-area-inset-bottom), 8px)', display: 'flex', gap: 1, alignItems: 'center', bgcolor: isDark ? 'rgba(14,29,47,0.95)' : '#FFFFFF', borderTop: '1px solid', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'divider' }}>
         <input

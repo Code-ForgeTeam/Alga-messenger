@@ -18,6 +18,9 @@ const config: CapacitorConfig = {
       iconColor: '#8774E1',
       sound: 'default',
     },
+    Media: {
+      androidGalleryMode: true,
+    },
   },
 };
 

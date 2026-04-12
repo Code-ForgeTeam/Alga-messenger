@@ -86,6 +86,12 @@ export interface Story {
   user: Pick<User, 'id' | 'username' | 'fullName' | 'avatar'>;
 }
 
+export interface StoryViewer {
+  userId: string;
+  viewedAt: string;
+  user: Pick<User, 'id' | 'username' | 'fullName' | 'avatar'>;
+}
+
 export interface NotificationBanner {
   id: string;
   title?: string;

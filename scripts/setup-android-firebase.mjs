@@ -7,6 +7,7 @@ const localSourcePath = path.join(cwd, 'google-services.json');
 const strictMode = process.argv.includes('--strict') || process.env.REQUIRE_ANDROID_FIREBASE === '1';
 
 const hasAndroidProject = fs.existsSync(path.join(cwd, 'android', 'app'));
+const manifestPath = path.join(cwd, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
 
 const fail = (message) => {
   console.error(`[android-firebase] ${message}`);
@@ -17,12 +18,41 @@ const warn = (message) => {
   console.warn(`[android-firebase] ${message}`);
 };
 
+const ensureAndroidManifestPermissions = () => {
+  if (!fs.existsSync(manifestPath)) {
+    warn('AndroidManifest.xml not found, skipping media/gallery permission patch.');
+    return;
+  }
+
+  const requiredPermissions = [
+    '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />',
+    '<uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />',
+    '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',
+    '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />',
+  ];
+
+  let manifest = fs.readFileSync(manifestPath, 'utf8');
+  let changed = false;
+  for (const permission of requiredPermissions) {
+    if (manifest.includes(permission)) continue;
+    manifest = manifest.replace('</manifest>', `    ${permission}\n</manifest>`);
+    changed = true;
+  }
+
+  if (changed) {
+    fs.writeFileSync(manifestPath, manifest, 'utf8');
+    console.log('[android-firebase] Patched AndroidManifest.xml media permissions.');
+  }
+};
+
 if (!hasAndroidProject) {
   const message = 'android/app not found. Run `npx cap add android` first.';
   if (strictMode) fail(message);
   warn(`${message} Skipping Firebase config step.`);
   process.exit(0);
 }
+
+ensureAndroidManifestPermissions();
 
 let source = '';
 let content = '';

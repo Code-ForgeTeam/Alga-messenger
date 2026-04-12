@@ -155,6 +155,7 @@ export const storyApi = {
   create: async (payload: { text?: string; mediaUrl?: string; mediaUrls?: string[] }) =>
     (await api.post('/stories', payload)).data,
   markViewed: async (storyId: string) => (await api.post(`/stories/${storyId}/view`)).data,
+  getViewers: async (storyId: string) => (await api.get(`/stories/${storyId}/viewers`)).data,
   delete: async (storyId: string) => (await api.delete(`/stories/${storyId}`)).data,
 };
 

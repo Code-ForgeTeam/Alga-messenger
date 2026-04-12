@@ -92,6 +92,7 @@ final class Api
         if ($path === '/api/stories' && $method === 'POST') { $this->createStory($body); }
         if ($path === '/api/stories/mine' && $method === 'GET') { $this->myStories(); }
         if (preg_match('#^/api/stories/([a-zA-Z0-9\-]+)/view$#', $path, $m) && $method === 'POST') { $this->viewStory($m[1]); }
+        if (preg_match('#^/api/stories/([a-zA-Z0-9\-]+)/viewers$#', $path, $m) && $method === 'GET') { $this->storyViewers($m[1]); }
         if (preg_match('#^/api/stories/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteStory($m[1]); }
         if ($path === '/api/ai/chat' && $method === 'GET') { $this->aiChat(); }
         if ($path === '/api/ai/message' && $method === 'POST') { $this->aiMessage($body); }
@@ -2105,6 +2106,57 @@ final class Api
         }
 
         $this->json(['ok' => true]);
+    }
+
+    private function storyViewers(string $storyId): void
+    {
+        $viewerId = $this->authUserId();
+        if (!$this->ensureStoryTables()) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+        $this->cleanupExpiredStories();
+
+        $storyStmt = $this->db()->prepare('SELECT id, user_id FROM stories WHERE id = ? LIMIT 1');
+        $storyStmt->execute([$storyId]);
+        $story = $storyStmt->fetch();
+        if (!$story) {
+            $this->json(['error' => 'Not found'], 404);
+        }
+
+        $ownerId = (string)($story['user_id'] ?? '');
+        if ($ownerId !== $viewerId && !$this->isCreatorMatch($viewerId)) {
+            $this->json(['error' => 'Forbidden'], 403);
+        }
+
+        $stmt = $this->db()->prepare(
+            'SELECT sv.user_id, sv.viewed_at, u.username, u.full_name, u.avatar
+             FROM story_views sv
+             JOIN users u ON u.id = sv.user_id
+             WHERE sv.story_id = ?
+             ORDER BY sv.viewed_at DESC
+             LIMIT 500'
+        );
+        $stmt->execute([$storyId]);
+        $rows = $stmt->fetchAll() ?: [];
+
+        $items = array_map(static function ($row): array {
+            return [
+                'userId' => (string)($row['user_id'] ?? ''),
+                'viewedAt' => isset($row['viewed_at']) ? date('c', strtotime((string)$row['viewed_at'])) : date('c'),
+                'user' => [
+                    'id' => (string)($row['user_id'] ?? ''),
+                    'username' => (string)($row['username'] ?? ''),
+                    'fullName' => (string)($row['full_name'] ?? ''),
+                    'avatar' => $row['avatar'] ?? null,
+                ],
+            ];
+        }, $rows);
+
+        $this->json([
+            'ok' => true,
+            'count' => count($items),
+            'items' => $items,
+        ]);
     }
 
     private function deleteStory(string $storyId): void
