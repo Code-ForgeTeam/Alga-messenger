@@ -77,6 +77,7 @@ export default function GroupProfilePage() {
   const [isSavingName, setIsSavingName] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isRemovingMemberId, setIsRemovingMemberId] = useState<string | null>(null);
+  const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
 
   const chat = useMemo(
     () => chats.find((item) => item.id === chatId && item.type === 'group') || null,
@@ -372,7 +373,19 @@ export default function GroupProfilePage() {
 
       <Box sx={{ mt: 1, display: 'grid', justifyItems: 'center', textAlign: 'center' }}>
         <Box sx={{ position: 'relative' }}>
-          <Avatar src={chat.avatar} sx={{ width: 94, height: 94, bgcolor: '#5E5BF0', mb: 1.2 }}>
+          <Avatar
+            src={chat.avatar}
+            onClick={() => {
+              if (chat.avatar) setAvatarPreviewOpen(true);
+            }}
+            sx={{
+              width: 94,
+              height: 94,
+              bgcolor: '#5E5BF0',
+              mb: 1.2,
+              cursor: chat.avatar ? 'zoom-in' : 'default',
+            }}
+          >
             {title.slice(0, 1).toUpperCase()}
           </Avatar>
           {canManageGroup && (
@@ -495,6 +508,34 @@ export default function GroupProfilePage() {
           );
         })}
       </List>
+
+      <Dialog
+        open={avatarPreviewOpen}
+        onClose={() => setAvatarPreviewOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogContent
+          sx={{
+            p: 0,
+            bgcolor: '#000',
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
+          {chat.avatar ? (
+            <Box
+              component="img"
+              src={chat.avatar}
+              alt="group-avatar"
+              sx={{ width: '100%', maxHeight: '80dvh', objectFit: 'contain' }}
+            />
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ px: 1.5, py: 1 }}>
+          <Button onClick={() => setAvatarPreviewOpen(false)}>Закрыть</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={addDialogOpen} onClose={resetAddDialog} fullWidth maxWidth="sm">
         <DialogTitle>Добавить участников</DialogTitle>

@@ -1442,6 +1442,161 @@ export default function ChatPage() {
     }
   };
 
+  const downloadAttachmentStable = async (attachment: Attachment) => {
+    const url = String(attachment?.url || '').trim();
+    if (!url) return;
+
+    const notifySaved = () =>
+      pushSnackbar({
+        message: attachment.type === 'video' ? 'Видео сохранено' : 'Фото сохранено',
+        timeout: 2200,
+        tone: 'success',
+      });
+
+    const notifyError = () =>
+      pushSnackbar({
+        message: attachment.type === 'video' ? 'Не удалось сохранить видео' : 'Не удалось сохранить фото',
+        timeout: 2600,
+        tone: 'error',
+      });
+
+    const downloadInBrowser = async () => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP_${response.status}`);
+      }
+      const blob = await response.blob();
+      const fileName = inferFileName(attachment, url, String(blob.type || ''));
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = fileName;
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1200);
+    };
+
+    const saveInNativeGallery = async (): Promise<boolean> => {
+      const [{ Capacitor }, mediaModule, filesystemModule, fileTransferModule] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor-community/media'),
+        import('@capacitor/filesystem'),
+        import('@capacitor/file-transfer'),
+      ]);
+      const platform = Capacitor.getPlatform();
+      if (platform === 'web') return false;
+
+      const { Media } = mediaModule;
+      const { Filesystem, Directory } = filesystemModule;
+      const { FileTransfer } = fileTransferModule;
+
+      try {
+        const maybeRequest = (Media as any).requestPermissions;
+        if (typeof maybeRequest === 'function') {
+          await maybeRequest.call(Media);
+        }
+      } catch {
+        // best effort permission request
+      }
+
+      const mimeHint = attachment.type === 'video' ? 'video/mp4' : 'image/jpeg';
+      const fileName = sanitizeFileName(inferFileName(attachment, url, mimeHint));
+      const filePath = `alga-downloads/${Date.now()}-${fileName}`;
+      const directories = [Directory.Documents, Directory.Data, Directory.Cache] as Array<unknown>;
+      const externalDir = (Directory as any).ExternalStorage ?? (Directory as any).External;
+      if (externalDir) directories.unshift(externalDir);
+
+      const saveToGallery = async (path: string) => {
+        if (attachment.type === 'video') {
+          await Media.saveVideo({ path });
+          return;
+        }
+        await Media.savePhoto({ path });
+      };
+
+      for (const directory of directories) {
+        try {
+          await Filesystem.mkdir({
+            path: 'alga-downloads',
+            directory: directory as any,
+            recursive: true,
+          });
+        } catch {
+          // ignore mkdir failure, next step may still work
+        }
+
+        try {
+          const uriInfo = await Filesystem.getUri({
+            path: filePath,
+            directory: directory as any,
+          });
+          const destinationUri = String(uriInfo?.uri || '').trim();
+          if (!destinationUri) continue;
+          await (FileTransfer as any).downloadFile({
+            url,
+            path: destinationUri,
+            progress: false,
+          });
+          await saveToGallery(destinationUri);
+          return true;
+        } catch {
+          // try next directory
+        }
+      }
+
+      for (const directory of directories) {
+        try {
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`HTTP_${response.status}`);
+          }
+          const blob = await response.blob();
+          const base64 = await blobToBase64(blob);
+          await Filesystem.writeFile({
+            path: filePath,
+            data: base64,
+            directory: directory as any,
+            recursive: true,
+          });
+          const uriInfo = await Filesystem.getUri({
+            path: filePath,
+            directory: directory as any,
+          });
+          const localUri = String(uriInfo?.uri || '').trim();
+          if (!localUri) continue;
+          await saveToGallery(localUri);
+          return true;
+        } catch {
+          // try next directory
+        }
+      }
+
+      return false;
+    };
+
+    try {
+      const { Capacitor } = await import('@capacitor/core');
+      const platform = Capacitor.getPlatform();
+
+      if (platform !== 'web') {
+        const nativeSaved = await saveInNativeGallery();
+        if (!nativeSaved) {
+          notifyError();
+          return;
+        }
+        notifySaved();
+        return;
+      }
+
+      await downloadInBrowser();
+      notifySaved();
+    } catch {
+      notifyError();
+    }
+  };
+
   const handleRootPointerDown = (event: any) => {
     if (event.pointerType === 'mouse') {
       edgeSwipeRef.current.active = false;
@@ -2176,7 +2331,7 @@ export default function ChatPage() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.55 }}>
             <PushPinRoundedIcon sx={{ fontSize: 15, color: isDark ? '#8FC7FF' : '#0A8D4F' }} />
             <Typography variant="caption" sx={{ fontWeight: 700 }}>
-              Закрепы ({pinnedMessages.length}/3)
+              Закрепы
             </Typography>
           </Box>
           {pinnedMessages.map((item) => {
@@ -2431,7 +2586,7 @@ export default function ChatPage() {
                                 size="small"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  downloadAttachment(attachment);
+                                  downloadAttachmentStable(attachment);
                                 }}
                                 sx={{
                                   position: 'absolute',

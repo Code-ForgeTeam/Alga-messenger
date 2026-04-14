@@ -18,7 +18,8 @@
         "setup:local": "bash ./scripts/bootstrap-all-local.sh",
         "cap:prepare:android": "npx cap add android",
         "cap:prepare:ios": "npx cap add ios",
-        "cap:sync:android": "npx cap sync android && npm run android:firebase:prepare",
+        "android:icons:apply": "node ./scripts/apply-android-icons.mjs",
+        "cap:sync:android": "npx cap sync android && npm run android:icons:apply && npm run android:firebase:prepare",
         "cap:sync:ios": "npx cap sync ios",
         "cap:open:android:auto": "bash ./scripts/cap-open-android.sh"
     },

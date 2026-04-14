@@ -42,7 +42,6 @@ import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
-import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { useNavigate } from 'react-router-dom';
 import { useRef } from 'react';
 import { useChatStore } from '../stores/chatStore';
@@ -443,6 +442,11 @@ export default function ChatsPage() {
     return Math.max(storyViewers.length, Number(activeStory?.viewsCount || 0), groupCount);
   }, [activeStory?.viewsCount, isOwnActiveStory, storyViewerGroup?.items, storyViewers.length]);
 
+  const openStoryViewersSheet = () => {
+    if (!isOwnActiveStory) return;
+    setStoryViewersSheetOpen(true);
+  };
+
   useEffect(() => {
     if (!storyViewerOpen || !activeStory || !user?.id) return;
     if (String(activeStory.userId) === String(user.id) || activeStory.isViewed) return;
@@ -645,23 +649,8 @@ export default function ChatsPage() {
         title={
           <Box
             id="alga-home-anchor"
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.7 }}
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
           >
-            <Box
-              sx={{
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                display: 'grid',
-                placeItems: 'center',
-                background: isDark
-                  ? 'linear-gradient(160deg, #74BEFF, #3F7AFF)'
-                  : 'linear-gradient(160deg, #35C56E, #1F8D51)',
-                boxShadow: isDark ? '0 0 0 1px rgba(255,255,255,0.16)' : '0 0 0 1px rgba(0,0,0,0.06)',
-              }}
-            >
-              <AutoAwesomeRoundedIcon sx={{ fontSize: 15, color: '#fff' }} />
-            </Box>
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
               {['A', 'l', 'g', 'a'].map((letter, idx) => (
                 <Box
@@ -1329,7 +1318,7 @@ export default function ChatsPage() {
                 }}
               >
                 <ButtonBase
-                  onClick={() => setStoryViewersSheetOpen(true)}
+                  onClick={openStoryViewersSheet}
                   sx={{
                     minHeight: 36,
                     px: 1.2,

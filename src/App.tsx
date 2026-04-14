@@ -318,6 +318,7 @@ export default function App() {
   const { bgEffect, effectIntensity, launchIntroEnabled } = useSettingsStore();
   const { pathname } = useLocation();
   const isChatRoute = pathname.startsWith('/chat/');
+  const isGameRoute = pathname.startsWith('/game');
 
   const [apkUpdate, setApkUpdate] = useState<ApkUpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
@@ -331,8 +332,8 @@ export default function App() {
     startY: 0,
     swiped: false,
   });
-  const launchIntroOnChats = showLaunchIntro && launchIntroEnabled && pathname === '/chats';
-  const launchIntroActive = launchIntroOnChats && introTargetReady;
+  const launchIntroPhase = showLaunchIntro && launchIntroEnabled && (authBootstrapping || pathname === '/chats');
+  const launchIntroActive = launchIntroPhase && (authBootstrapping || introTargetReady);
   const allowGlobalSwipeBack =
     auth.isAuthenticated &&
     pathname !== '/auth' &&
@@ -430,8 +431,14 @@ export default function App() {
   }, [launchIntroEnabled]);
 
   useEffect(() => {
-    if (!launchIntroOnChats) {
+    if (!launchIntroPhase) {
       setIntroTargetReady(false);
+      return;
+    }
+
+    if (authBootstrapping) {
+      setIntroTarget(DEFAULT_INTRO_TARGET);
+      setIntroTargetReady(true);
       return;
     }
 
@@ -476,7 +483,7 @@ export default function App() {
       }
     }, 45);
     return () => window.clearInterval(timer);
-  }, [launchIntroOnChats]);
+  }, [launchIntroPhase, authBootstrapping]);
 
   useEffect(() => {
     if (!launchIntroActive) return;
@@ -797,30 +804,13 @@ export default function App() {
     );
   }
 
-  if (authBootstrapping) {
-    return (
-      <Box
-        sx={{
-          position: 'relative',
-          isolation: 'isolate',
-          height: '100dvh',
-          overflow: 'hidden',
-          backgroundColor: 'background.default',
-        }}
-      >
-        <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
-        <QuietBootLoader />
-      </Box>
-    );
-  }
-
   return (
     <Box
       sx={{
         position: 'relative',
         isolation: 'isolate',
         height: '100dvh',
-        pb: isChatRoute ? 0 : 10,
+        pb: isChatRoute || isGameRoute ? 0 : 10,
         overflow: 'hidden',
         backgroundColor: 'background.default',
       }}
@@ -867,8 +857,8 @@ export default function App() {
         </Routes>
       </Suspense>
 
-      {auth.isAuthenticated && <BottomNav />}
-      {auth.isAuthenticated && <NotificationBanners />}
+      {auth.isAuthenticated && !isGameRoute && <BottomNav />}
+      {auth.isAuthenticated && !isGameRoute && <NotificationBanners />}
       <AppSnackbar />
 
       <Dialog open={showUpdateDialog} onClose={dismissUpdateDialog} fullWidth maxWidth="xs">

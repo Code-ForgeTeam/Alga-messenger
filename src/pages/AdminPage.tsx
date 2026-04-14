@@ -77,6 +77,7 @@ const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: str
 
 const UPDATE_EVENT_TITLE = 'Доступно обновление';
 const UPDATE_EVENT_MESSAGE = 'Обновление на сайте';
+const DEFAULT_UPDATE_DOWNLOAD_URL = 'http://q99916rz.beget.tech/update.html';
 
 function normalizeHttpUrl(raw: string): string | null {
   const value = raw.trim();
@@ -115,7 +116,7 @@ export default function AdminPage() {
   const [eventTemplate, setEventTemplate] = useState<'update' | 'custom'>('update');
   const [eventTitle, setEventTitle] = useState(UPDATE_EVENT_TITLE);
   const [eventMessage, setEventMessage] = useState(UPDATE_EVENT_MESSAGE);
-  const [eventDownloadUrl, setEventDownloadUrl] = useState('');
+  const [eventDownloadUrl, setEventDownloadUrl] = useState(DEFAULT_UPDATE_DOWNLOAD_URL);
   const [isEventBusy, setIsEventBusy] = useState(false);
 
   const isCreator = isCreatorUser(me) || canUseAdminTools;
@@ -298,6 +299,7 @@ export default function AdminPage() {
       } else {
         setEventTitle(UPDATE_EVENT_TITLE);
         setEventMessage(UPDATE_EVENT_MESSAGE);
+        setEventDownloadUrl(DEFAULT_UPDATE_DOWNLOAD_URL);
       }
     } catch (error: any) {
       pushSnackbar({
@@ -395,6 +397,7 @@ export default function AdminPage() {
                         setEventTemplate('update');
                         setEventTitle(UPDATE_EVENT_TITLE);
                         setEventMessage(UPDATE_EVENT_MESSAGE);
+                        setEventDownloadUrl(DEFAULT_UPDATE_DOWNLOAD_URL);
                       }}
                       sx={{ flex: 1 }}
                     >

@@ -80,6 +80,9 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      - name: Apply Android launcher icons
+        run: npm run android:icons:apply
+
       - name: Inject Firebase config (google-services.json)
         if: ${{ env.GOOGLE_SERVICES_JSON_B64 != '' || env.GOOGLE_SERVICES_JSON != '' }}
         env:
