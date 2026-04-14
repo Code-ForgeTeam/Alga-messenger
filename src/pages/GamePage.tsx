@@ -74,8 +74,9 @@ const ROWS = 6;
 const COLS = 8;
 const TILE_COUNT = ROWS * COLS;
 const TRAY_CAPACITY = 4;
-const RESHUFFLES_PER_GAME = 2;
+const RESHUFFLES_PER_GAME = 3;
 const BOARD_ATTEMPTS = 42;
+const RESHUFFLE_ATTEMPTS = 36;
 
 const BEST_TIME_KEY = 'alga.mahjong.best-time-sec.v2';
 const WINS_KEY = 'alga.mahjong.wins.v2';
@@ -147,22 +148,58 @@ const formatTime = (totalSec: number): string => {
 
 const isTileFree = (tiles: Tile[], tile: Tile): boolean => {
   if (tile.removed) return false;
-  const leftBusy = tiles.some((item) => !item.removed && item.row === tile.row && item.col === tile.col - 1);
-  const rightBusy = tiles.some((item) => !item.removed && item.row === tile.row && item.col === tile.col + 1);
-  return !leftBusy || !rightBusy;
+  const rowTiles = tiles
+    .filter((item) => !item.removed && item.row === tile.row)
+    .sort((a, b) => a.col - b.col);
+  if (rowTiles.length <= 1) return true;
+  return rowTiles[0].id === tile.id || rowTiles[rowTiles.length - 1].id === tile.id;
 };
 
-const countFreePairs = (tiles: Tile[]): number => {
-  const faceCount = new Map<TileFace, number>();
-  for (const tile of tiles) {
-    if (tile.removed || !isTileFree(tiles, tile)) continue;
-    faceCount.set(tile.face, (faceCount.get(tile.face) || 0) + 1);
+const freeTiles = (tiles: Tile[]): Tile[] => tiles.filter((item) => !item.removed && isTileFree(tiles, item));
+
+const countPotentialMoves = (tiles: Tile[], tray: TrayItem[]): number => {
+  const available = freeTiles(tiles);
+  if (!available.length) return 0;
+
+  const trayFaces = new Set(tray.map((item) => item.face));
+  let moves = available.filter((item) => trayFaces.has(item.face)).length;
+
+  const faceCounts = new Map<TileFace, number>();
+  for (const tile of available) {
+    faceCounts.set(tile.face, (faceCounts.get(tile.face) || 0) + 1);
   }
-  let pairs = 0;
-  for (const count of faceCount.values()) {
-    pairs += Math.floor(count / 2);
+  for (const count of faceCounts.values()) {
+    moves += Math.floor(count / 2);
   }
-  return pairs;
+  return moves;
+};
+
+const hasPotentialMove = (tiles: Tile[], tray: TrayItem[]): boolean => countPotentialMoves(tiles, tray) > 0;
+
+const reshuffleBoardFaces = (tiles: Tile[], tray: TrayItem[]): Tile[] => {
+  const activeFaces = tiles.filter((item) => !item.removed).map((item) => item.face);
+  if (activeFaces.length <= 1) return tiles;
+
+  let bestTiles = tiles;
+  let bestScore = -1;
+
+  for (let attempt = 0; attempt < RESHUFFLE_ATTEMPTS; attempt += 1) {
+    const shuffledFaces = shuffle(activeFaces);
+    let faceIndex = 0;
+    const candidate = tiles.map((tile) => {
+      if (tile.removed) return tile;
+      const face = shuffledFaces[faceIndex] as TileFace;
+      faceIndex += 1;
+      return { ...tile, face };
+    });
+    const score = countPotentialMoves(candidate, tray);
+    if (score > bestScore) {
+      bestScore = score;
+      bestTiles = candidate;
+    }
+  }
+
+  return bestTiles;
 };
 
 const buildCandidateBoard = (): Tile[] => {
@@ -178,11 +215,11 @@ const buildCandidateBoard = (): Tile[] => {
 
 const buildNewBoard = (): Tile[] => {
   let bestTiles = buildCandidateBoard();
-  let bestScore = countFreePairs(bestTiles);
+  let bestScore = countPotentialMoves(bestTiles, []);
 
   for (let i = 0; i < BOARD_ATTEMPTS; i += 1) {
     const candidate = buildCandidateBoard();
-    const score = countFreePairs(candidate);
+    const score = countPotentialMoves(candidate, []);
     if (score > bestScore) {
       bestTiles = candidate;
       bestScore = score;
@@ -302,23 +339,15 @@ function OfflinePyrgaGame() {
     setReshufflesLeft(RESHUFFLES_PER_GAME);
   };
 
-  const reshuffleRemaining = () => {
+  const reshuffleRemaining = (auto = false) => {
     if (!running || remainingTiles === 0 || reshufflesLeft <= 0) return;
 
-    setTiles((prev) => {
-      const activeFaces = shuffle(prev.filter((item) => !item.removed).map((item) => item.face));
-      let index = 0;
-      return prev.map((tile) => {
-        if (tile.removed) return tile;
-        const nextFace = activeFaces[index];
-        index += 1;
-        return { ...tile, face: nextFace };
-      });
-    });
-
+    setTiles((prev) => reshuffleBoardFaces(prev, tray));
     setReshufflesLeft((prev) => Math.max(0, prev - 1));
-    setHintIds([]);
-    clearHintTimer();
+    if (!auto) {
+      setHintIds([]);
+      clearHintTimer();
+    }
   };
 
   const showHint = () => {
@@ -400,6 +429,21 @@ function OfflinePyrgaGame() {
     }
   }, [remainingTiles, running, seconds, tray.length]);
 
+  useEffect(() => {
+    if (!running || won || lost) return;
+    if (remainingTiles === 0) return;
+    if (tray.length >= TRAY_CAPACITY) return;
+    if (hasPotentialMove(tiles, tray)) return;
+
+    if (reshufflesLeft > 0) {
+      reshuffleRemaining(true);
+      return;
+    }
+
+    setRunning(false);
+    setLost(true);
+  }, [lost, remainingTiles, reshufflesLeft, running, tiles, tray, won]);
+
   return (
     <Box
       sx={{
@@ -473,7 +517,7 @@ function OfflinePyrgaGame() {
           <Button variant="contained" onClick={startNewGame}>Новая партия</Button>
           <Button
             variant="outlined"
-            onClick={reshuffleRemaining}
+            onClick={() => reshuffleRemaining(false)}
             disabled={!running || remainingTiles === 0 || reshufflesLeft <= 0}
           >
             Перемешать
@@ -500,8 +544,10 @@ function OfflinePyrgaGame() {
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
+            gridTemplateColumns: { xs: `repeat(${COLS}, 42px)`, sm: `repeat(${COLS}, 48px)` },
             gap: 0.7,
+            width: 'fit-content',
+            mx: 'auto',
             userSelect: 'none',
             WebkitUserSelect: 'none',
             touchAction: 'manipulation',
@@ -519,6 +565,7 @@ function OfflinePyrgaGame() {
                 onPointerDown={() => onTileTap(tile.id)}
                 disabled={tile.removed || !running || !free || tray.length >= TRAY_CAPACITY}
                 sx={{
+                  width: { xs: 42, sm: 48 },
                   height: { xs: 42, sm: 48 },
                   borderRadius: 1.5,
                   border: '1px solid',
@@ -598,15 +645,14 @@ function OfflinePyrgaGame() {
                   {item && SlotIcon ? (
                     <SlotIcon sx={{ fontSize: { xs: 20, sm: 23 }, color: config.color }} />
                   ) : (
-                    <Typography
+                    <Box
                       sx={{
-                        fontWeight: 700,
-                        fontSize: 12,
-                        color: isDark ? 'rgba(185,207,230,0.58)' : 'rgba(80,107,92,0.52)',
+                        width: 9,
+                        height: 9,
+                        borderRadius: '50%',
+                        bgcolor: isDark ? 'rgba(185,207,230,0.18)' : 'rgba(80,107,92,0.16)',
                       }}
-                    >
-                      ·
-                    </Typography>
+                    />
                   )}
                 </Box>
               );

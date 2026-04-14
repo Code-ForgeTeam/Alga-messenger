@@ -27,6 +27,7 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import PhotoCameraRoundedIcon from '@mui/icons-material/PhotoCameraRounded';
 import CollectionsRoundedIcon from '@mui/icons-material/CollectionsRounded';
 import InsertEmoticonRoundedIcon from '@mui/icons-material/InsertEmoticonRounded';
+import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { messageApi, uploadApi, userApi } from '../lib/api';
@@ -69,7 +70,7 @@ const QUICK_EMOJIS = ['😀', '😁', '😂', '😊', '😍', '😘', '🤔', '�
 const RECENT_EMOJI_STORAGE_KEY = 'alga:recent-emojis';
 const REACTION_VIEWER_LIMIT = 300;
 const GALLERY_PAGE_SIZE = 40;
-const USERNAME_MENTION_RE = /@([A-Za-z0-9_]{3,32})/g;
+const MESSAGE_LINK_OR_MENTION_RE = /(https?:\/\/[^\s<]+)|@([A-Za-z0-9_]{3,32})/gi;
 const MESSAGE_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
 const parseMessageTimestamp = (value: string): number => {
@@ -239,6 +240,7 @@ export default function ChatPage() {
   const [reactionViewerLoading, setReactionViewerLoading] = useState(false);
   const [reactionViewerMessageId, setReactionViewerMessageId] = useState<string | null>(null);
   const [reactionViewerItems, setReactionViewerItems] = useState<ReactionViewerItem[]>([]);
+  const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const messageInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
@@ -260,6 +262,22 @@ export default function ChatPage() {
   const reactionTimerRef = useRef<number | null>(null);
 
   const chat = chats.find((c) => c.id === chatId);
+  const loadPinnedMessages = async (targetChatId = chatId) => {
+    const normalizedChatId = String(targetChatId || '').trim();
+    if (!normalizedChatId) {
+      setPinnedMessages([]);
+      return;
+    }
+    try {
+      const response = await messageApi.getPinnedByChatId(normalizedChatId);
+      const items = Array.isArray(response?.items)
+        ? (response.items as Message[])
+        : (Array.isArray(response) ? (response as Message[]) : []);
+      setPinnedMessages(items.slice(0, 3));
+    } catch {
+      setPinnedMessages([]);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -288,6 +306,7 @@ export default function ChatPage() {
   useEffect(() => {
     setCurrentChat(chatId);
     loadMessages(chatId);
+    loadPinnedMessages(chatId).catch(() => null);
     markAsRead(chatId).catch(() => null);
     return () => setCurrentChat(null);
   }, [chatId, loadMessages, markAsRead, setCurrentChat]);
@@ -305,6 +324,7 @@ export default function ChatPage() {
     lastRenderedMessageIdRef.current = '';
     setSelectedMessage(null);
     setEditingMessage(null);
+    setPinnedMessages([]);
     setReactionViewerOpen(false);
     setReactionViewerLoading(false);
     setReactionViewerMessageId(null);
@@ -313,6 +333,15 @@ export default function ChatPage() {
   }, [chatId]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
+  const pinnedMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    pinnedMessages.forEach((item) => {
+      const messageId = String(item?.id || '').trim();
+      if (messageId) ids.add(messageId);
+    });
+    return ids;
+  }, [pinnedMessages]);
+  const selectedMessagePinned = Boolean(selectedMessage && pinnedMessageIds.has(String(selectedMessage.id || '')));
 
   useEffect(() => {
     if (!chatId || isLoadingMessages || !chatMessages.length) return;
@@ -343,6 +372,11 @@ export default function ChatPage() {
     if (!last || String(last.userId) === String(me.id)) return;
     markAsRead(chatId).catch(() => null);
   }, [chatId, chatMessages, me?.id, markAsRead]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    loadPinnedMessages(chatId).catch(() => null);
+  }, [chatId, chatMessages.length]);
 
   const reactions = useMemo(() => {
     const map: Record<string, { mine?: string; total: number; entries: Array<{ value: string; total: number }> }> = {};
@@ -510,16 +544,6 @@ export default function ChatPage() {
     return `data:image/jpeg;base64,${normalized}`;
   };
 
-  const base64ToFile = (base64: string, fileName: string, mimeType: string): File => {
-    const cleaned = String(base64 || '').replace(/\s+/g, '');
-    const binary = atob(cleaned);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    return new File([bytes], fileName, { type: mimeType });
-  };
-
   const loadDeviceGallery = async () => {
     if (galleryLoadInFlightRef.current) return;
     const hadCachedItems = deviceGalleryItems.length > 0;
@@ -528,17 +552,17 @@ export default function ChatPage() {
     galleryLoadInFlightRef.current = true;
     setDeviceGalleryLoading(true);
     try {
-      const [{ Capacitor }, mediaModule, filesystemModule] = await Promise.all([
-        import('@capacitor/core'),
-        import('@capacitor-community/media'),
-        import('@capacitor/filesystem'),
-      ]);
+      const { Capacitor } = await import('@capacitor/core');
       const platform = Capacitor.getPlatform();
-      if (platform === 'web') {
+      if (platform === 'web' || platform === 'ios') {
         setDeviceGalleryItems([]);
         return;
       }
 
+      const [mediaModule, filesystemModule] = await Promise.all([
+        import('@capacitor-community/media'),
+        import('@capacitor/filesystem'),
+      ]);
       const { Media } = mediaModule;
       const normalizeFromMediaResult = (items: any[]): DeviceGalleryItem[] => {
         const next: DeviceGalleryItem[] = [];
@@ -775,9 +799,43 @@ export default function ChatPage() {
   const handlePickFromGallery = async () => {
     setMediaPickerBusy(true);
     try {
-      const { Capacitor } = await import('@capacitor/core');
-      if (Capacitor.getPlatform() === 'web') {
+      const [{ Capacitor }, cameraModule] = await Promise.all([
+        import('@capacitor/core'),
+        import('@capacitor/camera'),
+      ]);
+      const platform = Capacitor.getPlatform();
+      if (platform === 'web') {
         galleryInputRef.current?.click();
+        return;
+      }
+      if (platform === 'ios') {
+        const { Camera } = cameraModule;
+        const picked = await Camera.pickImages({ quality: 88, limit: 20 });
+        const photos = Array.isArray(picked?.photos) ? picked.photos : [];
+        const filesFromGallery: File[] = [];
+        const thumbs: string[] = [];
+
+        for (let index = 0; index < photos.length; index += 1) {
+          const photo = photos[index];
+          const webPath = String(photo?.webPath || '').trim();
+          if (!webPath) continue;
+          thumbs.push(webPath);
+          try {
+            const file = await fileFromWebPath(webPath, `gallery-${Date.now()}-${index}`);
+            filesFromGallery.push(file);
+          } catch {
+            // keep successfully converted files
+          }
+        }
+
+        if (!filesFromGallery.length) {
+          pushSnackbar({ message: 'Не удалось получить фото из галереи', timeout: 2200, tone: 'error' });
+          return;
+        }
+
+        setMediaPickerThumbs((prev) => [...thumbs, ...prev].slice(0, 24));
+        setMediaPickerOpen(false);
+        await appendAndUploadFiles(filesFromGallery);
         return;
       }
       await loadDeviceGallery();
@@ -805,18 +863,25 @@ export default function ChatPage() {
       setMediaPickerOpen(false);
       const photo = await Camera.getPhoto({
         source: CameraSource.Camera,
-        resultType: CameraResultType.Base64,
-        quality: 78,
+        resultType: CameraResultType.Uri,
+        quality: 82,
         width: 1600,
         height: 1600,
       });
-      const base64 = String(photo?.base64String || '').trim();
-      if (!base64) return;
-      const format = String(photo?.format || 'jpg').trim().toLowerCase();
-      const ext = format === 'png' ? 'png' : 'jpg';
-      const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-      const file = base64ToFile(base64, `camera-${Date.now()}.${ext}`, mime);
-      setMediaPickerThumbs((prev) => [`data:${mime};base64,${base64}`, ...prev].slice(0, 24));
+      const webPath = String(photo?.webPath || '').trim();
+      let sourcePath = webPath;
+      if (!sourcePath) {
+        const nativePath = String((photo as any)?.path || '').trim();
+        if (nativePath) {
+          sourcePath = Capacitor.convertFileSrc(nativePath);
+        }
+      }
+      if (!sourcePath) {
+        pushSnackbar({ message: 'Не удалось получить снимок', timeout: 2200, tone: 'error' });
+        return;
+      }
+      const file = await fileFromWebPath(sourcePath, `camera-${Date.now()}`);
+      setMediaPickerThumbs((prev) => [sourcePath, ...prev].slice(0, 24));
       await appendAndUploadFiles([file]);
     } catch {
       pushSnackbar({ message: 'Не удалось сделать снимок', timeout: 2200, tone: 'error' });
@@ -901,7 +966,13 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!mediaPickerOpen) return;
-    loadDeviceGallery().catch(() => null);
+    import('@capacitor/core')
+      .then(({ Capacitor }) => {
+        if (Capacitor.getPlatform() === 'android') {
+          loadDeviceGallery().catch(() => null);
+        }
+      })
+      .catch(() => null);
   }, [mediaPickerOpen]);
 
   useEffect(() => {
@@ -1236,6 +1307,24 @@ export default function ChatPage() {
         const { Media } = mediaModule;
         const { Filesystem, Directory } = filesystemModule;
         const albumIdentifier = platform === 'android' ? await resolveAndroidAlbumIdentifier(Media) : undefined;
+        try {
+          const maybeRequest = (Media as any).requestPermissions;
+          if (typeof maybeRequest === 'function') {
+            await maybeRequest.call(Media);
+          }
+        } catch {
+          // permission request is best effort
+        }
+        try {
+          if (attachment.type === 'video') {
+            await Media.saveVideo(albumIdentifier ? { path: url, albumIdentifier } : { path: url });
+          } else {
+            await Media.savePhoto(albumIdentifier ? { path: url, albumIdentifier } : { path: url });
+          }
+          return true;
+        } catch {
+          // fallback to cached local save below
+        }
         const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`HTTP_${response.status}`);
@@ -1271,8 +1360,7 @@ export default function ChatPage() {
           return;
         }
       } catch {
-        notifyError();
-        return;
+        // continue to blob download fallback
       }
 
       try {
@@ -1605,15 +1693,99 @@ export default function ChatPage() {
     }
   };
 
+  const splitUrlTail = (rawUrl: string): { url: string; tail: string } => {
+    let url = String(rawUrl || '').trim();
+    let tail = '';
+
+    while (url.length > 0) {
+      const lastChar = url[url.length - 1];
+      if (!/[),.!?;:]/.test(lastChar)) break;
+
+      if (lastChar === ')') {
+        const openCount = (url.match(/\(/g) || []).length;
+        const closeCount = (url.match(/\)/g) || []).length;
+        if (closeCount <= openCount) break;
+      }
+
+      tail = `${lastChar}${tail}`;
+      url = url.slice(0, -1);
+    }
+
+    return { url, tail };
+  };
+
+  const openExternalUrl = (rawUrl: string) => {
+    const url = String(rawUrl || '').trim();
+    if (!/^https?:\/\//i.test(url)) return;
+    try {
+      const popup = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!popup) {
+        window.location.href = url;
+      }
+    } catch {
+      window.location.href = url;
+    }
+  };
+
+  const getMessagePreviewText = (message: Pick<Message, 'text' | 'attachments'>): string => {
+    const rawText = String(message.text ?? '').trim();
+    if (rawText !== '') return rawText;
+    if (Array.isArray(message.attachments) && message.attachments.length > 0) {
+      const hasImage = message.attachments.some((item) => item?.type === 'image');
+      const hasVideo = message.attachments.some((item) => item?.type === 'video');
+      if (!hasImage && hasVideo) return 'Видео';
+      return hasImage ? 'Фото' : 'Вложение';
+    }
+    return 'Сообщение';
+  };
+
+  const scrollToMessageById = (messageId: string) => {
+    const normalizedId = String(messageId || '').trim();
+    if (!normalizedId) return;
+    const root = messageListRef.current;
+    if (!root) return;
+    const target = root.querySelector(`[data-message-id="${normalizedId}"]`) as HTMLElement | null;
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const togglePinForSelectedMessage = async () => {
+    if (!selectedMessage) return;
+    const messageId = String(selectedMessage.id || '').trim();
+    if (!messageId) return;
+
+    try {
+      if (pinnedMessageIds.has(messageId)) {
+        await messageApi.unpinInChat(chatId, messageId);
+        pushSnackbar({ message: 'Сообщение откреплено', timeout: 1800, tone: 'success' });
+      } else {
+        await messageApi.pinInChat(chatId, messageId);
+        pushSnackbar({ message: 'Сообщение закреплено', timeout: 1800, tone: 'success' });
+      }
+      await loadPinnedMessages(chatId);
+    } catch (error: any) {
+      const status = Number(error?.response?.status || 0);
+      pushSnackbar({
+        message: status === 409 ? 'Можно закрепить только 3 сообщения' : 'Не удалось изменить закреп',
+        timeout: 2400,
+        tone: 'error',
+      });
+    } finally {
+      setMsgMenuAnchor(null);
+      setSelectedMessage(null);
+    }
+  };
+
   const renderMessageText = (value: string) => {
-    USERNAME_MENTION_RE.lastIndex = 0;
+    MESSAGE_LINK_OR_MENTION_RE.lastIndex = 0;
     const chunks: any[] = [];
     let cursor = 0;
     let match: RegExpExecArray | null = null;
 
-    while ((match = USERNAME_MENTION_RE.exec(value)) !== null) {
-      const fullMatch = match[0];
-      const username = match[1] || '';
+    while ((match = MESSAGE_LINK_OR_MENTION_RE.exec(value)) !== null) {
+      const fullMatch = String(match[0] || '');
+      const urlToken = String(match[1] || '').trim();
+      const username = String(match[2] || '').trim();
       const start = match.index;
       const end = start + fullMatch.length;
 
@@ -1621,23 +1793,58 @@ export default function ChatPage() {
         chunks.push(value.slice(cursor, start));
       }
 
-      chunks.push(
-        <Box
-          component="span"
-          key={`mention-${start}-${username}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            void openMentionProfile(username);
-          }}
-          sx={{
-            color: isDark ? '#88C0FF' : '#0A8D4F',
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          {fullMatch}
-        </Box>,
-      );
+      if (urlToken) {
+        const { url, tail } = splitUrlTail(urlToken);
+        if (/^https?:\/\//i.test(url)) {
+          chunks.push(
+            <Box
+              component="a"
+              href={url}
+              key={`link-${start}-${url}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openExternalUrl(url);
+              }}
+              sx={{
+                color: isDark ? '#8CC5FF' : '#0A8D4F',
+                fontWeight: 700,
+                textDecoration: 'underline',
+                textDecorationThickness: '0.08em',
+                textUnderlineOffset: '0.12em',
+                wordBreak: 'break-all',
+              }}
+            >
+              {url}
+            </Box>,
+          );
+          if (tail) chunks.push(tail);
+        } else {
+          chunks.push(fullMatch);
+        }
+      } else if (username) {
+        chunks.push(
+          <Box
+            component="span"
+            key={`mention-${start}-${username}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              void openMentionProfile(username);
+            }}
+            sx={{
+              color: isDark ? '#88C0FF' : '#0A8D4F',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {`@${username}`}
+          </Box>,
+        );
+      } else {
+        chunks.push(fullMatch);
+      }
 
       cursor = end;
     }
@@ -1761,6 +1968,14 @@ export default function ChatPage() {
           }}
         >
           Изменить
+        </MenuItem>
+        <MenuItem
+          disabled={!selectedMessage || (!selectedMessagePinned && pinnedMessages.length >= 3)}
+          onClick={() => {
+            void togglePinForSelectedMessage();
+          }}
+        >
+          {selectedMessagePinned ? 'Открепить сообщение' : 'Закрепить сообщение'}
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -1946,6 +2161,88 @@ export default function ChatPage() {
         </Box>
       </Drawer>
 
+      {!!pinnedMessages.length && (
+        <Box
+          sx={{
+            px: 1.1,
+            py: 0.65,
+            borderBottom: '1px solid',
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+            bgcolor: isDark ? 'rgba(20,33,52,0.92)' : 'rgba(248,251,255,0.96)',
+            display: 'grid',
+            gap: 0.45,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.55 }}>
+            <PushPinRoundedIcon sx={{ fontSize: 15, color: isDark ? '#8FC7FF' : '#0A8D4F' }} />
+            <Typography variant="caption" sx={{ fontWeight: 700 }}>
+              Закрепы ({pinnedMessages.length}/3)
+            </Typography>
+          </Box>
+          {pinnedMessages.map((item) => {
+            const itemId = String(item?.id || '').trim();
+            if (!itemId) return null;
+            const preview = getMessagePreviewText(item);
+            return (
+              <Box key={`pinned-${itemId}`} sx={{ display: 'flex', alignItems: 'center', gap: 0.45 }}>
+                <ButtonBase
+                  onClick={() => scrollToMessageById(itemId)}
+                  sx={{
+                    flex: 1,
+                    textAlign: 'left',
+                    justifyContent: 'flex-start',
+                    px: 0.75,
+                    py: 0.42,
+                    borderRadius: 1.5,
+                    border: '1px solid',
+                    borderColor: isDark ? 'rgba(143,199,255,0.28)' : 'rgba(10,141,79,0.2)',
+                    bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.86)',
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: '-webkit-box',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      WebkitLineClamp: 1,
+                      WebkitBoxOrient: 'vertical',
+                      lineHeight: 1.2,
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {preview}
+                  </Typography>
+                </ButtonBase>
+                <IconButton
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void messageApi
+                      .unpinInChat(chatId, itemId)
+                      .then(() => {
+                        pushSnackbar({ message: 'Сообщение откреплено', timeout: 1800, tone: 'success' });
+                        return loadPinnedMessages(chatId);
+                      })
+                      .catch((error: any) => {
+                        const status = Number(error?.response?.status || 0);
+                        pushSnackbar({
+                          message: status === 404 ? 'Сообщение не найдено' : 'Не удалось открепить сообщение',
+                          timeout: 2200,
+                          tone: 'error',
+                        });
+                      });
+                  }}
+                  sx={{ color: isDark ? '#AFC1D9' : '#6F7D8A' }}
+                >
+                  <CloseRoundedIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+
       <Box ref={messageListRef} sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
         {isLoadingMessages && chatMessages.length === 0 ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}><CircularProgress /></Box>
@@ -2039,6 +2336,7 @@ export default function ChatPage() {
                     )}
 
                     <Box
+                      data-message-id={m.id}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setSelectedMessage(m);
@@ -2247,6 +2545,9 @@ export default function ChatPage() {
                     </Typography>
                   )}
                   <Box sx={{ mt: 0.2, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.35 }}>
+                    {pinnedMessageIds.has(String(m.id || '')) && (
+                      <PushPinRoundedIcon sx={{ fontSize: 13, color: isDark ? '#8FC7FF' : '#0A8D4F' }} />
+                    )}
                     <Typography variant="caption" sx={{ opacity: 0.72, display: 'block', textAlign: 'right' }}>
                       {new Date(m.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                       {m.edited ? ' · изм.' : ''}

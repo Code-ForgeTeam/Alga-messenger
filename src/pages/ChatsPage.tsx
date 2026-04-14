@@ -41,6 +41,8 @@ import DoneAllIcon from '@mui/icons-material/DoneAll';
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { useNavigate } from 'react-router-dom';
 import { useRef } from 'react';
 import { useChatStore } from '../stores/chatStore';
@@ -156,6 +158,7 @@ export default function ChatsPage() {
   const [storyViewerSlides, setStoryViewerSlides] = useState<StorySlide[]>([]);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [storySubmitting, setStorySubmitting] = useState(false);
+  const [storyDeleting, setStoryDeleting] = useState(false);
   const [storyViewers, setStoryViewers] = useState<StoryViewer[]>([]);
   const [storyViewersLoading, setStoryViewersLoading] = useState(false);
   const [storyViewersSheetOpen, setStoryViewersSheetOpen] = useState(false);
@@ -419,6 +422,7 @@ export default function ChatsPage() {
     setStoryViewerGroup(null);
     setStoryViewerSlides([]);
     setStoryViewerIndex(0);
+    setStoryDeleting(false);
     setStoryViewers([]);
     setStoryViewersSheetOpen(false);
     setStoryViewersLoading(false);
@@ -509,6 +513,24 @@ export default function ChatsPage() {
       if (next > max) return max;
       return next;
     });
+  };
+
+  const deleteActiveStory = async () => {
+    if (!activeStory || !isOwnActiveStory || storyDeleting) return;
+    const confirmed = window.confirm('Удалить этот статус?');
+    if (!confirmed) return;
+
+    setStoryDeleting(true);
+    try {
+      await storyApi.delete(activeStory.id);
+      await loadStories();
+      closeStoryViewer();
+      pushSnackbar({ message: 'Статус удалён', timeout: 1800, tone: 'success' });
+    } catch {
+      pushSnackbar({ message: 'Не удалось удалить статус', timeout: 2400, tone: 'error' });
+    } finally {
+      setStoryDeleting(false);
+    }
   };
 
   const visible = useMemo(() => {
@@ -623,33 +645,50 @@ export default function ChatsPage() {
         title={
           <Box
             id="alga-home-anchor"
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.7 }}
           >
-            {['A', 'l', 'g', 'a'].map((letter, idx) => (
-              <Box
-                key={`${letter}-${idx}`}
-                component="span"
-                sx={{
-                  display: 'inline-block',
-                  fontWeight: 800,
-                  ...(waveTitleActive
-                    ? {
-                        animation: 'algaWaveIn 620ms ease forwards',
-                        animationDelay: `${idx * 85}ms`,
-                        opacity: 0.35,
-                        transform: 'translateY(6px) scale(0.94)',
-                      }
-                    : {}),
-                  '@keyframes algaWaveIn': {
-                    '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
-                    '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
-                    '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
-                  },
-                }}
-              >
-                {letter}
-              </Box>
-            ))}
+            <Box
+              sx={{
+                width: 24,
+                height: 24,
+                borderRadius: '50%',
+                display: 'grid',
+                placeItems: 'center',
+                background: isDark
+                  ? 'linear-gradient(160deg, #74BEFF, #3F7AFF)'
+                  : 'linear-gradient(160deg, #35C56E, #1F8D51)',
+                boxShadow: isDark ? '0 0 0 1px rgba(255,255,255,0.16)' : '0 0 0 1px rgba(0,0,0,0.06)',
+              }}
+            >
+              <AutoAwesomeRoundedIcon sx={{ fontSize: 15, color: '#fff' }} />
+            </Box>
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
+              {['A', 'l', 'g', 'a'].map((letter, idx) => (
+                <Box
+                  key={`${letter}-${idx}`}
+                  component="span"
+                  sx={{
+                    display: 'inline-block',
+                    fontWeight: 800,
+                    ...(waveTitleActive
+                      ? {
+                          animation: 'algaWaveIn 620ms ease forwards',
+                          animationDelay: `${idx * 85}ms`,
+                          opacity: 0.35,
+                          transform: 'translateY(6px) scale(0.94)',
+                        }
+                      : {}),
+                    '@keyframes algaWaveIn': {
+                      '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
+                      '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
+                      '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
+                    },
+                  }}
+                >
+                  {letter}
+                </Box>
+              ))}
+            </Box>
           </Box>
         }
         showBack={false}
@@ -1188,6 +1227,11 @@ export default function ChatsPage() {
                 {formatStoryTime(activeStory?.createdAt)}
               </Typography>
             </Box>
+            {isOwnActiveStory && (
+              <IconButton onClick={() => void deleteActiveStory()} disabled={storyDeleting} sx={{ color: '#fff' }}>
+                <DeleteOutlineRoundedIcon />
+              </IconButton>
+            )}
             <IconButton onClick={closeStoryViewer} sx={{ color: '#fff' }}>
               <CloseRoundedIcon />
             </IconButton>

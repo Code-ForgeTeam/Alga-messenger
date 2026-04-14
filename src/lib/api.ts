@@ -104,6 +104,12 @@ export const chatApi = {
 export const messageApi = {
   getByChatId: async (chatId: string, limit = 50, offset = 0) =>
     (await api.get(`/messages/chat/${chatId}`, { params: { limit, offset } })).data,
+  getPinnedByChatId: async (chatId: string) =>
+    (await api.get(`/chats/${chatId}/pins`)).data,
+  pinInChat: async (chatId: string, messageId: string) =>
+    (await api.post(`/chats/${chatId}/pins`, { messageId })).data,
+  unpinInChat: async (chatId: string, messageId: string) =>
+    (await api.delete(`/chats/${chatId}/pins/${encodeURIComponent(messageId)}`)).data,
   send: async (chatId: string, text: string, attachments: unknown[] = [], replyToId?: string) =>
     (await api.post('/messages', { chatId, text, attachments, replyToId })).data,
   markAsRead: async (chatId: string) => (await api.post('/messages/read', { chatId })).data,

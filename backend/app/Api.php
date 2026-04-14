@@ -15,6 +15,7 @@ final class Api
     private ?array $userColumns = null;
     private ?bool $attachmentsTableReady = null;
     private ?bool $messageReactionTableReady = null;
+    private ?bool $messagePinsTableReady = null;
     private ?bool $chatReadStateTableReady = null;
     private ?bool $pushTokensTableReady = null;
     private ?bool $storyTablesReady = null;
@@ -74,6 +75,9 @@ final class Api
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'GET') { $this->chatById($m[1]); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->deleteChat($m[1], $body); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/messages$#', $path, $m) && $method === 'DELETE') { $this->clearChatMessages($m[1]); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/pins$#', $path, $m) && $method === 'GET') { $this->chatPinnedMessages($m[1]); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/pins$#', $path, $m) && $method === 'POST') { $this->pinChatMessage($m[1], $body); }
+        if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/pins/([a-zA-Z0-9\-]+)$#', $path, $m) && $method === 'DELETE') { $this->unpinChatMessage($m[1], $m[2]); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/archive$#', $path, $m) && $method === 'POST') { $this->setChatArchive($m[1], true); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/archive$#', $path, $m) && $method === 'DELETE') { $this->setChatArchive($m[1], false); }
         if (preg_match('#^/api/chats/([a-zA-Z0-9\-]+)/participants$#', $path, $m) && $method === 'POST') { $this->addGroupParticipants($m[1], $body); }
@@ -1842,6 +1846,139 @@ final class Api
         $this->touchChatReadState($chatId, $userId);
 
         $this->json(['ok' => true]);
+    }
+
+    private function chatPinnedMessages(string $chatId): void
+    {
+        $viewerId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $viewerId);
+
+        if (!$this->ensureMessagePinsTable()) {
+            $this->json(['items' => []]);
+        }
+
+        $stmt = $this->db()->prepare(
+            'SELECT m.id, m.chat_id as chatId, m.user_id as userId, m.text, m.created_at as createdAt, m.edited,
+                    m.reply_to_id as replyToId, u.username as senderUsername, u.full_name as senderFullName, u.avatar as senderAvatar,
+                    p.pinned_at as pinnedAt
+             FROM chat_pinned_messages p
+             JOIN messages m ON m.id = p.message_id
+             LEFT JOIN users u ON u.id = m.user_id
+             WHERE p.chat_id = ?
+             ORDER BY p.pinned_at DESC
+             LIMIT 3'
+        );
+        $stmt->execute([$chatId]);
+        $rows = $stmt->fetchAll() ?: [];
+
+        if (!$rows) {
+            $this->json(['items' => []]);
+        }
+
+        $attachmentsByMessage = $this->attachmentsByMessageIds(array_values(array_map(
+            fn ($row) => (string)($row['id'] ?? ''),
+            $rows
+        )));
+        $replyMap = $this->replyPreviewMap(array_values(array_unique(array_filter(array_map(
+            fn ($row) => trim((string)($row['replyToId'] ?? '')),
+            $rows
+        )))));
+        $ownStatus = $this->ownMessagesStatus($chatId, $viewerId);
+        $incomingStatus = $this->viewerHasUnreadMessages($chatId, $viewerId) ? 'sent' : 'read';
+
+        $items = array_map(function (array $row) use ($viewerId, $ownStatus, $incomingStatus, $attachmentsByMessage, $replyMap): array {
+            $messageId = (string)($row['id'] ?? '');
+            $authorId = (string)($row['userId'] ?? '');
+            $replyToId = trim((string)($row['replyToId'] ?? ''));
+
+            return [
+                'id' => $messageId,
+                'chatId' => (string)($row['chatId'] ?? ''),
+                'userId' => $authorId,
+                'text' => (string)($row['text'] ?? ''),
+                'attachments' => $attachmentsByMessage[$messageId] ?? [],
+                'replyTo' => $replyToId !== '' ? ($replyMap[$replyToId] ?? null) : null,
+                'createdAt' => isset($row['createdAt']) ? date('c', strtotime((string)$row['createdAt'])) : date('c'),
+                'edited' => (bool)($row['edited'] ?? false),
+                'status' => $authorId === $viewerId ? $ownStatus : $incomingStatus,
+                'isAi' => $this->isAiMessageText((string)($row['text'] ?? '')),
+                'reactions' => $this->messageReactionSummary($messageId, $viewerId),
+                'pinnedAt' => isset($row['pinnedAt']) ? date('c', strtotime((string)$row['pinnedAt'])) : date('c'),
+                'sender' => [
+                    'id' => $authorId,
+                    'username' => (string)($row['senderUsername'] ?? ''),
+                    'fullName' => (string)($row['senderFullName'] ?? ''),
+                    'avatar' => $row['senderAvatar'] ?? null,
+                ],
+            ];
+        }, $rows);
+
+        $this->json(['items' => $items]);
+    }
+
+    private function pinChatMessage(string $chatId, array $body): void
+    {
+        $userId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $userId);
+
+        $messageId = trim((string)($body['messageId'] ?? $body['message_id'] ?? ''));
+        if ($messageId === '') {
+            $this->json(['error' => 'messageId is required'], 400);
+        }
+
+        $message = $this->findMessageForParticipant($messageId, $userId);
+        if (!$message || (string)($message['chat_id'] ?? '') !== $chatId) {
+            $this->json(['error' => 'Message not found in this chat'], 404);
+        }
+
+        if (!$this->ensureMessagePinsTable()) {
+            $this->json(['error' => 'Pinned messages storage is unavailable'], 500);
+        }
+
+        $existsStmt = $this->db()->prepare(
+            'SELECT 1 FROM chat_pinned_messages WHERE chat_id = ? AND message_id = ? LIMIT 1'
+        );
+        $existsStmt->execute([$chatId, $messageId]);
+        $alreadyPinned = (bool)$existsStmt->fetchColumn();
+
+        if (!$alreadyPinned) {
+            $countStmt = $this->db()->prepare(
+                'SELECT COUNT(*) FROM chat_pinned_messages WHERE chat_id = ?'
+            );
+            $countStmt->execute([$chatId]);
+            $count = (int)$countStmt->fetchColumn();
+            if ($count >= 3) {
+                $this->json(['error' => 'Maximum 3 pinned messages per chat'], 409);
+            }
+        }
+
+        $upsert = $this->db()->prepare(
+            'INSERT INTO chat_pinned_messages (chat_id, message_id, pinned_by, pinned_at)
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+             ON DUPLICATE KEY UPDATE
+               pinned_by = VALUES(pinned_by),
+               pinned_at = CURRENT_TIMESTAMP'
+        );
+        $upsert->execute([$chatId, $messageId, $userId]);
+
+        $this->chatPinnedMessages($chatId);
+    }
+
+    private function unpinChatMessage(string $chatId, string $messageId): void
+    {
+        $userId = $this->authUserId();
+        $this->assertChatParticipant($chatId, $userId);
+
+        if (!$this->ensureMessagePinsTable()) {
+            $this->json(['items' => []]);
+        }
+
+        $delete = $this->db()->prepare(
+            'DELETE FROM chat_pinned_messages WHERE chat_id = ? AND message_id = ?'
+        );
+        $delete->execute([$chatId, $messageId]);
+
+        $this->chatPinnedMessages($chatId);
     }
 
     private function registerPushToken(array $body): void
@@ -3718,6 +3855,35 @@ final class Api
         }
 
         return $this->messageReactionTableReady;
+    }
+
+    private function ensureMessagePinsTable(): bool
+    {
+        if ($this->messagePinsTableReady !== null) {
+            return $this->messagePinsTableReady;
+        }
+
+        try {
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS chat_pinned_messages (
+                    chat_id CHAR(36) NOT NULL,
+                    message_id CHAR(36) NOT NULL,
+                    pinned_by CHAR(36) NOT NULL,
+                    pinned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (chat_id, message_id),
+                    KEY idx_chat_pins_chat (chat_id, pinned_at),
+                    KEY idx_chat_pins_message (message_id),
+                    CONSTRAINT fk_chat_pin_chat FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_chat_pin_message FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_chat_pin_user FOREIGN KEY (pinned_by) REFERENCES users(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->messagePinsTableReady = true;
+        } catch (\Throwable) {
+            $this->messagePinsTableReady = false;
+        }
+
+        return $this->messagePinsTableReady;
     }
 
     private function messageReactionSummary(string $messageId, string $viewerId): array

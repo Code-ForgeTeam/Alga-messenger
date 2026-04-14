@@ -42,6 +42,7 @@ export interface Message {
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'error';
   edited?: boolean;
   editedAt?: string;
+  pinnedAt?: string;
   replyTo?: { id: string; text: string; fullName?: string };
   tempId?: string;
   reactions?: MessageReactions;
