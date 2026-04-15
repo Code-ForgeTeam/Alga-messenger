@@ -35,7 +35,7 @@ const applyBackgroundColor = async () => {
   const valuesPath = path.join(targetBase, 'values', 'ic_launcher_background.xml');
   const content = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1B9754</color>
+    <color name="ic_launcher_background">#092C57</color>
 </resources>
 `;
   await fs.mkdir(path.dirname(valuesPath), { recursive: true });

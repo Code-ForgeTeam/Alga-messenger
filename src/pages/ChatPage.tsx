@@ -1798,7 +1798,11 @@ export default function ChatPage() {
     });
 
     setRecentEmojis((prev) => [emoji, ...prev.filter((item) => item !== emoji)].slice(0, 18));
-    setEmojiAnchor(null);
+    window.requestAnimationFrame(() => {
+      const input = messageInputRef.current;
+      if (!input) return;
+      input.focus();
+    });
   };
 
   const handleClearChatAction = async () => {
@@ -3076,6 +3080,8 @@ export default function ChatPage() {
           {emojiPalette.map((emoji) => (
             <ButtonBase
               key={`emoji-${emoji}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onPointerDown={(event) => event.preventDefault()}
               onClick={() => insertEmoji(emoji)}
               sx={{
                 width: 34,
@@ -3119,7 +3125,19 @@ export default function ChatPage() {
           onChange={(e) => onPickFiles(e.target.files)}
         />
         <IconButton onClick={() => setMediaPickerOpen(true)} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}><AttachFileIcon /></IconButton>
-        <IconButton onClick={(event) => setEmojiAnchor(event.currentTarget)} sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}>
+        <IconButton
+          onMouseDown={(event) => event.preventDefault()}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            setEmojiAnchor(event.currentTarget);
+            window.requestAnimationFrame(() => {
+              const input = messageInputRef.current;
+              if (!input) return;
+              input.focus();
+            });
+          }}
+          sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}
+        >
           <InsertEmoticonRoundedIcon />
         </IconButton>
         <TextField

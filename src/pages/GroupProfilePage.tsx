@@ -21,6 +21,7 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import GroupAddRoundedIcon from '@mui/icons-material/GroupAddRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { chatApi, uploadApi, userApi } from '../lib/api';
 import type { User } from '../lib/types';
@@ -78,6 +79,7 @@ export default function GroupProfilePage() {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isRemovingMemberId, setIsRemovingMemberId] = useState<string | null>(null);
   const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
 
   const chat = useMemo(
     () => chats.find((item) => item.id === chatId && item.type === 'group') || null,
@@ -260,6 +262,7 @@ export default function GroupProfilePage() {
       await chatApi.updateGroup(chat.id, { name: normalized });
       await loadChats({ silent: true });
       pushSnackbar({ message: 'Название группы сохранено', timeout: 2200, tone: 'success' });
+      setRenameDialogOpen(false);
     } catch (error: any) {
       pushSnackbar({
         message: error?.response?.data?.error || 'Не удалось обновить название группы',
@@ -409,7 +412,25 @@ export default function GroupProfilePage() {
           )}
         </Box>
 
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>{title}</Typography>
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.7 }}>
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>{title}</Typography>
+          {canManageGroup && (
+            <IconButton
+              size="small"
+              onClick={() => setRenameDialogOpen(true)}
+              sx={{
+                width: 30,
+                height: 30,
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                '&:hover': { bgcolor: 'background.default' },
+              }}
+            >
+              <EditRoundedIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          )}
+        </Box>
         <Typography color="text.secondary" sx={{ mt: 0.2 }}>
           {membersCount} из {GROUP_LIMIT} участников
         </Typography>
@@ -418,7 +439,7 @@ export default function GroupProfilePage() {
         </Typography>
       </Box>
 
-      {canManageGroup && (
+      {false && canManageGroup && (
         <Box sx={{ mt: 1.8, display: 'flex', alignItems: 'center', gap: 1 }}>
           <TextField
             size="small"
@@ -510,7 +531,7 @@ export default function GroupProfilePage() {
       </List>
 
       <Dialog
-        open={avatarPreviewOpen}
+        open={false && avatarPreviewOpen}
         onClose={() => setAvatarPreviewOpen(false)}
         fullWidth
         maxWidth="sm"
@@ -534,6 +555,66 @@ export default function GroupProfilePage() {
         </DialogContent>
         <DialogActions sx={{ px: 1.5, py: 1 }}>
           <Button onClick={() => setAvatarPreviewOpen(false)}>Закрыть</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={avatarPreviewOpen} onClose={() => setAvatarPreviewOpen(false)} fullScreen>
+        <Box
+          sx={{
+            width: '100%',
+            height: '100%',
+            bgcolor: '#000',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+          }}
+        >
+          <IconButton
+            onClick={() => setAvatarPreviewOpen(false)}
+            sx={{
+              position: 'absolute',
+              top: 'max(env(safe-area-inset-top), 10px)',
+              right: 'max(env(safe-area-inset-right), 10px)',
+              color: '#fff',
+              bgcolor: 'rgba(0,0,0,0.52)',
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.68)' },
+            }}
+          >
+            <CloseRoundedIcon />
+          </IconButton>
+
+          {chat.avatar ? (
+            <Box
+              component="img"
+              src={chat.avatar}
+              alt="group-avatar"
+              sx={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          ) : (
+            <Typography sx={{ color: '#fff' }}>Аватар не установлен</Typography>
+          )}
+        </Box>
+      </Dialog>
+
+      <Dialog open={renameDialogOpen} onClose={() => setRenameDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Название группы</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            size="small"
+            fullWidth
+            label="Название"
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            sx={{ mt: 0.6 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenameDialogOpen(false)}>Отмена</Button>
+          <Button variant="contained" onClick={saveGroupName} disabled={isSavingName}>
+            {isSavingName ? 'Сохраняем...' : 'Сохранить'}
+          </Button>
         </DialogActions>
       </Dialog>
 

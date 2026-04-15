@@ -138,6 +138,7 @@ const INTRO_HOLD_MS = 900;
 const INTRO_FLY_MS = 760;
 const INTRO_FADE_MS = 200;
 const INTRO_TOTAL_MS = INTRO_HOLD_MS + INTRO_FLY_MS + INTRO_FADE_MS;
+const PENDING_PUSH_TARGET_KEY = 'alga:pending-push-target';
 
 function LaunchIntro({
   active,
@@ -325,15 +326,14 @@ export default function App() {
   const [showLaunchIntro, setShowLaunchIntro] = useState(launchIntroEnabled);
   const [authBootstrapping, setAuthBootstrapping] = useState(true);
   const [introTarget, setIntroTarget] = useState<IntroTarget>(DEFAULT_INTRO_TARGET);
-  const [introTargetReady, setIntroTargetReady] = useState(false);
   const edgeSwipeRef = useRef<{ active: boolean; startX: number; startY: number; swiped: boolean }>({
     active: false,
     startX: 0,
     startY: 0,
     swiped: false,
   });
-  const launchIntroPhase = showLaunchIntro && launchIntroEnabled && (authBootstrapping || pathname === '/chats');
-  const launchIntroActive = launchIntroPhase && (authBootstrapping || introTargetReady);
+  const launchIntroActive = showLaunchIntro && launchIntroEnabled;
+  const hideMainUi = authBootstrapping || launchIntroActive;
   const allowGlobalSwipeBack =
     auth.isAuthenticated &&
     pathname !== '/auth' &&
@@ -431,29 +431,23 @@ export default function App() {
   }, [launchIntroEnabled]);
 
   useEffect(() => {
-    if (!launchIntroPhase) {
-      setIntroTargetReady(false);
+    if (!launchIntroActive) {
+      setIntroTarget(DEFAULT_INTRO_TARGET);
       return;
     }
 
-    if (authBootstrapping) {
+    if (pathname !== '/chats') {
       setIntroTarget(DEFAULT_INTRO_TARGET);
-      setIntroTargetReady(true);
       return;
     }
 
     let attempts = 0;
-    setIntroTargetReady(false);
 
     const tryResolveTarget = (): boolean => {
       const anchor = document.getElementById('alga-home-anchor');
       attempts += 1;
       if (!anchor) {
-        if (attempts > 40) {
-          setIntroTargetReady(true);
-          return true;
-        }
-        return false;
+        return attempts > 40;
       }
 
       const rect = anchor.getBoundingClientRect();
@@ -469,7 +463,6 @@ export default function App() {
         fontSize,
         lineHeight,
       });
-      setIntroTargetReady(true);
       return true;
     };
 
@@ -483,7 +476,7 @@ export default function App() {
       }
     }, 45);
     return () => window.clearInterval(timer);
-  }, [launchIntroPhase, authBootstrapping]);
+  }, [launchIntroActive, pathname]);
 
   useEffect(() => {
     if (!launchIntroActive) return;
@@ -590,7 +583,6 @@ export default function App() {
   }, [auth.isAuthenticated, navigate, pathname]);
 
   useEffect(() => {
-    if (!auth.isAuthenticated) return;
     if (!ENABLE_NATIVE_PUSH) return;
 
     let disposed = false;
@@ -615,22 +607,59 @@ export default function App() {
     const openPushUrl = (rawUrl: unknown): boolean => {
       const normalized = normalizePushUrl(rawUrl);
       if (!normalized) return false;
-      window.open(normalized, '_blank', 'noopener,noreferrer');
+      try {
+        const popup = window.open(normalized, '_blank', 'noopener,noreferrer');
+        if (!popup) {
+          window.location.href = normalized;
+        }
+      } catch {
+        return false;
+      }
       return true;
     };
-    const navigateFromPush = (payload: any) => {
+    const savePendingPushTarget = (target: string) => {
+      try {
+        localStorage.setItem(PENDING_PUSH_TARGET_KEY, target);
+      } catch {
+        // ignore storage issues
+      }
+    };
+
+    const consumePendingPushTarget = (): string => {
+      try {
+        const value = String(localStorage.getItem(PENDING_PUSH_TARGET_KEY) || '').trim();
+        if (!value) return '';
+        localStorage.removeItem(PENDING_PUSH_TARGET_KEY);
+        return value;
+      } catch {
+        return '';
+      }
+    };
+
+    const navigateFromPush = (payload: any, allowPending = true) => {
       const data = payload?.notification?.data ?? payload?.data ?? {};
       const pushType = String(data?.type ?? '').trim().toLowerCase();
       if (pushType === 'admin_event') {
-        const template = String(data?.eventTemplate ?? data?.template ?? '').trim().toLowerCase();
         const downloadUrl = data?.downloadUrl ?? data?.url ?? data?.link;
-        if (template === 'update' && openPushUrl(downloadUrl)) return;
-        if (openPushUrl(downloadUrl)) return;
+        const normalized = normalizePushUrl(downloadUrl);
+        if (normalized) {
+          const opened = openPushUrl(normalized);
+          if (!opened && allowPending) {
+            savePendingPushTarget(`url:${normalized}`);
+          }
+          return;
+        }
       }
       const targetChatId = String(data?.chatId ?? '').trim();
       if (!targetChatId) return;
       const targetPath = `/chat/${targetChatId}`;
       if (typeof window !== 'undefined' && window.location.pathname === targetPath) return;
+      if (!auth.isAuthenticated) {
+        if (allowPending) {
+          savePendingPushTarget(targetPath);
+        }
+        return;
+      }
       navigate(targetPath);
     };
 
@@ -644,6 +673,35 @@ export default function App() {
 
         const platform = Capacitor.getPlatform();
         if (platform === 'web') return;
+
+        const actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+          if (disposed) return;
+          PushNotifications.removeAllDeliveredNotifications().catch(() => null);
+          dismissAllBanners().catch(() => null);
+          loadChats({ silent: true }).catch(() => null);
+          navigateFromPush(notification);
+        });
+        removeAction = () => {
+          try {
+            const result = actionHandle.remove();
+            if (result && typeof (result as Promise<void>).then === 'function') {
+              void (result as Promise<void>).catch(() => null);
+            }
+          } catch {
+            // ignore
+          }
+        };
+
+        if (!auth.isAuthenticated) {
+          return;
+        }
+
+        const pendingTarget = consumePendingPushTarget();
+        if (pendingTarget.startsWith('url:')) {
+          openPushUrl(pendingTarget.slice(4));
+        } else if (pendingTarget && pendingTarget.startsWith('/chat/')) {
+          navigate(pendingTarget);
+        }
 
         const perm = await PushNotifications.checkPermissions();
         const granted = perm.receive === 'granted'
@@ -715,24 +773,6 @@ export default function App() {
         removeReceived = () => {
           try {
             const result = receivedHandle.remove();
-            if (result && typeof (result as Promise<void>).then === 'function') {
-              void (result as Promise<void>).catch(() => null);
-            }
-          } catch {
-            // ignore
-          }
-        };
-
-        const actionHandle = await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-          if (disposed) return;
-          PushNotifications.removeAllDeliveredNotifications().catch(() => null);
-          dismissAllBanners().catch(() => null);
-          loadChats({ silent: true }).catch(() => null);
-          navigateFromPush(notification);
-        });
-        removeAction = () => {
-          try {
-            const result = actionHandle.remove();
             if (result && typeof (result as Promise<void>).then === 'function') {
               void (result as Promise<void>).catch(() => null);
             }
@@ -823,43 +863,52 @@ export default function App() {
       <BackgroundEffects effect={bgEffect} intensity={effectIntensity} />
       <LaunchIntro active={launchIntroActive} target={introTarget} />
 
-      <Suspense
-        fallback={<Box sx={{ p: 4, display: 'grid', placeItems: 'center', position: 'relative', zIndex: 1 }}><CircularProgress /></Box>}
+      <Box
+        sx={{
+          position: 'relative',
+          zIndex: 1,
+          opacity: hideMainUi ? 0 : 1,
+          pointerEvents: hideMainUi ? 'none' : 'auto',
+          transition: 'opacity 120ms linear',
+          height: '100%',
+        }}
       >
-        <Routes>
-          <Route path="/auth" element={auth.isAuthenticated ? <Navigate to="/chats" replace /> : <AuthPage />} />
+        <Suspense fallback={<Box sx={{ p: 4, position: 'relative', zIndex: 1 }} />}>
+          <Routes>
+            <Route path="/auth" element={auth.isAuthenticated ? <Navigate to="/chats" replace /> : <AuthPage />} />
 
-          <Route path="/chats" element={<Guard><ChatsPage /></Guard>} />
-          <Route path="/chat/:chatId" element={<Guard><ChatPage /></Guard>} />
-          <Route path="/contacts" element={<Guard><ContactsPage /></Guard>} />
-          <Route path="/settings" element={<Guard><SettingsPage /></Guard>} />
-          <Route path="/chat-settings" element={<Guard><ChatSettingsPage /></Guard>} />
-          <Route path="/edit-profile" element={<Guard><EditProfilePage /></Guard>} />
-          <Route path="/user/:userId" element={<Guard><UserProfilePage /></Guard>} />
-          <Route path="/group/:chatId" element={<Guard><GroupProfilePage /></Guard>} />
-          <Route path="/search" element={<Guard><GlobalSearchPage /></Guard>} />
-          <Route path="/privacy" element={<Guard><PrivacyPage /></Guard>} />
-          <Route path="/privacy/:settingKey" element={<Guard><PrivacySettingPage /></Guard>} />
-          <Route path="/privacy/:settingKey/:exceptionType" element={<Guard><UserPickerPage /></Guard>} />
-          <Route path="/data-storage" element={<Guard><DataStoragePage /></Guard>} />
-          <Route path="/devices" element={<Guard><DevicesPage /></Guard>} />
-          <Route path="/special-features" element={<Guard><SpecialFeaturesPage /></Guard>} />
-          <Route path="/archive" element={<Guard><ArchivePage /></Guard>} />
-          <Route path="/add-contact" element={<Guard><AddContactPage /></Guard>} />
-          <Route path="/favorites" element={<Guard><FavoritesPage /></Guard>} />
-          <Route path="/admin" element={<Guard><AdminPage /></Guard>} />
-          <Route path="/support" element={<Guard><SupportPage /></Guard>} />
-          <Route path="/support-agent" element={<Guard><SupportAgentPage /></Guard>} />
-          <Route path="/author-support" element={<Guard><AuthorSupportPage /></Guard>} />
-          <Route path="/game" element={<Guard><GamePage /></Guard>} />
+            <Route path="/chats" element={<Guard><ChatsPage /></Guard>} />
+            <Route path="/chat/:chatId" element={<Guard><ChatPage /></Guard>} />
+            <Route path="/contacts" element={<Guard><ContactsPage /></Guard>} />
+            <Route path="/settings" element={<Guard><SettingsPage /></Guard>} />
+            <Route path="/chat-settings" element={<Guard><ChatSettingsPage /></Guard>} />
+            <Route path="/edit-profile" element={<Guard><EditProfilePage /></Guard>} />
+            <Route path="/user/:userId" element={<Guard><UserProfilePage /></Guard>} />
+            <Route path="/group/:chatId" element={<Guard><GroupProfilePage /></Guard>} />
+            <Route path="/search" element={<Guard><GlobalSearchPage /></Guard>} />
+            <Route path="/privacy" element={<Guard><PrivacyPage /></Guard>} />
+            <Route path="/privacy/:settingKey" element={<Guard><PrivacySettingPage /></Guard>} />
+            <Route path="/privacy/:settingKey/:exceptionType" element={<Guard><UserPickerPage /></Guard>} />
+            <Route path="/data-storage" element={<Guard><DataStoragePage /></Guard>} />
+            <Route path="/devices" element={<Guard><DevicesPage /></Guard>} />
+            <Route path="/special-features" element={<Guard><SpecialFeaturesPage /></Guard>} />
+            <Route path="/archive" element={<Guard><ArchivePage /></Guard>} />
+            <Route path="/add-contact" element={<Guard><AddContactPage /></Guard>} />
+            <Route path="/favorites" element={<Guard><FavoritesPage /></Guard>} />
+            <Route path="/admin" element={<Guard><AdminPage /></Guard>} />
+            <Route path="/support" element={<Guard><SupportPage /></Guard>} />
+            <Route path="/support-agent" element={<Guard><SupportAgentPage /></Guard>} />
+            <Route path="/author-support" element={<Guard><AuthorSupportPage /></Guard>} />
+            <Route path="/game" element={<Guard><GamePage /></Guard>} />
 
-          <Route path="*" element={<Navigate to="/chats" replace />} />
-        </Routes>
-      </Suspense>
+            <Route path="*" element={<Navigate to="/chats" replace />} />
+          </Routes>
+        </Suspense>
 
-      {auth.isAuthenticated && !isGameRoute && <BottomNav />}
-      {auth.isAuthenticated && !isGameRoute && <NotificationBanners />}
-      <AppSnackbar />
+        {auth.isAuthenticated && !isGameRoute && <BottomNav />}
+        {auth.isAuthenticated && !isGameRoute && <NotificationBanners />}
+        <AppSnackbar />
+      </Box>
 
       <Dialog open={showUpdateDialog} onClose={dismissUpdateDialog} fullWidth maxWidth="xs">
         <DialogTitle>Доступно обновление</DialogTitle>
