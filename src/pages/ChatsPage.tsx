@@ -57,6 +57,7 @@ import type { Chat, Story, StoryViewer } from '../lib/types';
 import { isCreatorUser } from '../lib/creator';
 
 const STORY_MEDIA_LIMIT = 10;
+const STORY_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'bmp', 'avif'];
 
 type StoryGroup = {
   userId: string;
@@ -115,6 +116,13 @@ const formatStoryTime = (iso?: string): string => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+};
+
+const isLikelyImageFile = (file: File): boolean => {
+  if (String(file.type || '').toLowerCase().startsWith('image/')) return true;
+  const name = String(file.name || '').toLowerCase();
+  const ext = name.includes('.') ? name.split('.').pop() || '' : '';
+  return STORY_IMAGE_EXTENSIONS.includes(ext);
 };
 
 export default function ChatsPage() {
@@ -324,7 +332,7 @@ export default function ChatsPage() {
 
   const pickStoryFiles = (list: FileList | null) => {
     if (!list?.length) return;
-    const incoming = Array.from(list).filter((file) => file.type.startsWith('image/'));
+    const incoming = Array.from(list).filter((file) => isLikelyImageFile(file));
     if (!incoming.length) {
       pushSnackbar({ message: 'Можно выбрать только фото', timeout: 2200, tone: 'error' });
       return;
@@ -374,7 +382,10 @@ export default function ChatsPage() {
         const uploaded = await uploadApi.uploadStoryFiles(storyFiles);
         mediaUrls = (Array.isArray(uploaded) ? uploaded : [])
           .map((item) => String(item?.url || '').trim())
-          .filter((url, index, arr) => url !== '' && arr.indexOf(url) === index);
+          .filter((url) => url !== '');
+        if (mediaUrls.length !== storyFiles.length) {
+          throw new Error('PARTIAL_STORY_UPLOAD');
+        }
       }
 
       await storyApi.create({
@@ -385,8 +396,20 @@ export default function ChatsPage() {
       closeStoryComposer();
       await loadStories();
       pushSnackbar({ message: 'Статус опубликован на 24 часа', timeout: 2200, tone: 'success' });
-    } catch {
-      pushSnackbar({ message: 'Не удалось опубликовать статус', timeout: 2600, tone: 'error' });
+    } catch (error: any) {
+      const rawApiError = String(error?.response?.data?.error || '').trim();
+      const normalized = rawApiError.toLowerCase();
+      const isPartial =
+        String(error?.message || '').trim() === 'PARTIAL_STORY_UPLOAD'
+        || normalized.includes('no valid image files uploaded')
+        || normalized.includes('maximum 10 photos')
+        || normalized.includes('photo')
+        || normalized.includes('image');
+      pushSnackbar({
+        message: isPartial ? 'Не все фото загрузились. Проверьте формат/размер и повторите.' : 'Не удалось опубликовать статус',
+        timeout: 2800,
+        tone: 'error',
+      });
     } finally {
       setStorySubmitting(false);
     }
@@ -437,10 +460,8 @@ export default function ChatsPage() {
   const isOwnActiveStory = Boolean(activeStory && user?.id && String(activeStory.userId) === String(user.id));
   const activeStoryViewsCount = useMemo(() => {
     if (!isOwnActiveStory) return 0;
-    const groupCount =
-      storyViewerGroup?.items?.reduce((total, item) => total + Math.max(0, Number(item?.viewsCount || 0)), 0) || 0;
-    return Math.max(storyViewers.length, Number(activeStory?.viewsCount || 0), groupCount);
-  }, [activeStory?.viewsCount, isOwnActiveStory, storyViewerGroup?.items, storyViewers.length]);
+    return Math.max(storyViewers.length, Number(activeStory?.viewsCount || 0));
+  }, [activeStory?.viewsCount, isOwnActiveStory, storyViewers.length]);
 
   const openStoryViewersSheet = () => {
     if (!isOwnActiveStory) return;
@@ -464,36 +485,27 @@ export default function ChatsPage() {
       return;
     }
 
-    const targetStoryIds = Array.from(
-      new Set(
-        (storyViewerGroup?.items || [])
-          .map((item) => String(item?.id || '').trim())
-          .filter((id) => id !== ''),
-      ),
-    );
-    if (targetStoryIds.length === 0) {
-      targetStoryIds.push(String(activeStory.id));
+    const targetStoryId = String(activeStory.id || '').trim();
+    if (!targetStoryId) {
+      setStoryViewers([]);
+      setStoryViewersLoading(false);
+      return;
     }
 
     let active = true;
     setStoryViewersLoading(true);
-    Promise.all(
-      targetStoryIds.map((storyId) =>
-        storyApi.getViewers(storyId).catch(() => ({ items: [] })),
-      ),
-    )
-      .then((responses) => {
+    storyApi
+      .getViewers(targetStoryId)
+      .then((response: any) => {
         if (!active) return;
-        const byUser = new Map<string, StoryViewer>();
-        responses.forEach((response: any) => {
-          const items = Array.isArray(response?.items) ? response.items : [];
-          items.forEach((item: any) => {
+        const items = Array.isArray(response?.items) ? response.items : [];
+        const normalized = items
+          .map((item: any): StoryViewer | null => {
             const userId = String(item?.userId || item?.user?.id || '').trim();
-            if (!userId) return;
-            const viewedAt = String(item?.viewedAt || item?.viewed_at || '').trim();
-            const normalized: StoryViewer = {
+            if (!userId) return null;
+            return {
               userId,
-              viewedAt,
+              viewedAt: String(item?.viewedAt || item?.viewed_at || '').trim(),
               user: {
                 id: userId,
                 username: String(item?.user?.username || item?.user_name || '').trim(),
@@ -501,22 +513,9 @@ export default function ChatsPage() {
                 avatar: item?.user?.avatar || undefined,
               },
             };
-
-            const prev = byUser.get(userId);
-            if (!prev) {
-              byUser.set(userId, normalized);
-              return;
-            }
-
-            const prevTs = Date.parse(prev.viewedAt || '');
-            const nextTs = Date.parse(viewedAt || '');
-            if (!Number.isFinite(prevTs) || (Number.isFinite(nextTs) && nextTs > prevTs)) {
-              byUser.set(userId, normalized);
-            }
-          });
-        });
-
-        const normalized = Array.from(byUser.values()).sort((a, b) => {
+          })
+          .filter((item: StoryViewer | null): item is StoryViewer => Boolean(item))
+          .sort((a: StoryViewer, b: StoryViewer) => {
           const aTs = Date.parse(a.viewedAt || '');
           const bTs = Date.parse(b.viewedAt || '');
           if (!Number.isFinite(aTs) && !Number.isFinite(bTs)) return 0;
@@ -539,7 +538,7 @@ export default function ChatsPage() {
     return () => {
       active = false;
     };
-  }, [storyViewerOpen, activeStory?.id, isOwnActiveStory, storyViewerGroup?.items]);
+  }, [storyViewerOpen, activeStory?.id, isOwnActiveStory]);
 
   useEffect(() => {
     if (isOwnActiveStory) return;
@@ -1383,6 +1382,8 @@ export default function ChatsPage() {
         anchor="bottom"
         open={storyViewersSheetOpen}
         onClose={() => setStoryViewersSheetOpen(false)}
+        sx={{ zIndex: (muiTheme) => muiTheme.zIndex.modal + 6 }}
+        ModalProps={{ keepMounted: true }}
         PaperProps={{
           sx: {
             borderTopLeftRadius: 16,

@@ -5115,35 +5115,60 @@ final class Api
             $this->json(['error' => 'Cannot create upload directory'], 500);
         }
 
-        $maxSize = 15 * 1024 * 1024;
+        $maxSize = 25 * 1024 * 1024;
         $mimeToExt = [
             'image/jpeg' => 'jpg',
+            'image/jpg' => 'jpg',
+            'image/pjpeg' => 'jpg',
             'image/png' => 'png',
+            'image/x-png' => 'png',
             'image/webp' => 'webp',
             'image/gif' => 'gif',
             'image/heic' => 'heic',
             'image/heif' => 'heif',
+            'image/avif' => 'avif',
+        ];
+        $extFallback = [
+            'jpeg' => 'jpg',
+            'jpg' => 'jpg',
+            'png' => 'png',
+            'webp' => 'webp',
+            'gif' => 'gif',
+            'heic' => 'heic',
+            'heif' => 'heif',
+            'bmp' => 'bmp',
+            'avif' => 'avif',
         ];
 
         $result = [];
+        $failed = 0;
+        $expectedCount = count($files);
         foreach ($files as $file) {
             if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $failed++;
                 continue;
             }
 
             $tmp = (string)($file['tmp_name'] ?? '');
             if ($tmp === '' || !is_uploaded_file($tmp)) {
+                $failed++;
                 continue;
             }
 
             $size = (int)($file['size'] ?? 0);
             if ($size <= 0 || $size > $maxSize) {
+                $failed++;
                 continue;
             }
 
-            $mime = (string)(mime_content_type($tmp) ?: '');
+            $mime = strtolower(trim((string)(mime_content_type($tmp) ?: '')));
             $ext = $mimeToExt[$mime] ?? '';
             if ($ext === '') {
+                $nameExt = strtolower(trim((string)pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION)));
+                $ext = $extFallback[$nameExt] ?? '';
+            }
+            if ($ext === '') {
+                $failed++;
                 continue;
             }
 
@@ -5151,6 +5176,7 @@ final class Api
             $fileName = $id . '.' . $ext;
             $dest = $uploadDir . '/' . $fileName;
             if (!move_uploaded_file($tmp, $dest)) {
+                $failed++;
                 continue;
             }
 
@@ -5166,6 +5192,16 @@ final class Api
 
         if (!$result) {
             $this->json(['error' => 'No valid image files uploaded'], 400);
+        }
+        if ($failed > 0 || count($result) !== $expectedCount) {
+            foreach ($result as $item) {
+                $url = trim((string)($item['url'] ?? ''));
+                if ($url === '') {
+                    continue;
+                }
+                $this->deleteUploadedFileByUrl($url, ['/uploads/stories/']);
+            }
+            $this->json(['error' => 'Some files failed to upload. Check image format and size (max 25 MB).'], 400);
         }
 
         $this->json(['files' => $result], 201);

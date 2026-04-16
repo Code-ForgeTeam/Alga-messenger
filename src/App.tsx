@@ -334,7 +334,7 @@ export default function App() {
     startY: 0,
     swiped: false,
   });
-  const launchIntroActive = showLaunchIntro && launchIntroEnabled;
+  const launchIntroActive = auth.isAuthenticated && showLaunchIntro && launchIntroEnabled;
   const hideMainUi = authBootstrapping || launchIntroActive;
   const allowGlobalSwipeBack =
     auth.isAuthenticated &&
