@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS privacy_settings;
 DROP TABLE IF EXISTS contacts;
 DROP TABLE IF EXISTS push_tokens;
+DROP TABLE IF EXISTS story_media;
 DROP TABLE IF EXISTS story_views;
 DROP TABLE IF EXISTS stories;
 DROP TABLE IF EXISTS message_reactions;

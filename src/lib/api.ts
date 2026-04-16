@@ -167,6 +167,10 @@ export const storyApi = {
   delete: async (storyId: string) => (await api.delete(`/stories/${storyId}`)).data,
 };
 
+export const gameApi = {
+  getOnlineStatus: async () => (await api.get('/game/online')).data,
+};
+
 export const supportApi = {
   createTicket: async (category: string, subject: string) =>
     (await api.post('/support/tickets', { category, subject })).data,

@@ -28,6 +28,7 @@ import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
 import PrecisionManufacturingRoundedIcon from '@mui/icons-material/PrecisionManufacturingRounded';
 import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded';
 import { AppHeader } from '../components/AppHeader';
+import { gameApi } from '../lib/api';
 
 type TileFace =
   | 'code'
@@ -691,14 +692,39 @@ export default function GamePage() {
   const onlineGameUrl = ONLINE_GAME_URL || deriveDefaultOnlineGameUrl();
 
   const [mode, setMode] = useState<GameMode>(() => (onlineGameUrl ? 'checking' : 'unavailable'));
+  const [resolvedOnlineUrl, setResolvedOnlineUrl] = useState<string>(onlineGameUrl);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!onlineGameUrl) {
       setMode('unavailable');
+      setResolvedOnlineUrl('');
       return;
     }
     setMode('checking');
+    setResolvedOnlineUrl('');
+
+    let active = true;
+    gameApi
+      .getOnlineStatus()
+      .then((payload) => {
+        if (!active) return;
+        const available = Boolean(payload?.available);
+        const fromServer = String(payload?.url || '').trim();
+        if (!available) {
+          setMode('unavailable');
+          return;
+        }
+        setResolvedOnlineUrl(fromServer || onlineGameUrl);
+      })
+      .catch(() => {
+        if (!active) return;
+        setResolvedOnlineUrl(onlineGameUrl);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [reloadKey, onlineGameUrl]);
 
   useEffect(() => {
@@ -707,7 +733,7 @@ export default function GamePage() {
       setMode((current) => (current === 'checking' ? 'unavailable' : current));
     }, ONLINE_LOAD_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
-  }, [mode, reloadKey]);
+  }, [mode, reloadKey, resolvedOnlineUrl]);
 
   if (mode === 'offline') {
     return <OfflinePyrgaGame />;
@@ -802,11 +828,11 @@ export default function GamePage() {
                 </Stack>
               </Box>
             )}
-            {onlineGameUrl && (
+            {resolvedOnlineUrl && (
               <Box
                 key={`online-game-${reloadKey}`}
                 component="iframe"
-                src={onlineGameUrl}
+                src={resolvedOnlineUrl}
                 title="Alga Online Game"
                 onLoad={() => setMode('online')}
                 onError={() => setMode('unavailable')}

@@ -19,6 +19,7 @@ final class Api
     private ?bool $chatReadStateTableReady = null;
     private ?bool $pushTokensTableReady = null;
     private ?bool $storyTablesReady = null;
+    private ?bool $storyMediaTableReady = null;
     private ?bool $notificationsTablesReady = null;
     private ?array $chatColumns = null;
     private ?array $notificationColumns = null;
@@ -43,6 +44,7 @@ final class Api
 
         if ($path === '/health') { $this->json(['ok' => true]); }
         if ($path === '/api') { $this->json(['ok' => true, 'message' => 'API root']); }
+        if ($path === '/api/game/online' && $method === 'GET') { $this->gameOnlineStatus(); }
 
         if ($path === '/api/auth/register' && $method === 'POST') { $this->register($body); }
         if ($path === '/api/auth/login' && $method === 'POST') { $this->login($body); }
@@ -2135,6 +2137,19 @@ final class Api
         $this->json(array_map(fn ($row) => $this->storyToPayload($row, $viewerId), $rows));
     }
 
+    private function gameOnlineStatus(): void
+    {
+        $relative = '/game/index.html';
+        $fullPath = dirname(__DIR__) . '/public' . $relative;
+        $available = is_file($fullPath) && (int)filesize($fullPath) > 0;
+
+        $this->json([
+            'ok' => true,
+            'available' => $available,
+            'url' => $this->buildPublicUrl($relative),
+        ]);
+    }
+
     private function createStory(array $body): void
     {
         $userId = $this->authUserId();
@@ -2182,6 +2197,8 @@ final class Api
                 $expiresAt,
             ]);
         }
+
+        $this->saveStoryMediaItems($storyId, $mediaUrls);
 
         try {
             $stmt = $this->db()->prepare(
@@ -2354,13 +2371,20 @@ final class Api
     private function storyToPayload(array $row, string $viewerId): array
     {
         $mediaUrls = $this->decodeStoryMediaUrls($row);
+        $storyId = (string)($row['id'] ?? '');
+        $tableUrls = $this->loadStoryMediaUrls($storyId);
+        foreach ($tableUrls as $url) {
+            if (!in_array($url, $mediaUrls, true)) {
+                $mediaUrls[] = $url;
+            }
+        }
         $fallbackMedia = trim((string)($row['media_url'] ?? ''));
         if ($fallbackMedia !== '' && !in_array($fallbackMedia, $mediaUrls, true)) {
             $mediaUrls[] = $fallbackMedia;
         }
 
         return [
-            'id' => (string)($row['id'] ?? ''),
+            'id' => $storyId,
             'userId' => (string)($row['user_id'] ?? ''),
             'text' => $row['text'] ?? null,
             'mediaUrl' => $mediaUrls[0] ?? ($row['media_url'] ?? null),
@@ -3371,6 +3395,12 @@ final class Api
     private function deleteStoryMediaFilesFromRow(array $storyRow): void
     {
         $urls = $this->decodeStoryMediaUrls($storyRow);
+        $storyId = trim((string)($storyRow['id'] ?? ''));
+        foreach ($this->loadStoryMediaUrls($storyId) as $urlFromTable) {
+            if (!in_array($urlFromTable, $urls, true)) {
+                $urls[] = $urlFromTable;
+            }
+        }
         $single = trim((string)($storyRow['media_url'] ?? ''));
         if ($single !== '' && !in_array($single, $urls, true)) {
             $urls[] = $single;
@@ -3378,6 +3408,72 @@ final class Api
 
         foreach ($urls as $url) {
             $this->deleteUploadedFileByUrl($url, ['/uploads/stories/']);
+        }
+    }
+
+    private function saveStoryMediaItems(string $storyId, array $mediaUrls): void
+    {
+        if ($storyId === '' || !$this->ensureStoryMediaTable()) {
+            return;
+        }
+
+        try {
+            $clearStmt = $this->db()->prepare('DELETE FROM story_media WHERE story_id = ?');
+            $clearStmt->execute([$storyId]);
+
+            if (!$mediaUrls) {
+                return;
+            }
+
+            $insertStmt = $this->db()->prepare(
+                'INSERT INTO story_media (id, story_id, media_url, position) VALUES (?, ?, ?, ?)'
+            );
+            foreach (array_values($mediaUrls) as $index => $url) {
+                $normalized = trim((string)$url);
+                if ($normalized === '') {
+                    continue;
+                }
+                $insertStmt->execute([
+                    $this->uuid(),
+                    $storyId,
+                    $normalized,
+                    (int)$index,
+                ]);
+            }
+        } catch (\Throwable) {
+            // keep story creation working even when media index table is unavailable
+        }
+    }
+
+    private function loadStoryMediaUrls(string $storyId): array
+    {
+        if ($storyId === '' || !$this->ensureStoryMediaTable()) {
+            return [];
+        }
+
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT media_url
+                 FROM story_media
+                 WHERE story_id = ?
+                 ORDER BY position ASC, created_at ASC'
+            );
+            $stmt->execute([$storyId]);
+            $rows = $stmt->fetchAll() ?: [];
+            $result = [];
+            foreach ($rows as $row) {
+                $url = trim((string)($row['media_url'] ?? ''));
+                if ($url === '' || in_array($url, $result, true)) {
+                    continue;
+                }
+                $result[] = $url;
+                if (count($result) >= self::STORY_MAX_MEDIA_ITEMS) {
+                    break;
+                }
+            }
+            return $result;
+        } catch (\Throwable) {
+            return [];
         }
     }
 
@@ -4659,6 +4755,37 @@ final class Api
         }
 
         return $this->storyTablesReady;
+    }
+
+    private function ensureStoryMediaTable(): bool
+    {
+        if ($this->storyMediaTableReady !== null) {
+            return $this->storyMediaTableReady;
+        }
+
+        if (!$this->ensureStoryTables()) {
+            $this->storyMediaTableReady = false;
+            return false;
+        }
+
+        try {
+            $this->db()->exec(
+                'CREATE TABLE IF NOT EXISTS story_media (
+                    id CHAR(36) PRIMARY KEY,
+                    story_id CHAR(36) NOT NULL,
+                    media_url VARCHAR(2048) NOT NULL,
+                    position INT NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY idx_story_media_story_pos (story_id, position, created_at),
+                    CONSTRAINT fk_story_media_story FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+            );
+            $this->storyMediaTableReady = true;
+        } catch (\Throwable) {
+            $this->storyMediaTableReady = false;
+        }
+
+        return $this->storyMediaTableReady;
     }
 
     private function uploadFiles(): void

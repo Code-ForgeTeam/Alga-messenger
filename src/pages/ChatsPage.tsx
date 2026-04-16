@@ -55,6 +55,7 @@ import { useAdminStore } from '../stores/adminStore';
 import { storyApi, uploadApi, userApi } from '../lib/api';
 import type { Chat, Story, StoryViewer } from '../lib/types';
 import { isCreatorUser } from '../lib/creator';
+import brandLogo from '../assets/brand-logo.jpg';
 
 const STORY_MEDIA_LIMIT = 10;
 
@@ -464,29 +465,66 @@ export default function ChatsPage() {
       return;
     }
 
+    const targetStoryIds = Array.from(
+      new Set(
+        (storyViewerGroup?.items || [])
+          .map((item) => String(item?.id || '').trim())
+          .filter((id) => id !== ''),
+      ),
+    );
+    if (targetStoryIds.length === 0) {
+      targetStoryIds.push(String(activeStory.id));
+    }
+
     let active = true;
     setStoryViewersLoading(true);
-    storyApi
-      .getViewers(activeStory.id)
-      .then((response) => {
+    Promise.all(
+      targetStoryIds.map((storyId) =>
+        storyApi.getViewers(storyId).catch(() => ({ items: [] })),
+      ),
+    )
+      .then((responses) => {
         if (!active) return;
-        const items = Array.isArray(response?.items) ? response.items : [];
-        const normalized: StoryViewer[] = items
-          .map((item: any) => {
+        const byUser = new Map<string, StoryViewer>();
+        responses.forEach((response: any) => {
+          const items = Array.isArray(response?.items) ? response.items : [];
+          items.forEach((item: any) => {
             const userId = String(item?.userId || item?.user?.id || '').trim();
-            if (!userId) return null;
-            return {
+            if (!userId) return;
+            const viewedAt = String(item?.viewedAt || item?.viewed_at || '').trim();
+            const normalized: StoryViewer = {
               userId,
-              viewedAt: String(item?.viewedAt || '').trim(),
+              viewedAt,
               user: {
                 id: userId,
                 username: String(item?.user?.username || '').trim(),
-                fullName: String(item?.user?.fullName || '').trim(),
+                fullName: String(item?.user?.fullName || item?.user?.full_name || '').trim(),
                 avatar: item?.user?.avatar || undefined,
               },
-            } as StoryViewer;
-          })
-          .filter((item: StoryViewer | null): item is StoryViewer => Boolean(item));
+            };
+
+            const prev = byUser.get(userId);
+            if (!prev) {
+              byUser.set(userId, normalized);
+              return;
+            }
+
+            const prevTs = Date.parse(prev.viewedAt || '');
+            const nextTs = Date.parse(viewedAt || '');
+            if (!Number.isFinite(prevTs) || (Number.isFinite(nextTs) && nextTs > prevTs)) {
+              byUser.set(userId, normalized);
+            }
+          });
+        });
+
+        const normalized = Array.from(byUser.values()).sort((a, b) => {
+          const aTs = Date.parse(a.viewedAt || '');
+          const bTs = Date.parse(b.viewedAt || '');
+          if (!Number.isFinite(aTs) && !Number.isFinite(bTs)) return 0;
+          if (!Number.isFinite(aTs)) return 1;
+          if (!Number.isFinite(bTs)) return -1;
+          return bTs - aTs;
+        });
         setStoryViewers(normalized);
       })
       .catch(() => {
@@ -501,7 +539,7 @@ export default function ChatsPage() {
     return () => {
       active = false;
     };
-  }, [storyViewerOpen, activeStory?.id, isOwnActiveStory]);
+  }, [storyViewerOpen, activeStory?.id, isOwnActiveStory, storyViewerGroup?.items]);
 
   useEffect(() => {
     if (isOwnActiveStory) return;
@@ -649,35 +687,29 @@ export default function ChatsPage() {
         title={
           <Box
             id="alga-home-anchor"
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
+            sx={{ display: 'inline-flex', alignItems: 'center' }}
           >
-            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
-              {['A', 'l', 'g', 'a'].map((letter, idx) => (
-                <Box
-                  key={`${letter}-${idx}`}
-                  component="span"
-                  sx={{
-                    display: 'inline-block',
-                    fontWeight: 800,
-                    ...(waveTitleActive
-                      ? {
-                          animation: 'algaWaveIn 620ms ease forwards',
-                          animationDelay: `${idx * 85}ms`,
-                          opacity: 0.35,
-                          transform: 'translateY(6px) scale(0.94)',
-                        }
-                      : {}),
-                    '@keyframes algaWaveIn': {
-                      '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
-                      '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
-                      '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
-                    },
-                  }}
-                >
-                  {letter}
-                </Box>
-              ))}
-            </Box>
+            <Box
+              component="img"
+              src={brandLogo}
+              alt="Alga"
+              sx={{
+                width: 30,
+                height: 30,
+                borderRadius: 1.5,
+                boxShadow: isDark ? '0 4px 14px rgba(0,0,0,0.28)' : '0 4px 12px rgba(13,34,25,0.2)',
+                ...(waveTitleActive
+                  ? {
+                      animation: 'algaLogoPulse 560ms ease forwards',
+                    }
+                  : {}),
+                '@keyframes algaLogoPulse': {
+                  '0%': { opacity: 0.5, transform: 'scale(0.92)' },
+                  '55%': { opacity: 1, transform: 'scale(1.08)' },
+                  '100%': { opacity: 1, transform: 'scale(1)' },
+                },
+              }}
+            />
           </Box>
         }
         showBack={false}

@@ -95,12 +95,23 @@ CREATE TABLE IF NOT EXISTS stories (
   user_id       CHAR(36) NOT NULL,
   text          TEXT NULL,
   media_url     VARCHAR(2048) NULL,
+  media_urls    LONGTEXT NULL,
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at    DATETIME NOT NULL,
   updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_stories_user_created (user_id, created_at),
   INDEX idx_stories_expires (expires_at),
   CONSTRAINT fk_story_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS story_media (
+  id            CHAR(36) PRIMARY KEY,
+  story_id      CHAR(36) NOT NULL,
+  media_url     VARCHAR(2048) NOT NULL,
+  position      INT NOT NULL DEFAULT 0,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_story_media_story_pos (story_id, position, created_at),
+  CONSTRAINT fk_story_media_story FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS story_views (

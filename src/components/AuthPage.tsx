@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Box, Button, CircularProgress, TextField, Typography } from '@mui/material';
 import { useAuthStore } from '../stores/authStore';
+import brandLogo from '../assets/brand-logo.jpg';
 
 export function AuthPage() {
   const { login, register, isLoading, error } = useAuthStore();
@@ -29,7 +30,19 @@ export function AuthPage() {
   return (
     <Box sx={{ height: '100%', display: 'grid', placeItems: 'center', p: 2 }}>
       <Box component="form" onSubmit={submit} sx={{ width: '100%', maxWidth: 360 }}>
-        <Typography variant="h5" sx={{ mb: 2 }}>Alga</Typography>
+        <Box
+          component="img"
+          src={brandLogo}
+          alt="Alga"
+          sx={{
+            width: 72,
+            height: 72,
+            borderRadius: 2.5,
+            display: 'block',
+            mb: 1.6,
+            boxShadow: '0 8px 20px rgba(0,0,0,0.18)',
+          }}
+        />
         <TextField
           fullWidth
           label="Имя пользователя"

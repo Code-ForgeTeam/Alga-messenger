@@ -17,6 +17,7 @@ import { BottomNav } from './components/BottomNav';
 import { NotificationBanners } from './components/NotificationBanners';
 import { APP_VERSION_CODE } from './lib/config';
 import { pushApi } from './lib/api';
+import brandLogo from './assets/brand-logo.jpg';
 import {
   checkGithubApkUpdate,
   markUpdatePromptDismissed,
@@ -211,7 +212,7 @@ function LaunchIntro({
         animation: `introFadeOut ${INTRO_TOTAL_MS}ms linear forwards`,
       }}
     >
-      <Typography
+      <Box
         sx={{
           position: 'absolute',
           top: finalCenterY,
@@ -219,19 +220,20 @@ function LaunchIntro({
           transform: algaEndTransform,
           animation: `algaHold ${INTRO_HOLD_MS}ms linear 0ms 1 forwards, algaFly ${INTRO_FLY_MS}ms cubic-bezier(0.26, 0.92, 0.3, 1) ${INTRO_HOLD_MS}ms 1 forwards`,
           willChange: 'transform, opacity',
-          fontSize: `${target.fontSize}px`,
-          lineHeight: `${target.lineHeight}px`,
-          fontWeight: 800,
-          letterSpacing: 0,
-          color: theme.palette.text.primary,
-          textShadow: 'none',
+          width: Math.max(target.height, target.width),
+          height: Math.max(target.height, target.width),
+          borderRadius: 6,
+          overflow: 'hidden',
           backfaceVisibility: 'hidden',
-          WebkitFontSmoothing: 'subpixel-antialiased',
-          textRendering: 'geometricPrecision',
         }}
       >
-        Alga
-      </Typography>
+        <Box
+          component="img"
+          src={brandLogo}
+          alt="Alga"
+          sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      </Box>
 
       <Typography
         sx={{
@@ -272,27 +274,19 @@ function QuietBootLoader() {
       }}
     >
       <Box sx={{ textAlign: 'center', animation: 'bootBreath 1.8s ease-in-out infinite' }}>
-        <Typography
+        <Box
+          component="img"
+          src={brandLogo}
+          alt="Alga"
           sx={{
-            fontWeight: 800,
-            fontSize: 34,
-            lineHeight: 1,
-            color: isDark ? '#EAF1FF' : '#1A3A2A',
+            width: 82,
+            height: 82,
+            borderRadius: 3,
+            mx: 'auto',
+            display: 'block',
+            boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.34)' : '0 8px 22px rgba(18,39,31,0.18)',
           }}
-        >
-          Alga
-        </Typography>
-        <Typography
-          sx={{
-            mt: 0.65,
-            fontWeight: 700,
-            fontSize: 14,
-            letterSpacing: 1.6,
-            color: isDark ? 'rgba(214,231,255,0.82)' : 'rgba(23,103,63,0.78)',
-          }}
-        >
-          BVE
-        </Typography>
+        />
         <Box sx={{ mt: 1.8, display: 'flex', justifyContent: 'center' }}>
           <CircularProgress size={18} thickness={4.6} />
         </Box>
