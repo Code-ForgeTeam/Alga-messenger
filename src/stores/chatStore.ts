@@ -6,6 +6,7 @@ import { useAuthStore } from './authStore';
 import { useContactsStore } from './contactsStore';
 import { useNotificationStore } from './notificationStore';
 import { useSnackbarStore } from './snackbarStore';
+import { useSettingsStore } from './settingsStore';
 
 const statusCache = new Map<string, Pick<User, 'status' | 'lastSeen'>>();
 
@@ -580,9 +581,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const alreadyHaveMessage = existingList.some((item) => item.id === message.id);
     const chat = stateBefore.chats.find((item) => item.id === message.chatId);
     const chatType = String(chat?.type || '').toLowerCase();
+    const notificationSettings = useSettingsStore.getState().notificationSettings;
+    const allowNotificationsByChatType =
+      chatType === 'group'
+        ? notificationSettings.groupChats
+        : notificationSettings.privateChats;
     const incoming = !!me && message.userId !== me;
     const shouldNotifyIncoming =
       incoming &&
+      allowNotificationsByChatType &&
       chatType !== 'saved' &&
       chatType !== 'ai' &&
       stateBefore.currentChatId !== message.chatId &&

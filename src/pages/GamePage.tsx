@@ -833,7 +833,7 @@ export default function GamePage() {
                 key={`online-game-${reloadKey}`}
                 component="iframe"
                 src={resolvedOnlineUrl}
-                title="Alga Online Game"
+                title="Soyle Online Game"
                 onLoad={() => setMode('online')}
                 onError={() => setMode('unavailable')}
                 sx={{

@@ -56,6 +56,9 @@ export const userApi = {
   getByUsername: async (username: string) =>
     (await api.get(`/users/by-username/${encodeURIComponent(username)}`)).data,
   search: async (q: string) => (await api.get('/users/search', { params: { q } })).data,
+  getNotificationSettings: async () => (await api.get('/users/me/notifications')).data,
+  updateNotificationSettings: async (payload: { privateChats?: boolean; groupChats?: boolean }) =>
+    (await api.put('/users/me/notifications', payload)).data,
 };
 
 

@@ -229,8 +229,8 @@ export default function ChatsPage() {
       window.setTimeout(() => setWaveTitleActive(false), 1100);
     };
 
-    window.addEventListener('alga:intro-finished', onIntroFinished as EventListener);
-    return () => window.removeEventListener('alga:intro-finished', onIntroFinished as EventListener);
+    window.addEventListener('soyle:intro-finished', onIntroFinished as EventListener);
+    return () => window.removeEventListener('soyle:intro-finished', onIntroFinished as EventListener);
   }, []);
 
   const storyPreviewUrls = useMemo(
@@ -686,11 +686,11 @@ export default function ChatsPage() {
       <AppHeader
         title={
           <Box
-            id="alga-home-anchor"
+            id="soyle-home-anchor"
             sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
           >
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
-              {['A', 'l', 'g', 'a'].map((letter, idx) => (
+              {['S', 'o', 'y', 'l', 'e'].map((letter, idx) => (
                 <Box
                   key={`${letter}-${idx}`}
                   component="span"
@@ -699,13 +699,13 @@ export default function ChatsPage() {
                     fontWeight: 800,
                     ...(waveTitleActive
                       ? {
-                          animation: 'algaWaveIn 620ms ease forwards',
+                          animation: 'soyleWaveIn 620ms ease forwards',
                           animationDelay: `${idx * 85}ms`,
                           opacity: 0.35,
                           transform: 'translateY(6px) scale(0.94)',
                         }
                       : {}),
-                    '@keyframes algaWaveIn': {
+                    '@keyframes soyleWaveIn': {
                       '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
                       '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
                       '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
@@ -1400,7 +1400,7 @@ export default function ChatsPage() {
             </Box>
           ) : storyViewers.length === 0 ? (
             <Typography variant="body2" color="text.secondary" sx={{ py: 1.5 }}>
-              Пока нет просмотров.
+              Нет просмотров.
             </Typography>
           ) : (
             <Box sx={{ maxHeight: '55dvh', overflowY: 'auto', display: 'grid', gap: 0.75 }}>

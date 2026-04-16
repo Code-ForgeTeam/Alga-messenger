@@ -75,7 +75,7 @@ export default function SettingsPage() {
       return;
     }
 
-    push({ message: 'Alga v1.0.0', timeout: 1200 });
+    push({ message: 'Soyle v1.0.0', timeout: 1200 });
   };
 
   return (
@@ -125,7 +125,10 @@ export default function SettingsPage() {
         </Box>
       </Paper>
 
-      <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden', mb: 1.2, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}>
+      <Paper
+        elevation={0}
+        sx={{ borderRadius: 3, overflow: 'hidden', mb: 1.2, bgcolor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }}
+      >
         <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>Основные</Typography>
         <List disablePadding>
           <ListItemButton onClick={() => navigate('/chat-settings')} sx={{ py: 1.25 }}>
@@ -136,7 +139,7 @@ export default function SettingsPage() {
             <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><LockOutlinedIcon /></ListItemIcon>
             <ListItemText primary="Конфиденциальность" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
-          <ListItemButton onClick={() => push({ message: 'Панель уведомлений в доработке.', timeout: 2200 })} sx={{ py: 1.25 }}>
+          <ListItemButton onClick={() => navigate('/notifications-settings')} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><NotificationsNoneRoundedIcon /></ListItemIcon>
             <ListItemText primary="Уведомления" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>

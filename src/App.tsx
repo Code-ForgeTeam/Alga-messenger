@@ -33,6 +33,7 @@ const ChatsPage = lazy(() => import('./pages/ChatsPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const ContactsPage = lazy(() => import('./pages/ContactsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const NotificationsSettingsPage = lazy(() => import('./pages/NotificationsSettingsPage'));
 const ChatSettingsPage = lazy(() => import('./pages/ChatSettingsPage'));
 const EditProfilePage = lazy(() => import('./pages/EditProfilePage'));
 const UserProfilePage = lazy(() => import('./pages/UserProfilePage'));
@@ -138,7 +139,7 @@ const INTRO_HOLD_MS = 900;
 const INTRO_FLY_MS = 760;
 const INTRO_FADE_MS = 200;
 const INTRO_TOTAL_MS = INTRO_HOLD_MS + INTRO_FLY_MS + INTRO_FADE_MS;
-const PENDING_PUSH_TARGET_KEY = 'alga:pending-push-target';
+const PENDING_PUSH_TARGET_KEY = 'soyle:pending-push-target';
 
 function LaunchIntro({
   active,
@@ -230,7 +231,7 @@ function LaunchIntro({
           textRendering: 'geometricPrecision',
         }}
       >
-        Alga
+        Soyle
       </Typography>
 
       <Typography
@@ -280,7 +281,7 @@ function QuietBootLoader() {
             color: isDark ? '#EAF1FF' : '#1A3A2A',
           }}
         >
-          Alga
+          Soyle
         </Typography>
         <Typography
           sx={{
@@ -319,6 +320,7 @@ export default function App() {
   const { bgEffect, effectIntensity, launchIntroEnabled } = useSettingsStore();
   const { pathname } = useLocation();
   const isChatRoute = pathname.startsWith('/chat/');
+  const isSupportRoute = pathname.startsWith('/support');
   const isGameRoute = pathname.startsWith('/game');
 
   const [apkUpdate, setApkUpdate] = useState<ApkUpdateInfo | null>(null);
@@ -444,7 +446,7 @@ export default function App() {
     let attempts = 0;
 
     const tryResolveTarget = (): boolean => {
-      const anchor = document.getElementById('alga-home-anchor');
+      const anchor = document.getElementById('soyle-home-anchor');
       attempts += 1;
       if (!anchor) {
         return attempts > 40;
@@ -482,7 +484,7 @@ export default function App() {
     if (!launchIntroActive) return;
     const timerId = window.setTimeout(() => {
       setShowLaunchIntro(false);
-      window.dispatchEvent(new CustomEvent('alga:intro-finished'));
+      window.dispatchEvent(new CustomEvent('soyle:intro-finished'));
     }, INTRO_TOTAL_MS + 20);
     return () => window.clearTimeout(timerId);
   }, [launchIntroActive]);
@@ -508,6 +510,7 @@ export default function App() {
     dismissAllBanners().catch(() => null);
     loadChats();
     useSettingsStore.getState().loadPrivacyFromServer();
+    useSettingsStore.getState().loadNotificationSettings();
     loadBanners(APP_VERSION_CODE);
 
     const pollId = window.setInterval(async () => {
@@ -850,7 +853,7 @@ export default function App() {
         position: 'relative',
         isolation: 'isolate',
         height: '100dvh',
-        pb: isChatRoute || isGameRoute ? 0 : 10,
+        pb: isChatRoute || isSupportRoute || isGameRoute ? 0 : 10,
         overflow: 'hidden',
         backgroundColor: 'background.default',
       }}
@@ -881,6 +884,7 @@ export default function App() {
             <Route path="/chat/:chatId" element={<Guard><ChatPage /></Guard>} />
             <Route path="/contacts" element={<Guard><ContactsPage /></Guard>} />
             <Route path="/settings" element={<Guard><SettingsPage /></Guard>} />
+            <Route path="/notifications-settings" element={<Guard><NotificationsSettingsPage /></Guard>} />
             <Route path="/chat-settings" element={<Guard><ChatSettingsPage /></Guard>} />
             <Route path="/edit-profile" element={<Guard><EditProfilePage /></Guard>} />
             <Route path="/user/:userId" element={<Guard><UserProfilePage /></Guard>} />
@@ -905,7 +909,7 @@ export default function App() {
           </Routes>
         </Suspense>
 
-        {auth.isAuthenticated && !isGameRoute && <BottomNav />}
+        {auth.isAuthenticated && !isGameRoute && !isSupportRoute && <BottomNav />}
         {auth.isAuthenticated && !isGameRoute && <NotificationBanners />}
         <AppSnackbar />
       </Box>
@@ -914,7 +918,7 @@ export default function App() {
         <DialogTitle>Доступно обновление</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            В репозитории найден файл APK ({apkUpdate?.name || 'Alga.apk'}). Обновить приложение сейчас?
+            В репозитории найден файл APK ({apkUpdate?.name || 'Soyle.apk'}). Обновить приложение сейчас?
           </Typography>
         </DialogContent>
         <DialogActions>

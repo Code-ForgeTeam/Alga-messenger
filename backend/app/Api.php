@@ -60,6 +60,8 @@ final class Api
 
         if ($path === '/api/users/me' && $method === 'GET') { $this->me(); }
         if ($path === '/api/users/me' && $method === 'PUT') { $this->updateMe($body); }
+        if ($path === '/api/users/me/notifications' && $method === 'GET') { $this->meNotificationSettings(); }
+        if ($path === '/api/users/me/notifications' && $method === 'PUT') { $this->updateMeNotificationSettings($body); }
         if ($path === '/api/users/search' && $method === 'GET') { $this->searchUsers(); }
         if ($path === '/api/notifications' && $method === 'GET') { $this->activeNotifications(); }
         if ($path === '/api/notifications/dismiss-all' && $method === 'POST') { $this->dismissAllNotifications(); }
@@ -521,7 +523,7 @@ final class Api
 
         $dispatch = $this->sendAdminEventPush([
             'template' => $template,
-            'title' => $title !== '' ? $title : 'Alga',
+            'title' => $title !== '' ? $title : 'Soyle',
             'message' => $message,
             'downloadUrl' => $downloadUrl,
         ]);
@@ -2605,7 +2607,7 @@ final class Api
             return 'РџСЂРёРІРµС‚! Р§РµРј РјРѕРіСѓ РїРѕРјРѕС‡СЊ?';
         }
         if (preg_match('/\\b(help|РїРѕРјРѕРіРё|С‡С‚Рѕ СѓРјРµРµС€СЊ)\\b/ui', $text)) {
-            return 'РЇ Alga AI. РњРѕРіСѓ РїРѕРґСЃРєР°Р·Р°С‚СЊ, РѕР±СЉСЏСЃРЅРёС‚СЊ Рё РїРѕРјРѕС‡СЊ СЃ РёРґРµСЏРјРё.';
+            return 'РЇ Soyle AI. РњРѕРіСѓ РїРѕРґСЃРєР°Р·Р°С‚СЊ, РѕР±СЉСЏСЃРЅРёС‚СЊ Рё РїРѕРјРѕС‡СЊ СЃ РёРґРµСЏРјРё.';
         }
 
         return 'РЇ РїРѕР»СѓС‡РёР» СЃРѕРѕР±С‰РµРЅРёРµ. Р Р°СЃСЃРєР°Р¶Рё РїРѕРґСЂРѕР±РЅРµРµ, Рё СЏ РїРѕСЃС‚Р°СЂР°СЋСЃСЊ РїРѕРјРѕС‡СЊ.';
@@ -2614,7 +2616,7 @@ final class Api
     private function composeAiReplyClean(string $text): string
     {
         if (preg_match('/\b(hello|hi|привет|здравствуй)\b/ui', $text)) {
-            return 'Привет! Я AI-помощник Alga. Чем могу помочь?';
+            return 'Привет! Я AI-помощник Soyle. Чем могу помочь?';
         }
         if (preg_match('/\b(help|помоги|что умеешь)\b/ui', $text)) {
             return 'Я могу отвечать на вопросы, помогать с идеями и объяснять сложные вещи простыми словами.';
@@ -2623,6 +2625,21 @@ final class Api
     }
 
     private function fetchAiReply(string $prompt, array $history): ?string
+    {
+        $fromConfigured = $this->fetchAiReplyFromConfiguredService($prompt, $history);
+        if ($fromConfigured !== null) {
+            return $fromConfigured;
+        }
+
+        $fromPollinations = $this->fetchAiReplyFromPollinations($prompt, $history);
+        if ($fromPollinations !== null) {
+            return $fromPollinations;
+        }
+
+        return null;
+    }
+
+    private function fetchAiReplyFromConfiguredService(string $prompt, array $history): ?string
     {
         $endpoint = trim((string)Config::get('AI_SERVICE_URL', ''));
         if ($endpoint === '') {
@@ -2670,6 +2687,67 @@ final class Api
         }
 
         $text = trim((string)($data['answer'] ?? $data['text'] ?? $data['message'] ?? ''));
+        return $text !== '' ? $text : null;
+    }
+
+    private function fetchAiReplyFromPollinations(string $prompt, array $history): ?string
+    {
+        if (!function_exists('curl_init')) {
+            return null;
+        }
+
+        $historyTail = array_slice(array_values(array_filter(array_map(static function ($item): string {
+            return trim((string)$item);
+        }, $history))), -8);
+        $context = trim(implode("\n", $historyTail));
+        $requestText = trim($context !== '' ? ($context . "\n\nUser: " . $prompt) : $prompt);
+        if ($requestText === '') {
+            return null;
+        }
+
+        $url = 'https://text.pollinations.ai/prompt/' . rawurlencode($requestText);
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return null;
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPGET => true,
+            CURLOPT_HTTPHEADER => [
+                'Accept: text/plain, application/json;q=0.9, */*;q=0.8',
+                'User-Agent: Soyle-AI/1.0',
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_TIMEOUT => 45,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if (!is_string($response) || $httpCode < 200 || $httpCode >= 300) {
+            return null;
+        }
+
+        $decoded = json_decode($response, true);
+        if (is_array($decoded)) {
+            $response = (string)($decoded['text'] ?? $decoded['answer'] ?? $decoded['message'] ?? '');
+        }
+
+        $text = trim((string)$response);
+        if ($text === '') {
+            return null;
+        }
+
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            if (mb_strlen($text, 'UTF-8') > 3000) {
+                $text = mb_substr($text, 0, 3000, 'UTF-8');
+            }
+        } elseif (strlen($text) > 3000) {
+            $text = substr($text, 0, 3000);
+        }
+
         return $text !== '' ? $text : null;
     }
 
@@ -2836,6 +2914,85 @@ final class Api
             $this->deleteUploadedFileByUrl($previousAvatar, ['/uploads/avatars/']);
         }
         $this->me();
+    }
+
+    private function meNotificationSettings(): void
+    {
+        $userId = $this->authUserId();
+        $privateChats = true;
+        $groupChats = true;
+
+        if ($this->ensureUserNotificationColumns()) {
+            try {
+                $stmt = $this->db()->prepare(
+                    'SELECT notify_private_chats, notify_group_chats FROM users WHERE id = ? LIMIT 1'
+                );
+                $stmt->execute([$userId]);
+                $row = $stmt->fetch() ?: [];
+                $privateChats = ((int)($row['notify_private_chats'] ?? 1)) !== 0;
+                $groupChats = ((int)($row['notify_group_chats'] ?? 1)) !== 0;
+            } catch (\Throwable) {
+                // keep defaults when DB is temporarily unavailable
+            }
+        }
+
+        $this->json([
+            'privateChats' => $privateChats,
+            'groupChats' => $groupChats,
+        ]);
+    }
+
+    private function updateMeNotificationSettings(array $body): void
+    {
+        $userId = $this->authUserId();
+        $hasPrivate = array_key_exists('privateChats', $body);
+        $hasGroup = array_key_exists('groupChats', $body);
+
+        if (!$hasPrivate && !$hasGroup) {
+            $this->json(['error' => 'Invalid payload'], 400);
+        }
+
+        $privateChats = $hasPrivate ? (bool)$body['privateChats'] : null;
+        $groupChats = $hasGroup ? (bool)$body['groupChats'] : null;
+
+        if (!$this->ensureUserNotificationColumns()) {
+            $this->json([
+                'ok' => true,
+                'privateChats' => $privateChats ?? true,
+                'groupChats' => $groupChats ?? true,
+                'persisted' => false,
+            ]);
+        }
+
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT notify_private_chats, notify_group_chats FROM users WHERE id = ? LIMIT 1'
+            );
+            $stmt->execute([$userId]);
+            $row = $stmt->fetch() ?: [];
+            $nextPrivate = $privateChats ?? (((int)($row['notify_private_chats'] ?? 1)) !== 0);
+            $nextGroup = $groupChats ?? (((int)($row['notify_group_chats'] ?? 1)) !== 0);
+
+            $update = $this->db()->prepare(
+                'UPDATE users
+                 SET notify_private_chats = ?, notify_group_chats = ?
+                 WHERE id = ?'
+            );
+            $update->execute([
+                $nextPrivate ? 1 : 0,
+                $nextGroup ? 1 : 0,
+                $userId,
+            ]);
+
+            $this->json([
+                'ok' => true,
+                'privateChats' => $nextPrivate,
+                'groupChats' => $nextGroup,
+                'persisted' => true,
+            ]);
+        } catch (\Throwable) {
+            $this->json(['error' => 'Failed to update notification settings'], 500);
+        }
     }
 
     private function searchUsers(): void
@@ -4059,9 +4216,48 @@ final class Api
                 return;
             }
 
-            $placeholders = implode(',', array_fill(0, count($recipientIds), '?'));
+            $allowedRecipientIds = $recipientIds;
+            if ($this->ensureUserNotificationColumns()) {
+                try {
+                    $prefPlaceholders = implode(',', array_fill(0, count($recipientIds), '?'));
+                    $prefStmt = $this->db()->prepare(
+                        "SELECT id, notify_private_chats, notify_group_chats
+                         FROM users
+                         WHERE id IN ({$prefPlaceholders})"
+                    );
+                    $prefStmt->execute($recipientIds);
+                    $prefRows = $prefStmt->fetchAll() ?: [];
+                    $prefByUser = [];
+                    foreach ($prefRows as $prefRow) {
+                        $prefByUser[(string)($prefRow['id'] ?? '')] = $prefRow;
+                    }
+
+                    $allowedRecipientIds = [];
+                    foreach ($recipientIds as $recipientId) {
+                        $pref = $prefByUser[$recipientId] ?? null;
+                        if (!$pref) {
+                            $allowedRecipientIds[] = $recipientId;
+                            continue;
+                        }
+                        $allow = $chatType === 'group'
+                            ? ((int)($pref['notify_group_chats'] ?? 1) !== 0)
+                            : ((int)($pref['notify_private_chats'] ?? 1) !== 0);
+                        if ($allow) {
+                            $allowedRecipientIds[] = $recipientId;
+                        }
+                    }
+                } catch (\Throwable) {
+                    // fall back to sending notifications to all recipients
+                    $allowedRecipientIds = $recipientIds;
+                }
+            }
+            if (!$allowedRecipientIds) {
+                return;
+            }
+
+            $placeholders = implode(',', array_fill(0, count($allowedRecipientIds), '?'));
             $tokenStmt = $this->db()->prepare("SELECT user_id, token, platform FROM push_tokens WHERE user_id IN ({$placeholders})");
-            $tokenStmt->execute($recipientIds);
+            $tokenStmt->execute($allowedRecipientIds);
             $tokenRows = $tokenStmt->fetchAll() ?: [];
             $tokenPayloadRows = [];
             $seenTokens = [];
@@ -4089,7 +4285,7 @@ final class Api
             $senderName = trim((string)($sender['full_name'] ?? ''));
             if ($senderName === '') {
                 $senderUsername = trim((string)($sender['username'] ?? ''));
-                $senderName = $senderUsername !== '' ? '@' . $senderUsername : 'Alga';
+                $senderName = $senderUsername !== '' ? '@' . $senderUsername : 'Soyle';
             }
 
             $normalizedBody = trim(preg_replace('/\s+/u', ' ', $messageText) ?? '');
@@ -4105,7 +4301,7 @@ final class Api
             }
 
             $unreadByUser = [];
-            foreach ($recipientIds as $recipientId) {
+            foreach ($allowedRecipientIds as $recipientId) {
                 $unreadByUser[$recipientId] = $this->unreadCountFromReadState($chatId, $recipientId);
             }
 
@@ -4260,13 +4456,13 @@ final class Api
                 return ['ok' => true, 'sent' => 0];
             }
 
-            $title = trim((string)($event['title'] ?? 'Alga'));
+            $title = trim((string)($event['title'] ?? 'Soyle'));
             if ($title === '') {
-                $title = 'Alga';
+                $title = 'Soyle';
             }
             $body = trim((string)($event['message'] ?? ''));
             if ($body === '') {
-                $body = 'Откройте приложение Alga';
+                $body = 'Откройте приложение Soyle';
             }
             if (function_exists('mb_strlen') && function_exists('mb_substr')) {
                 if (mb_strlen($body) > 160) {
@@ -4782,7 +4978,21 @@ final class Api
             );
             $this->storyMediaTableReady = true;
         } catch (\Throwable) {
-            $this->storyMediaTableReady = false;
+            try {
+                $this->db()->exec(
+                    'CREATE TABLE IF NOT EXISTS story_media (
+                        id CHAR(36) PRIMARY KEY,
+                        story_id CHAR(36) NOT NULL,
+                        media_url VARCHAR(2048) NOT NULL,
+                        position INT NOT NULL DEFAULT 0,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        KEY idx_story_media_story_pos (story_id, position, created_at)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+                );
+                $this->storyMediaTableReady = true;
+            } catch (\Throwable) {
+                $this->storyMediaTableReady = false;
+            }
         }
 
         return $this->storyMediaTableReady;
@@ -5686,6 +5896,29 @@ final class Api
         }
 
         return $this->hasUserColumn('is_banned') && $this->hasUserColumn('ban_reason');
+    }
+
+    private function ensureUserNotificationColumns(): bool
+    {
+        $hasPrivate = $this->hasUserColumn('notify_private_chats');
+        $hasGroup = $this->hasUserColumn('notify_group_chats');
+        if ($hasPrivate && $hasGroup) {
+            return true;
+        }
+
+        try {
+            if (!$hasPrivate) {
+                $this->db()->exec('ALTER TABLE users ADD COLUMN notify_private_chats TINYINT(1) NOT NULL DEFAULT 1');
+            }
+            if (!$hasGroup) {
+                $this->db()->exec('ALTER TABLE users ADD COLUMN notify_group_chats TINYINT(1) NOT NULL DEFAULT 1');
+            }
+            $this->userColumns = null;
+        } catch (\Throwable) {
+            return $this->hasUserColumn('notify_private_chats') && $this->hasUserColumn('notify_group_chats');
+        }
+
+        return $this->hasUserColumn('notify_private_chats') && $this->hasUserColumn('notify_group_chats');
     }
 
     private function chatColumns(): array

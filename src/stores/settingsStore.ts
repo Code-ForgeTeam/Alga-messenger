@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { privacyApi } from '../lib/api';
+import { privacyApi, userApi } from '../lib/api';
 import type { PrivacyRule } from '../lib/types';
 
 type ThemeMode = 'dark' | 'light' | 'custom';
@@ -18,6 +18,11 @@ type PrivacySettings = {
   bio: PrivacyRule;
   searchByUsername: PrivacyRule;
   hideReadTime: boolean;
+};
+
+type NotificationSettings = {
+  privateChats: boolean;
+  groupChats: boolean;
 };
 
 interface SettingsState {
@@ -42,6 +47,7 @@ interface SettingsState {
   };
   aiProvider: 'g4f' | 'custom';
   aiApiKey: string;
+  notificationSettings: NotificationSettings;
   setTheme: (theme: ThemeMode) => void;
   setFontSize: (fontSize: FontSize) => void;
   setLanguage: (lang: 'ru' | 'en' | 'zh') => void;
@@ -58,6 +64,8 @@ interface SettingsState {
   ) => void;
   setAiProvider: (value: 'g4f' | 'custom') => void;
   setAiApiKey: (value: string) => void;
+  setNotificationSetting: (key: keyof NotificationSettings, value: boolean) => Promise<void>;
+  loadNotificationSettings: () => Promise<void>;
   updatePrivacyRule: (key: keyof Omit<PrivacySettings, 'hideReadTime'>, patch: Partial<PrivacyRule>) => Promise<void>;
   setHideReadTime: (value: boolean) => void;
   loadPrivacyFromServer: () => Promise<void>;
@@ -109,6 +117,10 @@ export const useSettingsStore = create<SettingsState>()(
       },
       aiProvider: 'g4f',
       aiApiKey: '',
+      notificationSettings: {
+        privateChats: true,
+        groupChats: true,
+      },
 
       setTheme: (theme) => set({ theme }),
       setFontSize: (fontSize) => set({ fontSize }),
@@ -131,6 +143,38 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       setAiProvider: (aiProvider) => set({ aiProvider }),
       setAiApiKey: (aiApiKey) => set({ aiApiKey }),
+      setNotificationSetting: async (key, value) => {
+        set((state) => ({
+          notificationSettings: {
+            ...state.notificationSettings,
+            [key]: value,
+          },
+        }));
+
+        try {
+          await userApi.updateNotificationSettings({
+            privateChats: key === 'privateChats' ? value : get().notificationSettings.privateChats,
+            groupChats: key === 'groupChats' ? value : get().notificationSettings.groupChats,
+          });
+        } catch {
+          // keep optimistic local setting
+        }
+      },
+      loadNotificationSettings: async () => {
+        try {
+          const payload = await userApi.getNotificationSettings();
+          const privateChats = Boolean(payload?.privateChats ?? payload?.private_chats ?? true);
+          const groupChats = Boolean(payload?.groupChats ?? payload?.group_chats ?? true);
+          set({
+            notificationSettings: {
+              privateChats,
+              groupChats,
+            },
+          });
+        } catch {
+          // keep persisted defaults
+        }
+      },
 
       updatePrivacyRule: async (key, patch) => {
         set((state) => ({
@@ -183,7 +227,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'alga:settings',
-      version: 3,
+      version: 4,
       migrate: (persistedState, version) => {
         if (!persistedState || typeof persistedState !== 'object') return persistedState;
         if (version < 2 && (persistedState as any).bgEffect === 'leaves') {
@@ -196,6 +240,15 @@ export const useSettingsStore = create<SettingsState>()(
           return {
             ...(persistedState as Record<string, unknown>),
             savedChatHidden: false,
+          };
+        }
+        if (version < 4 && (persistedState as any).notificationSettings === undefined) {
+          return {
+            ...(persistedState as Record<string, unknown>),
+            notificationSettings: {
+              privateChats: true,
+              groupChats: true,
+            },
           };
         }
         return persistedState;
@@ -214,6 +267,7 @@ export const useSettingsStore = create<SettingsState>()(
         storageAutoDownload: state.storageAutoDownload,
         aiProvider: state.aiProvider,
         aiApiKey: state.aiApiKey,
+        notificationSettings: state.notificationSettings,
       }),
     },
   ),

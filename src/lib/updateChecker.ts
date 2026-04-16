@@ -41,7 +41,7 @@ export async function checkGithubApkUpdate(): Promise<ApkUpdateInfo | null> {
 
     const info: ApkUpdateInfo = {
       sha: String(payload.sha || ''),
-      name: String(payload.name || 'Alga.apk'),
+      name: String(payload.name || 'Soyle.apk'),
       size: Number(payload.size || 0),
       htmlUrl: String(payload.html_url || ''),
       downloadUrl: String(payload.download_url || payload.html_url || ''),

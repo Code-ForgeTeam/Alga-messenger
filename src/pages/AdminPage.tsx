@@ -70,7 +70,7 @@ const ACTION_TEXT: Record<Exclude<AdminAction, null>, { title: string; body: str
   },
   'reset-users': {
     title: 'Сбросить пользователей?',
-    body: 'Будут удалены все пользователи, кроме владельца (создателя).',
+    body: 'Будут удалены все пользователи, кроме создателя приложения.',
     button: 'Сбросить пользователей',
   },
 };
@@ -257,6 +257,7 @@ export default function AdminPage() {
     const title = eventTemplate === 'update' ? UPDATE_EVENT_TITLE : eventTitle.trim();
     const message = eventTemplate === 'update' ? UPDATE_EVENT_MESSAGE : eventMessage.trim();
     const normalizedDownloadUrl = normalizeHttpUrl(eventDownloadUrl);
+
     if (eventTemplate === 'custom' && title === '' && message === '') {
       pushSnackbar({
         message: 'Заполните заголовок или текст ивента',
@@ -297,8 +298,6 @@ export default function AdminPage() {
         setEventMessage('');
         setEventDownloadUrl('');
       } else {
-        setEventTitle(UPDATE_EVENT_TITLE);
-        setEventMessage(UPDATE_EVENT_MESSAGE);
         setEventDownloadUrl(DEFAULT_UPDATE_DOWNLOAD_URL);
       }
     } catch (error: any) {
@@ -419,23 +418,7 @@ export default function AdminPage() {
                     </Button>
                   </Stack>
 
-                  {eventTemplate === 'update' ? (
-                    <Paper
-                      elevation={0}
-                      sx={{
-                        p: 1,
-                        borderRadius: 2,
-                        border: '1px solid',
-                        borderColor: isDark ? 'rgba(150,184,219,0.28)' : 'rgba(31,163,91,0.22)',
-                        bgcolor: isDark ? 'rgba(20,38,57,0.7)' : 'rgba(255,255,255,0.88)',
-                      }}
-                    >
-                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Заголовок</Typography>
-                      <Typography sx={{ fontWeight: 700, mb: 0.55 }}>{UPDATE_EVENT_TITLE}</Typography>
-                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Текст</Typography>
-                      <Typography sx={{ fontWeight: 500 }}>{UPDATE_EVENT_MESSAGE}</Typography>
-                    </Paper>
-                  ) : (
+                  {eventTemplate === 'custom' && (
                     <>
                       <TextField
                         size="small"
@@ -457,14 +440,14 @@ export default function AdminPage() {
                   <TextField
                     size="small"
                     label="Ссылка на артефакт (APK)"
-                    placeholder="http://example.com/Alga.apk"
+                    placeholder="http://example.com/Soyle.apk"
                     value={eventDownloadUrl}
                     onChange={(e) => setEventDownloadUrl(e.target.value)}
                     required={eventTemplate === 'update'}
                     helperText={
                       eventTemplate === 'update'
-                        ? 'При нажатии на push с обновлением откроется эта ссылка.'
-                        : 'Необязательно: можно указать ссылку для кастомного ивента.'
+                        ? 'Для этого ивента укажите только ссылку на обновление.'
+                        : 'Необязательно: можно указать ссылку и для кастомного ивента.'
                     }
                   />
 
