@@ -55,7 +55,6 @@ import { useAdminStore } from '../stores/adminStore';
 import { storyApi, uploadApi, userApi } from '../lib/api';
 import type { Chat, Story, StoryViewer } from '../lib/types';
 import { isCreatorUser } from '../lib/creator';
-import brandLogo from '../assets/brand-logo.jpg';
 
 const STORY_MEDIA_LIMIT = 10;
 
@@ -497,7 +496,7 @@ export default function ChatsPage() {
               viewedAt,
               user: {
                 id: userId,
-                username: String(item?.user?.username || '').trim(),
+                username: String(item?.user?.username || item?.user_name || '').trim(),
                 fullName: String(item?.user?.fullName || item?.user?.full_name || '').trim(),
                 avatar: item?.user?.avatar || undefined,
               },
@@ -525,6 +524,7 @@ export default function ChatsPage() {
           if (!Number.isFinite(bTs)) return -1;
           return bTs - aTs;
         });
+
         setStoryViewers(normalized);
       })
       .catch(() => {
@@ -687,29 +687,35 @@ export default function ChatsPage() {
         title={
           <Box
             id="alga-home-anchor"
-            sx={{ display: 'inline-flex', alignItems: 'center' }}
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
           >
-            <Box
-              component="img"
-              src={brandLogo}
-              alt="Alga"
-              sx={{
-                width: 30,
-                height: 30,
-                borderRadius: 1.5,
-                boxShadow: isDark ? '0 4px 14px rgba(0,0,0,0.28)' : '0 4px 12px rgba(13,34,25,0.2)',
-                ...(waveTitleActive
-                  ? {
-                      animation: 'algaLogoPulse 560ms ease forwards',
-                    }
-                  : {}),
-                '@keyframes algaLogoPulse': {
-                  '0%': { opacity: 0.5, transform: 'scale(0.92)' },
-                  '55%': { opacity: 1, transform: 'scale(1.08)' },
-                  '100%': { opacity: 1, transform: 'scale(1)' },
-                },
-              }}
-            />
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
+              {['A', 'l', 'g', 'a'].map((letter, idx) => (
+                <Box
+                  key={`${letter}-${idx}`}
+                  component="span"
+                  sx={{
+                    display: 'inline-block',
+                    fontWeight: 800,
+                    ...(waveTitleActive
+                      ? {
+                          animation: 'algaWaveIn 620ms ease forwards',
+                          animationDelay: `${idx * 85}ms`,
+                          opacity: 0.35,
+                          transform: 'translateY(6px) scale(0.94)',
+                        }
+                      : {}),
+                    '@keyframes algaWaveIn': {
+                      '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
+                      '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
+                      '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
+                    },
+                  }}
+                >
+                  {letter}
+                </Box>
+              ))}
+            </Box>
           </Box>
         }
         showBack={false}
@@ -1394,7 +1400,7 @@ export default function ChatsPage() {
             </Box>
           ) : storyViewers.length === 0 ? (
             <Typography variant="body2" color="text.secondary" sx={{ py: 1.5 }}>
-              Пока никто не посмотрел этот статус.
+              Пока нет просмотров.
             </Typography>
           ) : (
             <Box sx={{ maxHeight: '55dvh', overflowY: 'auto', display: 'grid', gap: 0.75 }}>

@@ -14,11 +14,13 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
+import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
 import { useNavigate } from 'react-router-dom';
 import { aiApi } from '../lib/api';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useChatStore } from '../stores/chatStore';
+import { useSnackbarStore } from '../stores/snackbarStore';
 
 type UiMessage = { id: string; from: 'ai' | 'me'; text: string };
 
@@ -29,12 +31,14 @@ export default function SupportPage() {
   const navigate = useNavigate();
   const { aiProvider, aiApiKey } = useSettingsStore();
   const me = useAuthStore((s) => s.user);
-  const { messages, loadMessages, isLoadingMessages } = useChatStore();
+  const { messages, loadMessages, isLoadingMessages, clearChat } = useChatStore();
+  const pushSnackbar = useSnackbarStore((s) => s.push);
 
   const [provider, setProvider] = useState<'g4f' | 'custom'>(aiProvider);
   const [input, setInput] = useState('');
   const [chatId, setChatId] = useState<string>('');
   const [sending, setSending] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -45,8 +49,12 @@ export default function SupportPage() {
   }, []);
 
   useEffect(() => {
+    if (aiProvider === 'custom' && !aiApiKey.trim()) {
+      setProvider('g4f');
+      return;
+    }
     setProvider(aiProvider);
-  }, [aiProvider]);
+  }, [aiProvider, aiApiKey]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -81,6 +89,7 @@ export default function SupportPage() {
     }
 
     if (provider === 'custom' && !aiApiKey.trim()) {
+      pushSnackbar({ message: 'Добавьте AI API ключ в Спец. возможностях', timeout: 2200, tone: 'error' });
       return;
     }
 
@@ -94,23 +103,56 @@ export default function SupportPage() {
       }
       await aiApi.sendMessage(resolvedChatId, text);
       await loadMessages(resolvedChatId);
+    } catch (error: any) {
+      const apiError = String(error?.response?.data?.error || '').trim();
+      pushSnackbar({
+        message: apiError || 'Не удалось отправить сообщение в AI чат',
+        timeout: 2600,
+        tone: 'error',
+      });
     } finally {
       setSending(false);
+    }
+  };
+
+  const onClearChat = async () => {
+    if (!chatId || clearing || sending) return;
+    const confirmed = window.confirm('Очистить AI чат?');
+    if (!confirmed) return;
+
+    setClearing(true);
+    try {
+      await clearChat(chatId);
+      await loadMessages(chatId);
+      pushSnackbar({ message: 'AI чат очищен', timeout: 2000, tone: 'success' });
+    } catch {
+      pushSnackbar({ message: 'Не удалось очистить AI чат', timeout: 2400, tone: 'error' });
+    } finally {
+      setClearing(false);
     }
   };
 
   const showCustomWarning = provider === 'custom' && !aiApiKey.trim();
 
   return (
-    <Box sx={{ p: 1.5, height: '100%', display: 'flex', flexDirection: 'column', gap: 1.2 }}>
+    <Box
+      sx={{
+        p: 1.2,
+        pt: 'max(env(safe-area-inset-top), 8px)',
+        pb: 'max(env(safe-area-inset-bottom), 8px)',
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+      }}
+    >
       <Box
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 1,
-          pt: 'max(env(safe-area-inset-top), 12px)',
-          pl: 'max(env(safe-area-inset-left), 4px)',
-          pr: 'max(env(safe-area-inset-right), 4px)',
+          px: 'max(env(safe-area-inset-left), 2px)',
         }}
       >
         <IconButton onClick={() => navigate('/chats')}><ArrowBackIcon /></IconButton>
@@ -122,6 +164,14 @@ export default function SupportPage() {
           <MenuItem value="g4f">g4f</MenuItem>
           <MenuItem value="custom">Свой API</MenuItem>
         </Select>
+        <IconButton
+          onClick={() => void onClearChat()}
+          disabled={!chatId || clearing || sending}
+          color="error"
+          size="small"
+        >
+          <DeleteSweepRoundedIcon />
+        </IconButton>
       </Box>
 
       {showCustomWarning && (
@@ -130,7 +180,10 @@ export default function SupportPage() {
         </Paper>
       )}
 
-      <Box ref={listRef} sx={{ flex: 1, overflowY: 'auto', pr: 0.2, display: 'grid', gap: 1, alignContent: 'start' }}>
+      <Box
+        ref={listRef}
+        sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.2, display: 'grid', gap: 1, alignContent: 'start' }}
+      >
         {isLoadingMessages && !uiMessages.length ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}>
             <CircularProgress />
@@ -170,6 +223,7 @@ export default function SupportPage() {
           display: 'flex',
           alignItems: 'center',
           gap: 1,
+          flexShrink: 0,
           border: '1px solid',
           borderColor: 'divider',
         }}
