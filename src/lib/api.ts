@@ -72,8 +72,24 @@ export const profileApi = {
 
 export const aiApi = {
   getAIChat: async () => (await api.get('/ai/chat')).data,
-  sendMessage: async (chatId: string, text: string) =>
-    (await api.post('/ai/message', { chatId, text })).data,
+  sendMessage: async (
+    chatId: string,
+    text: string,
+    options?: {
+      provider?: 'g4f' | 'custom';
+      apiKey?: string;
+      attachments?: unknown[];
+    },
+  ) =>
+    (
+      await api.post('/ai/message', {
+        chatId,
+        text,
+        provider: options?.provider,
+        apiKey: options?.apiKey,
+        attachments: Array.isArray(options?.attachments) ? options?.attachments : [],
+      })
+    ).data,
 };
 
 export const savedApi = {

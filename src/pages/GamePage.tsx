@@ -3,12 +3,12 @@ import { Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/ma
 import { useTheme } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import { AppHeader } from '../components/AppHeader';
+import OfflinePyrgaClassicGame from '../components/OfflinePyrgaClassicGame';
 import { gameApi } from '../lib/api';
 
 type GameMode = 'checking' | 'online' | 'offlinePrompt' | 'offline';
 
 const ONLINE_GAME_URL = String(import.meta.env.VITE_ONLINE_GAME_URL || '').trim();
-const OFFLINE_GAME_URL = '/game-offline/index.html';
 const ONLINE_LOAD_TIMEOUT_MS = 9000;
 
 const deriveDefaultOnlineGameUrl = (): string => {
@@ -70,6 +70,10 @@ export default function GamePage() {
     return () => window.clearTimeout(timer);
   }, [mode, reloadKey]);
 
+  if (mode === 'offline') {
+    return <OfflinePyrgaClassicGame />;
+  }
+
   return (
     <Box
       sx={{
@@ -94,10 +98,10 @@ export default function GamePage() {
           }}
         >
           <Typography sx={{ fontSize: 18, fontWeight: 800, mb: 0.8 }}>
-            Не доступно! Хотите играть офлайн?
+            Онлайн-игра недоступна. Перейти в офлайн?
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 1.2 }}>
-            Если сервер игры недоступен, можно открыть офлайн-режим.
+            Если сервер игры временно недоступен, можно продолжить в офлайн-режиме.
           </Typography>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
             <Button variant="contained" onClick={() => setMode('offline')}>
@@ -124,9 +128,7 @@ export default function GamePage() {
             bgcolor: isDark ? 'rgba(17,33,50,0.78)' : '#F7FBF8',
           }}
         >
-          <Typography sx={{ px: 0.5, pb: 1, fontWeight: 700 }}>
-            {mode === 'offline' ? 'Офлайн-режим' : 'Онлайн-режим'}
-          </Typography>
+          <Typography sx={{ px: 0.5, pb: 1, fontWeight: 700 }}>Онлайн-режим</Typography>
           <Box
             sx={{
               position: 'relative',
@@ -158,21 +160,19 @@ export default function GamePage() {
               </Box>
             )}
 
-            {(mode === 'offline' || resolvedOnlineUrl) && (
+            {resolvedOnlineUrl && (
               <Box
                 key={`${mode}-${reloadKey}`}
                 component="iframe"
-                src={mode === 'offline' ? OFFLINE_GAME_URL : resolvedOnlineUrl}
-                title={mode === 'offline' ? 'Soyle Offline Game' : 'Soyle Online Game'}
+                src={resolvedOnlineUrl}
+                title="Soyle Online Game"
                 onLoad={() => {
                   if (mode === 'checking') {
                     setMode('online');
                   }
                 }}
                 onError={() => {
-                  if (mode !== 'offline') {
-                    setMode('offlinePrompt');
-                  }
+                  setMode('offlinePrompt');
                 }}
                 sx={{
                   width: '100%',

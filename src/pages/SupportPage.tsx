@@ -7,22 +7,31 @@ import {
   MenuItem,
   Paper,
   Select,
+  Stack,
   TextField,
   Typography,
+  Dialog,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useNavigate } from 'react-router-dom';
-import { aiApi } from '../lib/api';
+import { aiApi, uploadApi } from '../lib/api';
+import type { Attachment } from '../lib/types';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useChatStore } from '../stores/chatStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
 
-type UiMessage = { id: string; from: 'ai' | 'me'; text: string };
+type UiMessage = {
+  id: string;
+  from: 'ai' | 'me';
+  text: string;
+  attachments: Attachment[];
+};
 
 const stripAiPrefix = (text: string) => text.replace(/^AI:\s*/i, '').trim();
 const isAiMessage = (text: string, isAiFlag?: boolean) => Boolean(isAiFlag) || /^AI:\s*/i.test(text);
@@ -39,7 +48,12 @@ export default function SupportPage() {
   const [chatId, setChatId] = useState<string>('');
   const [sending, setSending] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
+
   const listRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     aiApi
@@ -61,14 +75,25 @@ export default function SupportPage() {
     loadMessages(chatId).catch(() => null);
   }, [chatId, loadMessages]);
 
+  useEffect(() => {
+    const nextUrls = pendingFiles.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(nextUrls);
+    return () => {
+      nextUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [pendingFiles]);
+
   const uiMessages = useMemo<UiMessage[]>(() => {
     const list = messages[chatId] || [];
     return list.map((m) => {
       const ai = isAiMessage(m.text, (m as any).isAi);
+      const attachments = Array.isArray((m as any).attachments)
+        ? ((m as any).attachments as Attachment[])
+        : [];
       if (ai) {
-        return { id: m.id, from: 'ai', text: stripAiPrefix(m.text) };
+        return { id: m.id, from: 'ai', text: stripAiPrefix(m.text), attachments };
       }
-      return { id: m.id, from: m.userId === me?.id ? 'me' : 'ai', text: m.text };
+      return { id: m.id, from: m.userId === me?.id ? 'me' : 'ai', text: m.text, attachments };
     });
   }, [messages, chatId, me?.id]);
 
@@ -77,9 +102,16 @@ export default function SupportPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [uiMessages, sending, isLoadingMessages]);
 
+  const onPickFiles = (files: FileList | null) => {
+    if (!files) return;
+    const images = Array.from(files).filter((file) => file.type.startsWith('image/'));
+    if (!images.length) return;
+    setPendingFiles((prev) => [...prev, ...images].slice(0, 8));
+  };
+
   const onSend = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && pendingFiles.length === 0) || sending) return;
 
     if (!chatId) {
       const chat = await aiApi.getAIChat();
@@ -93,7 +125,6 @@ export default function SupportPage() {
       return;
     }
 
-    setInput('');
     setSending(true);
     try {
       const resolvedChatId = chatId || String((await aiApi.getAIChat())?.id || '');
@@ -101,7 +132,20 @@ export default function SupportPage() {
       if (resolvedChatId !== chatId) {
         setChatId(resolvedChatId);
       }
-      await aiApi.sendMessage(resolvedChatId, text);
+
+      let uploadedAttachments: Attachment[] = [];
+      if (pendingFiles.length > 0) {
+        uploadedAttachments = (await uploadApi.uploadFiles(pendingFiles)) as Attachment[];
+      }
+
+      await aiApi.sendMessage(resolvedChatId, text, {
+        provider,
+        apiKey: provider === 'custom' ? aiApiKey.trim() : '',
+        attachments: uploadedAttachments,
+      });
+
+      setInput('');
+      setPendingFiles([]);
       await loadMessages(resolvedChatId);
     } catch (error: any) {
       const apiError = String(error?.response?.data?.error || '').trim();
@@ -155,11 +199,15 @@ export default function SupportPage() {
           px: 'max(env(safe-area-inset-left), 2px)',
         }}
       >
-        <IconButton onClick={() => navigate('/chats')}><ArrowBackIcon /></IconButton>
+        <IconButton onClick={() => navigate('/chats')}>
+          <ArrowBackIcon />
+        </IconButton>
         <Avatar sx={{ width: 34, height: 34, bgcolor: 'primary.main' }}>
           <PsychologyRoundedIcon sx={{ fontSize: 20 }} />
         </Avatar>
-        <Typography variant="h6" fontWeight={700} sx={{ flex: 1 }}>AI</Typography>
+        <Typography variant="h6" fontWeight={700} sx={{ flex: 1 }}>
+          AI
+        </Typography>
         <Select size="small" value={provider} onChange={(e) => setProvider(e.target.value as 'g4f' | 'custom')}>
           <MenuItem value="g4f">g4f</MenuItem>
           <MenuItem value="custom">Свой API</MenuItem>
@@ -175,7 +223,15 @@ export default function SupportPage() {
       </Box>
 
       {showCustomWarning && (
-        <Paper sx={{ p: 1.1, borderRadius: 2, bgcolor: 'rgba(228,75,75,0.12)', border: '1px solid', borderColor: 'rgba(228,75,75,0.36)' }}>
+        <Paper
+          sx={{
+            p: 1.1,
+            borderRadius: 2,
+            bgcolor: 'rgba(228,75,75,0.12)',
+            border: '1px solid',
+            borderColor: 'rgba(228,75,75,0.36)',
+          }}
+        >
           <Typography variant="body2">Введите AI API ключ в разделе «Спец. возможности».</Typography>
         </Paper>
       )}
@@ -202,7 +258,38 @@ export default function SupportPage() {
                 color: m.from === 'me' ? '#fff' : 'text.primary',
               }}
             >
-              <Typography sx={{ whiteSpace: 'pre-wrap' }}>{m.text}</Typography>
+              {m.attachments.length > 0 && (
+                <Stack spacing={0.6} sx={{ mb: m.text ? 0.8 : 0 }}>
+                  {m.attachments.map((attachment) => {
+                    const isImage = attachment.type === 'image';
+                    return (
+                      <Box key={attachment.id} sx={{ display: 'grid', gap: 0.45 }}>
+                        {isImage ? (
+                          <Box
+                            component="img"
+                            src={attachment.url}
+                            alt={attachment.name || 'photo'}
+                            onClick={() => setMediaPreviewUrl(attachment.url)}
+                            sx={{
+                              width: 170,
+                              maxWidth: '100%',
+                              borderRadius: 1.5,
+                              display: 'block',
+                              cursor: 'pointer',
+                              border: '1px solid rgba(255,255,255,0.25)',
+                            }}
+                          />
+                        ) : (
+                          <Typography variant="body2" sx={{ opacity: 0.94 }}>
+                            {attachment.name || 'Вложение'}
+                          </Typography>
+                        )}
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              )}
+              {!!m.text && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{m.text}</Typography>}
             </Paper>
           ))
         )}
@@ -210,10 +297,61 @@ export default function SupportPage() {
         {sending && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pl: 1 }}>
             <CircularProgress size={16} />
-            <Typography variant="body2" color="text.secondary">AI печатает...</Typography>
+            <Typography variant="body2" color="text.secondary">
+              AI печатает...
+            </Typography>
           </Box>
         )}
       </Box>
+
+      {previewUrls.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 0.8,
+            borderRadius: 2.3,
+            border: '1px solid',
+            borderColor: 'divider',
+            display: 'flex',
+            gap: 0.7,
+            overflowX: 'auto',
+            flexShrink: 0,
+          }}
+        >
+          {previewUrls.map((url, index) => (
+            <Box key={url} sx={{ position: 'relative', flex: '0 0 auto' }}>
+              <Box
+                component="img"
+                src={url}
+                alt={`selected-${index}`}
+                sx={{
+                  width: 62,
+                  height: 62,
+                  borderRadius: 1.2,
+                  objectFit: 'cover',
+                  border: '1px solid rgba(0,0,0,0.14)',
+                }}
+              />
+              <IconButton
+                size="small"
+                onClick={() =>
+                  setPendingFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))
+                }
+                sx={{
+                  position: 'absolute',
+                  top: -8,
+                  right: -8,
+                  bgcolor: 'rgba(20,20,20,0.75)',
+                  color: '#fff',
+                  '&:hover': { bgcolor: 'rgba(20,20,20,0.92)' },
+                }}
+              >
+                <CloseRoundedIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Box>
+          ))}
+        </Paper>
+      )}
 
       <Paper
         elevation={0}
@@ -228,7 +366,20 @@ export default function SupportPage() {
           borderColor: 'divider',
         }}
       >
-        <IconButton size="small"><AttachFileRoundedIcon /></IconButton>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(event) => {
+            onPickFiles(event.target.files);
+            event.currentTarget.value = '';
+          }}
+        />
+        <IconButton size="small" onClick={() => fileInputRef.current?.click()} disabled={sending}>
+          <AttachFileRoundedIcon />
+        </IconButton>
         <TextField
           variant="standard"
           placeholder="Напиши сообщение..."
@@ -243,8 +394,23 @@ export default function SupportPage() {
           fullWidth
           InputProps={{ disableUnderline: true }}
         />
-        <IconButton color="primary" onClick={() => void onSend()} disabled={!input.trim() || sending}><SendRoundedIcon /></IconButton>
+        <IconButton
+          color="primary"
+          onClick={() => void onSend()}
+          disabled={sending || (!input.trim() && pendingFiles.length === 0)}
+        >
+          <SendRoundedIcon />
+        </IconButton>
       </Paper>
+
+      <Dialog open={Boolean(mediaPreviewUrl)} onClose={() => setMediaPreviewUrl(null)} maxWidth="lg">
+        <Box
+          component="img"
+          src={mediaPreviewUrl || ''}
+          alt="preview"
+          sx={{ maxWidth: '100vw', maxHeight: '90vh', display: 'block' }}
+        />
+      </Dialog>
     </Box>
   );
 }

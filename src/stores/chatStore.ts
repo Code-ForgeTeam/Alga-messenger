@@ -318,6 +318,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const chat = get().chats.find((c) => c.id === chatId);
 
     if (chat?.type === 'ai') {
+      const settings = useSettingsStore.getState();
+      const provider = settings.aiProvider;
+      const apiKey = provider === 'custom' ? settings.aiApiKey.trim() : '';
       const tempId = `temp-${Date.now()}-${Math.random()}`;
       const optimistic: Message = {
         id: tempId,
@@ -334,7 +337,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
 
       try {
-        const payload = await aiApi.sendMessage(chatId, normalizedText);
+        const payload = await aiApi.sendMessage(chatId, normalizedText, {
+          provider,
+          apiKey,
+          attachments,
+        });
         const userMessage = payload.userMessage as Message;
         const aiMessage = payload.aiMessage as Message;
 

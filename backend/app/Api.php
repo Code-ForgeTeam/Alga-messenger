@@ -2546,9 +2546,22 @@ final class Api
         $userId = $this->authUserId();
         $chatId = (string)($body['chatId'] ?? '');
         $text = trim((string)($body['text'] ?? ''));
+        $provider = strtolower(trim((string)($body['provider'] ?? 'g4f')));
+        if ($provider !== 'custom') {
+            $provider = 'g4f';
+        }
+        $apiKey = trim((string)($body['apiKey'] ?? ''));
+        $attachmentsInput = $body['attachments'] ?? [];
+        if (!is_array($attachmentsInput)) {
+            $attachmentsInput = [];
+        }
+        $attachments = $this->normalizeMessageAttachments($attachmentsInput);
 
-        if ($chatId === '' || $text === '') {
+        if ($chatId === '' || ($text === '' && !$attachments)) {
             $this->json(['error' => 'Invalid payload'], 400);
+        }
+        if ($provider === 'custom' && $apiKey === '') {
+            $this->json(['error' => 'api_key_required'], 400);
         }
 
         $check = $this->db()->prepare('SELECT c.id FROM chats c JOIN chat_participants cp ON cp.chat_id = c.id WHERE c.id = ? AND c.type = "ai" AND cp.user_id = ? LIMIT 1');
@@ -2560,6 +2573,7 @@ final class Api
         $messageId = $this->uuid();
         $insert = $this->db()->prepare('INSERT INTO messages (id, chat_id, user_id, text) VALUES (?, ?, ?, ?)');
         $insert->execute([$messageId, $chatId, $userId, $text]);
+        $this->saveMessageAttachments($messageId, $attachments);
 
         $contextStmt = $this->db()->prepare(
             'SELECT text FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT 16'
@@ -2568,10 +2582,31 @@ final class Api
         $historyRows = array_reverse($contextStmt->fetchAll() ?: []);
         $history = array_map(fn ($row) => (string)($row['text'] ?? ''), $historyRows);
 
-        $rawReply = $this->fetchAiReply($text, $history) ?: $this->composeAiReplyClean($text);
+        $prompt = $text !== '' ? $text : 'Опиши изображение на фото и помоги с ним.';
+        $aiReplyPayload = null;
+        if ($provider === 'custom' && $apiKey !== '') {
+            $aiReplyPayload = $this->fetchAiReplyFromCustomApiKey($prompt, $history, $attachments, $apiKey);
+        }
+
+        $rawReply = trim((string)($aiReplyPayload['text'] ?? ''));
+        if ($rawReply === '') {
+            $rawReply = trim((string)($this->fetchAiReply($prompt, $history) ?? ''));
+        }
+        if ($rawReply === '') {
+            $rawReply = $this->composeAiReplyClean($prompt);
+        }
+
+        $aiAttachmentCandidates = [];
+        if (is_array($aiReplyPayload) && isset($aiReplyPayload['attachments']) && is_array($aiReplyPayload['attachments'])) {
+            $aiAttachmentCandidates = $aiReplyPayload['attachments'];
+        }
+        $aiAttachmentCandidates = array_merge($aiAttachmentCandidates, $this->extractImageUrlsFromText($rawReply));
+        $aiAttachments = $this->normalizeAiExternalImageAttachments($aiAttachmentCandidates);
+
         $replyText = 'AI: ' . trim($rawReply);
         $replyId = $this->uuid();
         $insert->execute([$replyId, $chatId, $userId, $replyText]);
+        $this->saveMessageAttachments($replyId, $aiAttachments);
 
         $updateChat = $this->db()->prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
         $updateChat->execute([$chatId]);
@@ -2582,6 +2617,7 @@ final class Api
                 'chatId' => $chatId,
                 'userId' => $userId,
                 'text' => $text,
+                'attachments' => $this->attachmentPublicPayload($attachments),
                 'createdAt' => date('c'),
                 'edited' => 0,
                 'isAi' => false,
@@ -2592,6 +2628,7 @@ final class Api
                 'chatId' => $chatId,
                 'userId' => $userId,
                 'text' => $replyText,
+                'attachments' => $this->attachmentPublicPayload($aiAttachments),
                 'createdAt' => date('c'),
                 'edited' => 0,
                 'isAi' => true,
@@ -2599,6 +2636,216 @@ final class Api
             ],
             'message' => $replyText,
         ], 201);
+    }
+
+    private function fetchAiReplyFromCustomApiKey(string $prompt, array $history, array $attachments, string $apiKey): ?array
+    {
+        if (!function_exists('curl_init')) {
+            return null;
+        }
+
+        $endpoint = trim((string)Config::get('AI_CUSTOM_API_URL', 'https://api.openai.com/v1/chat/completions'));
+        $model = trim((string)Config::get('AI_CUSTOM_MODEL', (string)Config::get('AI_MODEL', 'gpt-4o-mini')));
+        $endpointUrl = $this->normalizeExternalUrl($endpoint);
+        if ($endpointUrl === null) {
+            return null;
+        }
+
+        $messages = [
+            [
+                'role' => 'system',
+                'content' => 'Ты помощник Soyle. Отвечай кратко и по делу на русском языке.',
+            ],
+        ];
+
+        $historyTail = array_slice(array_values(array_filter(array_map(static function ($item): string {
+            return trim((string)$item);
+        }, $history))), -6);
+        foreach ($historyTail as $entry) {
+            $messages[] = ['role' => 'user', 'content' => $entry];
+        }
+
+        $content = [];
+        if (trim($prompt) !== '') {
+            $content[] = [
+                'type' => 'text',
+                'text' => trim($prompt),
+            ];
+        }
+        foreach ($attachments as $attachment) {
+            if (!is_array($attachment)) {
+                continue;
+            }
+            $type = strtolower(trim((string)($attachment['type'] ?? '')));
+            if ($type !== 'image') {
+                continue;
+            }
+            $url = $this->normalizeExternalUrl((string)($attachment['url'] ?? ''));
+            if ($url === null) {
+                continue;
+            }
+            $content[] = [
+                'type' => 'image_url',
+                'image_url' => ['url' => $url],
+            ];
+        }
+
+        if (!$content) {
+            return null;
+        }
+
+        if (count($content) === 1 && ($content[0]['type'] ?? '') === 'text') {
+            $messages[] = ['role' => 'user', 'content' => (string)($content[0]['text'] ?? '')];
+        } else {
+            $messages[] = ['role' => 'user', 'content' => $content];
+        }
+
+        $payload = json_encode(
+            [
+                'model' => $model !== '' ? $model : 'gpt-4o-mini',
+                'messages' => $messages,
+                'temperature' => 0.4,
+            ],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        );
+        if ($payload === false) {
+            return null;
+        }
+
+        $ch = curl_init($endpointUrl);
+        if ($ch === false) {
+            return null;
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $apiKey,
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_TIMEOUT => 70,
+            CURLOPT_POSTFIELDS => $payload,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if (!is_string($response) || $httpCode < 200 || $httpCode >= 300) {
+            return null;
+        }
+
+        $data = json_decode($response, true);
+        if (!is_array($data)) {
+            return null;
+        }
+
+        $text = '';
+        $rawContent = $data['choices'][0]['message']['content'] ?? null;
+        if (is_string($rawContent)) {
+            $text = trim($rawContent);
+        } elseif (is_array($rawContent)) {
+            $parts = [];
+            foreach ($rawContent as $part) {
+                if (!is_array($part)) continue;
+                $type = strtolower(trim((string)($part['type'] ?? '')));
+                if ($type === 'text') {
+                    $value = trim((string)($part['text'] ?? ''));
+                    if ($value !== '') {
+                        $parts[] = $value;
+                    }
+                }
+            }
+            $text = trim(implode("\n", $parts));
+        }
+
+        if ($text === '') {
+            $text = trim((string)($data['output_text'] ?? ''));
+        }
+
+        $attachmentsFromResponse = $this->extractImageUrlsFromText($text);
+        if (isset($data['data']) && is_array($data['data'])) {
+            foreach ($data['data'] as $row) {
+                if (!is_array($row)) continue;
+                $url = $this->normalizeExternalUrl((string)($row['url'] ?? ''));
+                if ($url !== null) {
+                    $attachmentsFromResponse[] = $url;
+                }
+            }
+        }
+
+        return [
+            'text' => $text,
+            'attachments' => $attachmentsFromResponse,
+        ];
+    }
+
+    private function extractImageUrlsFromText(string $text): array
+    {
+        $source = trim($text);
+        if ($source === '') {
+            return [];
+        }
+
+        if (!preg_match_all('~https?://[^\s<>"\')]+~iu', $source, $matches)) {
+            return [];
+        }
+
+        $items = [];
+        foreach (($matches[0] ?? []) as $rawUrl) {
+            $url = $this->normalizeExternalUrl((string)$rawUrl);
+            if ($url === null) {
+                continue;
+            }
+            $path = strtolower((string)parse_url($url, PHP_URL_PATH));
+            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            $isImage = in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif'], true);
+            if (!$isImage) {
+                $hint = strtolower($url);
+                $isImage = strpos($hint, 'image') !== false || strpos($hint, 'img') !== false || strpos($hint, 'photo') !== false;
+            }
+            if ($isImage) {
+                $items[] = $url;
+            }
+        }
+
+        return array_values(array_unique($items));
+    }
+
+    private function normalizeAiExternalImageAttachments(array $rawUrls): array
+    {
+        $result = [];
+        $seen = [];
+
+        foreach ($rawUrls as $item) {
+            $candidate = '';
+            if (is_array($item)) {
+                $candidate = (string)($item['url'] ?? '');
+            } else {
+                $candidate = (string)$item;
+            }
+            $url = $this->normalizeExternalUrl($candidate);
+            if ($url === null || isset($seen[$url])) {
+                continue;
+            }
+            $seen[$url] = true;
+            $path = (string)parse_url($url, PHP_URL_PATH);
+            $name = basename($path);
+            if ($name === '' || $name === '/' || $name === '.') {
+                $name = 'ai-image-' . (count($result) + 1) . '.jpg';
+            }
+            $result[] = [
+                'id' => $this->uuid(),
+                'name' => $name,
+                'url' => $url,
+                'type' => 'image',
+                'size' => 0,
+            ];
+        }
+
+        return $result;
     }
 
     private function composeAiReply(string $text): string

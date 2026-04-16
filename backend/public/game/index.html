@@ -3,17 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Pyrga Titan</title>
+  <title>Pyrga Titan Online</title>
   <style>
     :root {
       --vh: 1vh;
-      --bg: #eef5fc;
+      --bg-top: #f7fbff;
+      --bg-bottom: #e9f2fb;
       --panel: #ffffff;
-      --line: #d9e6f2;
+      --line: #d5e4f2;
       --ink: #203248;
-      --soft: #6f8299;
-      --accent: #4b8fe9;
-      --shadow: 0 12px 28px rgba(35, 62, 92, 0.14);
+      --soft: #6b7f96;
+      --accent: #3f84e8;
+      --accent-2: #2f71d1;
+      --shadow: 0 12px 28px rgba(31, 56, 86, 0.14);
     }
 
     * {
@@ -30,48 +32,66 @@
       height: calc(var(--vh) * 100);
       overflow: hidden;
       font-family: "SF Pro Text", "Segoe UI", Arial, sans-serif;
-      background: linear-gradient(180deg, #f8fbff, var(--bg));
       color: var(--ink);
+      background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
       overscroll-behavior: none;
     }
 
-    .hidden { display: none !important; }
+    .hidden {
+      display: none !important;
+    }
 
     .menu {
       width: 100%;
       height: calc(var(--vh) * 100);
       display: grid;
       place-items: center;
-      padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+      padding:
+        calc(env(safe-area-inset-top, 0px) + 16px)
+        16px
+        calc(env(safe-area-inset-bottom, 0px) + 16px);
     }
 
     .menu-card {
       width: min(560px, 100%);
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 18px;
+      border-radius: 20px;
       box-shadow: var(--shadow);
       padding: 18px;
       text-align: center;
     }
 
-    .menu h1 { margin: 0; font-size: clamp(26px, 6vw, 40px); }
-    .menu p { margin: 8px 0 16px; color: var(--soft); }
+    .menu-title {
+      margin: 0;
+      font-size: clamp(28px, 6vw, 42px);
+      letter-spacing: 0.3px;
+    }
+
+    .menu-subtitle {
+      margin: 8px 0 16px;
+      color: var(--soft);
+      font-size: 15px;
+    }
+
     .menu-options {
       display: grid;
       gap: 10px;
       margin-bottom: 14px;
       text-align: left;
     }
+
     .menu-field {
       display: grid;
       gap: 6px;
     }
+
     .menu-field label {
       font-size: 13px;
       color: var(--soft);
       font-weight: 700;
     }
+
     .menu-field select {
       width: 100%;
       border: 1px solid var(--line);
@@ -93,18 +113,20 @@
       cursor: pointer;
       background: #fff;
       color: var(--ink);
-      transition: 120ms ease;
+      transition: transform 120ms ease, box-shadow 120ms ease;
     }
 
-    .btn:active { transform: scale(0.97); }
+    .btn:active {
+      transform: scale(0.97);
+    }
 
     .btn.primary {
-      background: linear-gradient(180deg, #6aa8f6, #3f84e8);
-      border-color: #3f84e8;
+      background: linear-gradient(180deg, #5ea2f4, #3a82e8);
+      border-color: #3a82e8;
       color: #fff;
     }
 
-    .meta {
+    .menu-meta {
       margin-top: 12px;
       color: var(--soft);
       font-size: 14px;
@@ -112,9 +134,11 @@
     }
 
     .game {
-      position: relative;
       width: 100%;
       height: calc(var(--vh) * 100);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 8px;
       padding:
         calc(env(safe-area-inset-top, 0px) + 8px)
         max(env(safe-area-inset-right, 0px), 8px)
@@ -122,38 +146,19 @@
         max(env(safe-area-inset-left, 0px), 8px);
     }
 
-    .board-shell {
-      width: 100%;
-      height: 100%;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: #fff;
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      position: relative;
-      touch-action: none;
-    }
-
-    .board {
-      position: absolute;
-      left: 0;
-      top: 0;
-      touch-action: manipulation;
-      user-select: none;
-      -webkit-user-select: none;
-      will-change: transform;
+    .toolbar {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 8px;
     }
 
     .back {
-      position: absolute;
-      left: calc(max(env(safe-area-inset-left, 0px), 8px) + 8px);
-      top: calc(env(safe-area-inset-top, 0px) + 16px);
-      z-index: 20;
       width: 44px;
       height: 44px;
-      border-radius: 50%;
+      border-radius: 12px;
       border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.95);
+      background: rgba(255, 255, 255, 0.94);
       font-size: 24px;
       line-height: 1;
       cursor: pointer;
@@ -161,55 +166,124 @@
     }
 
     .hud {
-      position: absolute;
-      right: calc(max(env(safe-area-inset-right, 0px), 8px) + 8px);
-      top: calc(env(safe-area-inset-top, 0px) + 14px);
-      z-index: 20;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.95);
+      background: rgba(255, 255, 255, 0.94);
       color: #35506d;
       font-weight: 800;
       font-size: 12px;
-      padding: 7px 10px;
-      line-height: 1;
-      box-shadow: 0 8px 18px rgba(30, 54, 84, 0.16);
-      max-width: min(76vw, 360px);
+      padding: 8px 12px;
+      text-align: center;
+      box-shadow: 0 8px 18px rgba(30, 54, 84, 0.15);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
+    .shuffle {
+      border-radius: 12px;
+      border: 1px solid #4f89df;
+      background: linear-gradient(180deg, #6ba8f5, #3e7fdf);
+      color: #fff;
+      height: 44px;
+      min-width: 84px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(34, 78, 145, 0.22);
+    }
+
+    .shuffle:disabled {
+      cursor: default;
+      opacity: 0.55;
+      box-shadow: none;
+    }
+
+    .board-shell {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff, #f6faff);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      min-height: 260px;
+    }
+
+    .board {
+      position: absolute;
+      left: 0;
+      top: 0;
+      will-change: transform;
+      touch-action: manipulation;
+    }
+
     .tile {
       position: absolute;
-      border: 1px solid #cedced;
-      border-radius: 10px;
-      background: linear-gradient(180deg, #ffffff, #f5f9ff);
-      box-shadow: 0 4px 10px rgba(25, 47, 74, 0.14);
+      border: 1px solid #cadbee;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffffff, #f4f8ff);
+      box-shadow: 0 4px 10px rgba(21, 44, 72, 0.15);
       display: grid;
-      grid-template-rows: auto 1fr auto;
-      align-items: center;
-      justify-items: center;
+      place-items: center;
       color: #1f2f44;
-      padding: 2px;
       font-weight: 800;
-      transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+      transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+      padding: 0;
     }
 
     .tile.blocked {
-      background: linear-gradient(180deg, #eef3f8, #e3ebf5);
-      filter: saturate(0.9);
+      filter: saturate(0.7) grayscale(0.2);
+      background: linear-gradient(180deg, #eaf1f9, #dfebf7);
+      box-shadow: 0 2px 5px rgba(21, 44, 72, 0.1);
+      cursor: default;
     }
 
-    .tile.selected {
-      outline: 2px solid #4b8fe9;
-      transform: translateY(-2px);
+    .tile .face {
+      font-size: 28px;
+      line-height: 1;
     }
 
-    .tile .tiny { font-size: 10px; }
-    .tile .face { font-size: 22px; line-height: 1; }
-    .tile .tiny.bottom { transform: rotate(180deg); }
-    .red { color: #cc4b4b; }
+    .tray-shell {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: var(--shadow);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .tray-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #3a5572;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .tray-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .tray-slot {
+      height: 56px;
+      border-radius: 10px;
+      border: 1px dashed #b9cee4;
+      background: linear-gradient(180deg, #f9fcff, #f2f7ff);
+      display: grid;
+      place-items: center;
+      color: #8ca2ba;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .tray-slot .face {
+      color: #213650;
+      font-size: 26px;
+    }
 
     .overlay {
       position: fixed;
@@ -221,7 +295,9 @@
       padding: 16px;
     }
 
-    .overlay.show { display: grid; }
+    .overlay.show {
+      display: grid;
+    }
 
     .modal {
       width: min(420px, 100%);
@@ -233,7 +309,10 @@
       text-align: center;
     }
 
-    .modal p { color: var(--soft); }
+    .modal p {
+      color: var(--soft);
+      margin: 10px 0 14px;
+    }
 
     .modal .row {
       display: flex;
@@ -244,6 +323,7 @@
 
     @media (max-width: 760px) {
       .game {
+        gap: 7px;
         padding:
           calc(env(safe-area-inset-top, 0px) + 6px)
           max(env(safe-area-inset-right, 0px), 6px)
@@ -251,12 +331,16 @@
           max(env(safe-area-inset-left, 0px), 6px);
       }
 
-      .board-shell { border-radius: 14px; }
-
       .back {
         width: 40px;
         height: 40px;
         font-size: 22px;
+      }
+
+      .shuffle {
+        height: 40px;
+        min-width: 78px;
+        font-size: 12px;
       }
 
       .hud {
@@ -264,17 +348,22 @@
         padding: 6px 9px;
       }
 
-      .tile { border-radius: 8px; }
-      .tile .tiny { font-size: 9px; }
-      .tile .face { font-size: 19px; }
+      .tray-slot {
+        height: 52px;
+      }
+
+      .tile .face {
+        font-size: 25px;
+      }
     }
   </style>
 </head>
 <body>
   <section id="menuScreen" class="menu">
     <div class="menu-card">
-      <h1>Pyrga Titan</h1>
-      <p>Выбери тему, расклад и стиль карточек</p>
+      <h1 class="menu-title">Pyrga Titan</h1>
+      <p class="menu-subtitle">Онлайн-режим: 4 ячейки, пары схлопываются автоматически</p>
+
       <div class="menu-options">
         <div class="menu-field">
           <label for="themeSelect">Тема</label>
@@ -284,6 +373,7 @@
             <option value="night">Ночь</option>
           </select>
         </div>
+
         <div class="menu-field">
           <label for="layoutSelect">Расклад</label>
           <select id="layoutSelect">
@@ -293,33 +383,48 @@
             <option value="dragon">Dragon</option>
           </select>
         </div>
+
         <div class="menu-field">
           <label for="deckSelect">Карточки</label>
           <select id="deckSelect">
             <option value="classic">Классические</option>
-            <option value="icons">IT-иконки</option>
+            <option value="icons">IT иконки</option>
           </select>
         </div>
       </div>
+
       <button id="startBtn" class="btn primary">Начать</button>
-      <div id="menuMeta" class="meta"></div>
+      <div id="menuMeta" class="menu-meta"></div>
     </div>
   </section>
 
   <section id="gameScreen" class="game hidden">
-    <button id="backBtn" class="back" aria-label="Назад">←</button>
-    <div id="hud" class="hud"></div>
+    <div class="toolbar">
+      <button id="backBtn" class="back" aria-label="Назад">←</button>
+      <div id="hud" class="hud"></div>
+      <button id="shuffleBtn" class="shuffle">Микс ×3</button>
+    </div>
+
     <div class="board-shell">
       <div id="board" class="board"></div>
+    </div>
+
+    <div class="tray-shell">
+      <div class="tray-head">
+        <span id="trayLabel">Ячейки 0/4</span>
+        <span id="pairLabel">Пары 0/48</span>
+      </div>
+      <div id="trayGrid" class="tray-grid"></div>
     </div>
   </section>
 
   <div id="overlay" class="overlay">
     <div class="modal">
-      <h2 id="modalTitle">Уровень пройден</h2>
+      <h2 id="modalTitle"></h2>
       <p id="modalText"></p>
       <div class="row">
-        <button id="nextBtn" class="btn primary">Следующий уровень</button>
+        <button id="retryBtn" class="btn primary">Новая партия</button>
+        <button id="nextBtn" class="btn">Следующий уровень</button>
         <button id="menuBtn" class="btn">В меню</button>
       </div>
     </div>
@@ -327,68 +432,80 @@
 
   <script>
     (() => {
-      const BEST_KEY = 'pyrga.best.v1';
-      const SCORE_KEY = 'pyrga.score.v1';
+      const BEST_KEY = 'pyrga.online.best.v2';
+      const WINS_KEY = 'pyrga.online.wins.v2';
+      const SCORE_KEY = 'pyrga.online.score.v2';
+      const TRAY_CAPACITY = 4;
+      const SHUFFLES_PER_GAME = 3;
       const LAYOUTS = ['turtle', 'castle', 'fortress', 'dragon'];
+
       const THEMES = {
-        classic: { bgTop: '#f8fbff', bg: '#eef5fc', panel: '#ffffff' },
-        forest: { bgTop: '#f4fff7', bg: '#def3e6', panel: '#fbfff9' },
-        night: { bgTop: '#11192b', bg: '#0a1324', panel: '#17233a' },
+        classic: { top: '#f7fbff', bottom: '#e9f2fb', panel: '#ffffff' },
+        forest: { top: '#f4fff7', bottom: '#def3e6', panel: '#fbfff9' },
+        night: { top: '#11192b', bottom: '#0b1426', panel: '#17233a' },
       };
-      const SUIT_COLORS = {
-        dots: 'black',
-        bamboo: 'black',
-        characters: 'black',
-        wind: 'black',
-        dragon: 'red',
-        flower: 'red',
-        season: 'black',
-      };
-      const ICON_SUITS = {
-        dots: ['⌨', '🖥', '🧠', '💾', '🔌', '🛰', '📡', '⚙', '🛡'],
-        bamboo: ['🐞', '☁', '🧩', '🔑', '🔒', '🚀', '🧪', '🧱', '🛠'],
-        characters: ['📦', '🗄', '🧭', '🕹', '💡', '🧿', '🧲', '📟', '🧬'],
+
+      const DECKS = {
+        classic: ['🀙', '🀚', '🀛', '🀜', '🀝', '🀞', '🀟', '🀠', '🀡', '🀐', '🀑', '🀒', '🀓', '🀔', '🀕', '🀖', '🀗', '🀘', '🀇', '🀈', '🀉', '🀊', '🀋', '🀌'],
+        icons: ['⌨', '🖥', '💾', '🧠', '⚙', '🔌', '🛰', '📡', '🛡', '🧩', '🔑', '🔒', '🚀', '🧪', '🧱', '🛠', '📦', '🕹', '💡', '🖱', '🧬', '🗄', '🔋', '📱'],
       };
 
       const state = {
         level: 1,
-        tiles: [],
-        selected: null,
         score: Number(localStorage.getItem(SCORE_KEY) || 0),
+        wins: Number(localStorage.getItem(WINS_KEY) || 0),
+        best: Number(localStorage.getItem(BEST_KEY) || 0),
         seconds: 0,
+        moves: 0,
         running: false,
         timerId: null,
-        best: Number(localStorage.getItem(BEST_KEY) || 0),
-        renderRaf: 0,
-        themeKey: 'classic',
-        layoutKey: 'turtle',
-        deckKey: 'classic',
+        tiles: [],
+        tray: [],
+        layout: 'turtle',
+        deck: 'classic',
+        theme: 'classic',
+        reshufflesLeft: SHUFFLES_PER_GAME,
+        raf: 0,
       };
 
       const el = {
         menu: document.getElementById('menuScreen'),
-        menuMeta: document.getElementById('menuMeta'),
         game: document.getElementById('gameScreen'),
-        board: document.getElementById('board'),
-        startBtn: document.getElementById('startBtn'),
+        menuMeta: document.getElementById('menuMeta'),
         themeSelect: document.getElementById('themeSelect'),
         layoutSelect: document.getElementById('layoutSelect'),
         deckSelect: document.getElementById('deckSelect'),
+        startBtn: document.getElementById('startBtn'),
+        board: document.getElementById('board'),
+        hud: document.getElementById('hud'),
+        trayGrid: document.getElementById('trayGrid'),
+        trayLabel: document.getElementById('trayLabel'),
+        pairLabel: document.getElementById('pairLabel'),
+        shuffleBtn: document.getElementById('shuffleBtn'),
         backBtn: document.getElementById('backBtn'),
         overlay: document.getElementById('overlay'),
         modalTitle: document.getElementById('modalTitle'),
         modalText: document.getElementById('modalText'),
+        retryBtn: document.getElementById('retryBtn'),
         nextBtn: document.getElementById('nextBtn'),
         menuBtn: document.getElementById('menuBtn'),
-        hud: document.getElementById('hud'),
       };
-
-      let suppressClickUntil = 0;
 
       function updateViewportVar() {
         const vv = window.visualViewport;
         const h = (vv ? vv.height : window.innerHeight) * 0.01;
         document.documentElement.style.setProperty('--vh', `${h}px`);
+      }
+
+      function clamp(min, value, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function fmt(sec) {
+        const s = Math.max(0, Math.floor(sec));
+        const mm = String(Math.floor(s / 60)).padStart(2, '0');
+        const ss = String(s % 60).padStart(2, '0');
+        return `${mm}:${ss}`;
       }
 
       function shuffle(list) {
@@ -398,16 +515,6 @@
           [a[i], a[j]] = [a[j], a[i]];
         }
         return a;
-      }
-
-      function fmt(sec) {
-        const m = String(Math.floor(sec / 60)).padStart(2, '0');
-        const s = String(sec % 60).padStart(2, '0');
-        return `${m}:${s}`;
-      }
-
-      function clamp(min, value, max) {
-        return Math.max(min, Math.min(max, value));
       }
 
       function rect(z, sx, sy, cols, rows) {
@@ -434,120 +541,262 @@
       }
 
       function dragonBase() {
-        const rowSizes = [8, 10, 12, 12, 10, 8];
+        const rowSizes = [8, 10, 12, 10, 8];
         const arr = [];
         rowSizes.forEach((size, y) => {
           const left = Math.floor((12 - size) / 2);
-          for (let x = 0; x < size; x += 1) arr.push({ x: left + x, y, z: 0 });
+          for (let x = 0; x < size; x += 1) {
+            arr.push({ x: left + x, y, z: 0 });
+          }
         });
         return arr;
       }
 
       function layoutPositions(name) {
-        const p = name === 'turtle'
-          ? [...rect(0, 0, 0, 12, 6), ...rect(1, 1, 1, 10, 4), ...rect(2, 2, 2, 8, 3), ...rect(3, 4, 2, 4, 2)]
-          : name === 'castle'
-            ? [...rect(0, 0, 0, 12, 6), ...rect(1, 2, 1, 8, 4), ...rect(2, 3, 1, 6, 4), ...rect(3, 4, 1, 4, 4)]
-            : name === 'fortress'
-              ? [...rect(0, 0, 0, 12, 6), ...ring(1, 1, 1, 10, 4, 6, 2), ...rect(2, 2, 1, 8, 4), ...rect(3, 3, 2, 6, 2)]
-              : [...dragonBase(), ...rect(1, 1, 1, 10, 4), ...rect(2, 2, 1, 8, 4), ...rect(3, 3, 2, 6, 2)];
-        return p.map((it, i) => ({ id: `t-${i}`, ...it }));
+        if (name === 'castle') {
+          return [...rect(0, 0, 0, 12, 6), ...rect(1, 3, 1, 6, 4)];
+        }
+        if (name === 'fortress') {
+          return [...rect(0, 1, 0, 10, 6), ...ring(1, 2, 1, 8, 4, 4, 2), ...rect(2, 4, 1, 4, 3)];
+        }
+        if (name === 'dragon') {
+          return [...dragonBase(), ...rect(1, 2, 1, 8, 4), ...rect(2, 4, 1, 4, 4)];
+        }
+        return [...rect(0, 1, 0, 10, 6), ...rect(1, 2, 1, 8, 4), ...rect(2, 4, 2, 4, 1)];
       }
 
-      function deck() {
-        const cards = [];
-        const suits = state.deckKey === 'icons'
-          ? ICON_SUITS
-          : {
-              dots: ['●一', '●二', '●三', '●四', '●五', '●六', '●七', '●八', '●九'],
-              bamboo: ['🀐1', '🀐2', '🀐3', '🀐4', '🀐5', '🀐6', '🀐7', '🀐8', '🀐9'],
-              characters: ['萬1', '萬2', '萬3', '萬4', '萬5', '萬6', '萬7', '萬8', '萬9'],
-            };
-        ['dots', 'bamboo', 'characters'].forEach((suit) => {
-          for (let v = 1; v <= 9; v += 1) {
-            for (let c = 0; c < 4; c += 1) {
-              cards.push({ suit, value: v, symbol: suits[suit][v - 1], label: state.deckKey === 'icons' ? '' : String(v) });
-            }
-          }
-        });
-        ['东', '南', '西', '北'].forEach((s, i) => {
-          const symbol = state.deckKey === 'icons' ? ['🧭', '🛰', '📶', '📍'][i] : s;
-          for (let c = 0; c < 4; c += 1) cards.push({ suit: 'wind', value: i + 1, symbol, label: state.deckKey === 'icons' ? '' : s });
-        });
-        ['中', '發', '白'].forEach((s, i) => {
-          const symbol = state.deckKey === 'icons' ? ['🔥', '⚡', '💎'][i] : s;
-          for (let c = 0; c < 4; c += 1) cards.push({ suit: 'dragon', value: i + 1, symbol, label: state.deckKey === 'icons' ? '' : s });
-        });
-        ['梅', '蘭', '菊', '竹'].forEach((s, i) => {
-          const symbol = state.deckKey === 'icons' ? ['🌟', '🧿', '📱', '🔋'][i] : s;
-          cards.push({ suit: 'flower', value: i + 1, symbol, label: state.deckKey === 'icons' ? '' : s });
-        });
-        ['春', '夏', '秋', '冬'].forEach((s, i) => {
-          const symbol = state.deckKey === 'icons' ? ['🌱', '☀', '🍂', '❄'][i] : s;
-          cards.push({ suit: 'season', value: i + 1, symbol, label: state.deckKey === 'icons' ? '' : s });
-        });
-        return cards;
+      function buildFaces(tileCount) {
+        const symbols = DECKS[state.deck] || DECKS.classic;
+        const pairs = Math.floor(tileCount / 2);
+        const faces = [];
+        for (let i = 0; i < pairs; i += 1) {
+          const symbol = symbols[i % symbols.length];
+          const face = { key: `${symbol}-${i}`, symbol };
+          faces.push(face, { ...face });
+        }
+        return shuffle(faces);
       }
 
-      function applyTheme(themeKey) {
-        const theme = THEMES[themeKey] || THEMES.classic;
-        document.documentElement.style.setProperty('--bg', theme.bg);
-        document.documentElement.style.setProperty('--panel', theme.panel);
-        document.body.style.background = `linear-gradient(180deg, ${theme.bgTop}, ${theme.bg})`;
-      }
-
-      function isMatch(a, b) {
-        if (a.suit === 'flower' && b.suit === 'flower') return true;
-        if (a.suit === 'season' && b.suit === 'season') return true;
-        return a.suit === b.suit && a.value === b.value;
-      }
-
-      function hasAbove(tile) {
-        return state.tiles.some((o) =>
-          !o.removed &&
-          o.z > tile.z &&
-          o.z - tile.z <= 1 &&
-          Math.abs(o.x - tile.x) <= 1 &&
-          Math.abs(o.y - tile.y) <= 1
-        );
+      function buildLevel(level) {
+        const selectedIndex = Math.max(0, LAYOUTS.indexOf(state.layout));
+        const layout = LAYOUTS[(selectedIndex + Math.max(0, level - 1)) % LAYOUTS.length];
+        const positions = layoutPositions(layout);
+        const faces = buildFaces(positions.length);
+        state.tiles = positions.map((item, index) => ({
+          id: `t-${layout}-${index}`,
+          x: item.x,
+          y: item.y,
+          z: item.z,
+          face: faces[index],
+          removed: false,
+        }));
+        state.tray = [];
+        state.moves = 0;
+        state.seconds = 0;
+        state.reshufflesLeft = SHUFFLES_PER_GAME;
+        state.level = level;
+        state.running = true;
+        el.overlay.classList.remove('show');
+        updateHud();
+        renderTray();
+        scheduleRender();
       }
 
       function isFree(tile) {
-        if (tile.removed || hasAbove(tile)) return false;
-        const left = state.tiles.some((o) => !o.removed && o.id !== tile.id && o.z === tile.z && o.x === tile.x - 1 && o.y === tile.y);
-        const right = state.tiles.some((o) => !o.removed && o.id !== tile.id && o.z === tile.z && o.x === tile.x + 1 && o.y === tile.y);
+        if (!tile || tile.removed) return false;
+        const hasAbove = state.tiles.some((o) => !o.removed && o.z > tile.z && o.x === tile.x && o.y === tile.y);
+        if (hasAbove) return false;
+        const left = state.tiles.some((o) => !o.removed && o.id !== tile.id && o.z === tile.z && o.y === tile.y && o.x === tile.x - 1);
+        const right = state.tiles.some((o) => !o.removed && o.id !== tile.id && o.z === tile.z && o.y === tile.y && o.x === tile.x + 1);
         return !left || !right;
       }
 
+      function collapseTrayPairs() {
+        let changed = true;
+        while (changed) {
+          changed = false;
+          const seen = new Map();
+          for (let i = 0; i < state.tray.length; i += 1) {
+            const key = state.tray[i].face.key;
+            if (seen.has(key)) {
+              const first = seen.get(key);
+              state.tray = state.tray.filter((_, index) => index !== first && index !== i);
+              state.score += 120;
+              localStorage.setItem(SCORE_KEY, String(state.score));
+              changed = true;
+              break;
+            }
+            seen.set(key, i);
+          }
+        }
+      }
+
+      function remainingTiles() {
+        return state.tiles.filter((tile) => !tile.removed).length;
+      }
+
+      function finishGame(win) {
+        state.running = false;
+        if (win) {
+          state.wins += 1;
+          localStorage.setItem(WINS_KEY, String(state.wins));
+          if (state.best === 0 || state.seconds < state.best) {
+            state.best = state.seconds;
+            localStorage.setItem(BEST_KEY, String(state.best));
+          }
+          el.modalTitle.textContent = 'Уровень пройден';
+          el.modalText.textContent = `Время: ${fmt(state.seconds)} • Очки: ${state.score}`;
+        } else {
+          el.modalTitle.textContent = 'Поражение';
+          el.modalText.textContent = 'Ячейки заполнены. Используйте перемешку раньше.';
+        }
+        el.overlay.classList.add('show');
+        updateHud();
+        renderTray();
+      }
+
+      function onTileTap(tileId) {
+        if (!state.running) return;
+        if (state.tray.length >= TRAY_CAPACITY) return;
+
+        const tile = state.tiles.find((item) => item.id === tileId);
+        if (!tile || tile.removed || !isFree(tile)) return;
+
+        tile.removed = true;
+        state.tray.push({ tileId: tile.id, face: tile.face });
+        state.moves += 1;
+        collapseTrayPairs();
+
+        const rest = remainingTiles();
+        if (rest === 0 && state.tray.length === 0) {
+          finishGame(true);
+        } else if (state.tray.length >= TRAY_CAPACITY) {
+          finishGame(false);
+        } else {
+          updateHud();
+          renderTray();
+          scheduleRender();
+        }
+      }
+
+      function reshuffleBoard() {
+        if (!state.running || state.reshufflesLeft <= 0) return;
+        const activeFaces = shuffle(state.tiles.filter((item) => !item.removed).map((item) => item.face));
+        let cursor = 0;
+        state.tiles.forEach((tile) => {
+          if (tile.removed) return;
+          tile.face = activeFaces[cursor];
+          cursor += 1;
+        });
+        state.reshufflesLeft -= 1;
+        updateHud();
+        scheduleRender();
+      }
+
+      function applyTheme(key) {
+        const theme = THEMES[key] || THEMES.classic;
+        document.documentElement.style.setProperty('--bg-top', theme.top);
+        document.documentElement.style.setProperty('--bg-bottom', theme.bottom);
+        document.documentElement.style.setProperty('--panel', theme.panel);
+      }
+
       function updateHud() {
-        el.hud.textContent = `Уровень ${state.level} • ${fmt(state.seconds)} • Очки ${state.score}`;
+        const totalPairs = Math.floor(state.tiles.length / 2);
+        const completedPairs = Math.floor((state.tiles.length - remainingTiles() - state.tray.length) / 2);
+        el.hud.textContent = `L${state.level} • ${fmt(state.seconds)} • Очки ${state.score} • Ходы ${state.moves}`;
+        el.shuffleBtn.textContent = `Микс ×${state.reshufflesLeft}`;
+        el.shuffleBtn.disabled = !state.running || state.reshufflesLeft <= 0;
+        el.trayLabel.textContent = `Ячейки ${state.tray.length}/${TRAY_CAPACITY}`;
+        el.pairLabel.textContent = `Пары ${completedPairs}/${totalPairs}`;
       }
 
       function updateMenuMeta() {
-        el.menuMeta.textContent = `Рекорд: ${state.best ? fmt(state.best) : '—'} • Очки: ${state.score}`;
+        const best = state.best > 0 ? fmt(state.best) : '—';
+        el.menuMeta.textContent = `Рекорд: ${best} • Победы: ${state.wins} • Очки: ${state.score}`;
       }
 
       function scheduleRender() {
-        if (state.renderRaf) return;
-        state.renderRaf = requestAnimationFrame(() => {
-          state.renderRaf = 0;
+        if (state.raf) return;
+        state.raf = requestAnimationFrame(() => {
+          state.raf = 0;
           renderBoard();
         });
       }
 
-      function startLevel(level) {
-        state.level = level;
-        const baseIndex = Math.max(0, LAYOUTS.indexOf(state.layoutKey));
-        const layoutName = LAYOUTS[(baseIndex + level - 1) % LAYOUTS.length];
-        const positions = layoutPositions(layoutName);
-        const faces = shuffle(deck());
-        state.tiles = positions.map((p, i) => ({ ...p, face: faces[i], removed: false }));
-        state.selected = null;
-        state.seconds = 0;
-        state.running = true;
-        el.overlay.classList.remove('show');
-        updateHud();
-        scheduleRender();
+      function renderBoard() {
+        if (!state.tiles.length) {
+          el.board.innerHTML = '';
+          return;
+        }
+
+        const active = state.tiles.filter((tile) => !tile.removed).sort((a, b) => (a.z - b.z) || (a.y - b.y) || (a.x - b.x));
+        if (!active.length) {
+          el.board.innerHTML = '';
+          return;
+        }
+
+        const maxX = Math.max(...state.tiles.map((tile) => tile.x));
+        const maxY = Math.max(...state.tiles.map((tile) => tile.y));
+        const maxZ = Math.max(...state.tiles.map((tile) => tile.z));
+
+        const shell = el.board.parentElement;
+        const width = Math.max(220, shell.clientWidth - 4);
+        const height = Math.max(220, shell.clientHeight - 4);
+        const isNarrow = window.innerWidth <= 760;
+
+        const byWidth = width / (maxX + 1 + maxZ * 0.5);
+        const byHeight = height / ((maxY + 1) * 1.22 + maxZ * 0.35);
+        const tileW = clamp(isNarrow ? 34 : 40, Math.floor(Math.min(byWidth, byHeight)), isNarrow ? 82 : 92);
+        const tileH = Math.max(42, Math.floor(tileW * 1.24));
+        const stepX = Math.max(16, Math.floor(tileW * 0.88));
+        const stepY = Math.max(14, Math.floor(tileH * 0.72));
+        const lift = Math.max(3, Math.floor(tileW * 0.2));
+
+        const contentW = maxX * stepX + tileW + maxZ * lift + 4;
+        const contentH = maxY * stepY + tileH + maxZ * lift + 4;
+        let scale = Math.min(width / contentW, height / contentH);
+        if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+        scale = clamp(0.68, scale, 1.42);
+
+        const offsetX = Math.floor((width - contentW * scale) / 2);
+        const offsetY = Math.floor((height - contentH * scale) / 2);
+
+        el.board.style.width = `${contentW}px`;
+        el.board.style.height = `${contentH}px`;
+        el.board.style.transformOrigin = 'left top';
+        el.board.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+
+        const frag = document.createDocumentFragment();
+        active.forEach((tile) => {
+          const free = isFree(tile);
+          const node = document.createElement('button');
+          node.className = `tile${free ? '' : ' blocked'}`;
+          node.dataset.id = tile.id;
+          node.disabled = !state.running || !free || state.tray.length >= TRAY_CAPACITY;
+          node.style.left = `${tile.x * stepX + tile.z * lift}px`;
+          node.style.top = `${tile.y * stepY + (maxZ - tile.z) * lift}px`;
+          node.style.width = `${tileW}px`;
+          node.style.height = `${tileH}px`;
+          node.style.zIndex = String(100 + tile.z * 20 + tile.y);
+          node.innerHTML = `<span class="face">${tile.face.symbol}</span>`;
+          frag.appendChild(node);
+        });
+
+        el.board.innerHTML = '';
+        el.board.appendChild(frag);
+      }
+
+      function renderTray() {
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < TRAY_CAPACITY; i += 1) {
+          const slot = document.createElement('div');
+          slot.className = 'tray-slot';
+          const item = state.tray[i];
+          slot.innerHTML = item ? `<span class="face">${item.face.symbol}</span>` : '·';
+          frag.appendChild(slot);
+        }
+        el.trayGrid.innerHTML = '';
+        el.trayGrid.appendChild(frag);
       }
 
       function openMenu() {
@@ -563,119 +812,8 @@
         el.game.classList.remove('hidden');
         updateViewportVar();
         updateHud();
+        renderTray();
         scheduleRender();
-      }
-
-      function onTileClick(id) {
-        if (!state.running) return;
-        const tile = state.tiles.find((t) => t.id === id);
-        if (!tile || tile.removed || !isFree(tile)) return;
-
-        if (!state.selected) {
-          state.selected = id;
-          scheduleRender();
-          return;
-        }
-
-        if (state.selected === id) {
-          state.selected = null;
-          scheduleRender();
-          return;
-        }
-
-        const selected = state.tiles.find((t) => t.id === state.selected);
-        if (!selected || selected.removed || !isFree(selected)) {
-          state.selected = id;
-          scheduleRender();
-          return;
-        }
-
-        if (!isMatch(tile.face, selected.face)) {
-          state.selected = id;
-          scheduleRender();
-          return;
-        }
-
-        state.tiles.forEach((t) => {
-          if (t.id === tile.id || t.id === selected.id) t.removed = true;
-        });
-
-        state.selected = null;
-        state.score += 120;
-        localStorage.setItem(SCORE_KEY, String(state.score));
-        updateHud();
-
-        const remaining = state.tiles.filter((t) => !t.removed).length;
-        if (remaining === 0) {
-          state.running = false;
-          if (state.best === 0 || state.seconds < state.best) {
-            state.best = state.seconds;
-            localStorage.setItem(BEST_KEY, String(state.best));
-          }
-          el.modalTitle.textContent = 'Уровень пройден';
-          el.modalText.textContent = `Время: ${fmt(state.seconds)} • Очки: ${state.score}`;
-          el.overlay.classList.add('show');
-        }
-
-        scheduleRender();
-      }
-
-      function renderBoard() {
-        if (!state.tiles.length) {
-          el.board.innerHTML = '';
-          return;
-        }
-
-        const maxX = Math.max(...state.tiles.map((t) => t.x));
-        const maxY = Math.max(...state.tiles.map((t) => t.y));
-        const maxZ = Math.max(...state.tiles.map((t) => t.z));
-        const shell = el.board.parentElement;
-        const width = Math.max(180, shell.clientWidth - 6);
-        const height = Math.max(180, shell.clientHeight - 6);
-
-        const maxTileByWidth = width / (maxX + 1 + maxZ * 0.28);
-        const maxTileByHeight = height / ((maxY + 1) * 1.35 + maxZ * 0.22);
-        const isNarrow = window.innerWidth <= 760;
-        const tileW = clamp(isNarrow ? 22 : 26, Math.floor(Math.min(maxTileByWidth, maxTileByHeight)), isNarrow ? 62 : 76);
-        const tileH = Math.max(30, Math.floor(tileW * 1.35));
-        const layerShift = Math.max(2, Math.floor(tileW * 0.15));
-        const gx = Math.max(2, Math.floor(tileW * 0.8));
-        const gy = Math.max(2, Math.floor(tileH * 0.76));
-
-        const contentW = maxX * gx + tileW + maxZ * layerShift + 2;
-        const contentH = maxY * gy + tileH + maxZ * layerShift + 2;
-        const scale = Math.min(1, width / contentW, height / contentH);
-        const offsetX = Math.floor((width - contentW * scale) / 2);
-        const offsetY = Math.floor((height - contentH * scale) / 2);
-
-        el.board.style.width = `${contentW}px`;
-        el.board.style.height = `${contentH}px`;
-        el.board.style.transformOrigin = 'left top';
-        el.board.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
-
-        const active = state.tiles.filter((t) => !t.removed).sort((a, b) => (a.z - b.z) || (a.y - b.y) || (a.x - b.x));
-        const frag = document.createDocumentFragment();
-
-        active.forEach((tile) => {
-          const node = document.createElement('button');
-          node.className = 'tile';
-          if (!isFree(tile)) node.classList.add('blocked');
-          if (state.selected === tile.id) node.classList.add('selected');
-          node.style.left = `${tile.x * gx + tile.z * layerShift}px`;
-          node.style.top = `${tile.y * gy + (maxZ - tile.z) * layerShift}px`;
-          node.style.width = `${tileW}px`;
-          node.style.height = `${tileH}px`;
-          node.style.zIndex = String(100 + tile.z * 10 + tile.y);
-          node.disabled = !state.running || !isFree(tile);
-          node.dataset.id = tile.id;
-
-          const colorClass = SUIT_COLORS[tile.face.suit] === 'red' ? 'red' : '';
-          node.innerHTML = `<div class="tiny ${colorClass}">${tile.face.label}</div><div class="face ${colorClass}">${tile.face.symbol}</div><div class="tiny bottom ${colorClass}">${tile.face.label}</div>`;
-          frag.appendChild(node);
-        });
-
-        el.board.innerHTML = '';
-        el.board.appendChild(frag);
       }
 
       function tick() {
@@ -689,54 +827,63 @@
         return target ? String(target.dataset.id || '') : '';
       }
 
-      el.startBtn.addEventListener('click', () => {
-        state.themeKey = String(el.themeSelect.value || 'classic');
-        state.layoutKey = String(el.layoutSelect.value || 'turtle');
-        state.deckKey = String(el.deckSelect.value || 'classic');
-        applyTheme(state.themeKey);
+      function startGameAtLevel(level) {
+        buildLevel(level);
         openGame();
-        startLevel(1);
+      }
+
+      el.startBtn.addEventListener('click', () => {
+        state.theme = String(el.themeSelect.value || 'classic');
+        state.layout = String(el.layoutSelect.value || 'turtle');
+        state.deck = String(el.deckSelect.value || 'classic');
+        applyTheme(state.theme);
+        startGameAtLevel(1);
       });
+
       el.themeSelect.addEventListener('change', () => {
-        state.themeKey = String(el.themeSelect.value || 'classic');
-        applyTheme(state.themeKey);
+        state.theme = String(el.themeSelect.value || 'classic');
+        applyTheme(state.theme);
       });
+
       el.layoutSelect.addEventListener('change', () => {
-        state.layoutKey = String(el.layoutSelect.value || 'turtle');
+        state.layout = String(el.layoutSelect.value || 'turtle');
       });
+
       el.deckSelect.addEventListener('change', () => {
-        state.deckKey = String(el.deckSelect.value || 'classic');
+        state.deck = String(el.deckSelect.value || 'classic');
       });
 
       el.backBtn.addEventListener('click', openMenu);
-      el.nextBtn.addEventListener('click', () => startLevel(state.level + 1));
+      el.shuffleBtn.addEventListener('click', reshuffleBoard);
+
+      el.retryBtn.addEventListener('click', () => startGameAtLevel(1));
+      el.nextBtn.addEventListener('click', () => startGameAtLevel(state.level + 1));
       el.menuBtn.addEventListener('click', openMenu);
 
+      let suppressClickUntil = 0;
       el.board.addEventListener('pointerdown', (event) => {
         const id = tileIdFromEvent(event);
         if (!id) return;
-        suppressClickUntil = Date.now() + 350;
+        suppressClickUntil = Date.now() + 260;
         event.preventDefault();
-        onTileClick(id);
+        onTileTap(id);
       }, { passive: false });
 
       el.board.addEventListener('click', (event) => {
         if (Date.now() < suppressClickUntil) return;
         const id = tileIdFromEvent(event);
         if (!id) return;
-        onTileClick(id);
+        onTileTap(id);
       });
 
       window.addEventListener('resize', () => {
         updateViewportVar();
         scheduleRender();
       });
-
       window.addEventListener('orientationchange', () => {
         updateViewportVar();
         scheduleRender();
       });
-
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', () => {
           updateViewportVar();
@@ -745,8 +892,10 @@
       }
 
       updateViewportVar();
-      state.timerId = setInterval(tick, 1000);
-      applyTheme(state.themeKey);
+      applyTheme(state.theme);
+      updateMenuMeta();
+      renderTray();
+      state.timerId = window.setInterval(tick, 1000);
       openMenu();
     })();
   </script>
