@@ -35,7 +35,7 @@ export default function SpecialFeaturesPage() {
           <Box>
             <Typography fontWeight={600}>Показывать при запуске</Typography>
             <Typography variant="body2" color="text.secondary">
-              Анимация Soyle → главное меню
+              Анимация Alga → главное меню
             </Typography>
           </Box>
           <Switch checked={launchIntroEnabled} onChange={(e) => setLaunchIntroEnabled(e.target.checked)} />

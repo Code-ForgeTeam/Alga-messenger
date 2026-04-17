@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.alga.messenger',
-  appName: 'Soyle',
+  appName: 'Alga',
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {

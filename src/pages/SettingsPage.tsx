@@ -75,7 +75,7 @@ export default function SettingsPage() {
       return;
     }
 
-    push({ message: 'Soyle v1.0.0', timeout: 1200 });
+    push({ message: 'Alga v1.0.0', timeout: 1200 });
   };
 
   return (

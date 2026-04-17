@@ -1,4 +1,4 @@
--- Alga Messenger DB bootstrap for SQL-only hosting (MySQL 8+)
+-- Alga DB bootstrap for SQL-only hosting (MySQL 8+)
 -- Run this file in Beget SQL console.
 
 SET NAMES utf8mb4;

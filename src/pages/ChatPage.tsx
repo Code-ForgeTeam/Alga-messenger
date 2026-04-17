@@ -1071,7 +1071,7 @@ export default function ChatPage() {
 
       if (isNative) {
           const mediaFolder = attachment.type === 'video' ? 'Movies' : 'Pictures';
-      const path = `${mediaFolder}/Soyle/${nativeFileName}`;
+      const path = `${mediaFolder}/Alga/${nativeFileName}`;
           const dirs = [Directory.Documents, Directory.External, Directory.Data] as const;
           try {
             await Filesystem.requestPermissions();
@@ -1181,7 +1181,7 @@ export default function ChatPage() {
       const fileName = inferFileName(attachment, url, mimeType);
       const base64 = await blobToBase64(blob);
 
-      const folder = attachment.type === 'video' ? 'Soyle/Videos' : 'Soyle/Photos';
+      const folder = attachment.type === 'video' ? 'Alga/Videos' : 'Alga/Photos';
       const path = `${folder}/${fileName}`;
       const directories = [Directory.Documents, Directory.External, Directory.Data] as const;
 
@@ -1255,7 +1255,7 @@ export default function ChatPage() {
         });
 
       const resolveAndroidAlbumIdentifier = async (Media: any): Promise<string | undefined> => {
-      const targetName = 'Soyle';
+      const targetName = 'Alga';
         const findExisting = async (): Promise<string | undefined> => {
           try {
             const albums = await Media.getAlbums();
