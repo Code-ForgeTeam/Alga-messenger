@@ -231,7 +231,7 @@ function LaunchIntro({
           textRendering: 'geometricPrecision',
         }}
       >
-        Soyle
+        Alga
       </Typography>
 
       <Typography
@@ -281,7 +281,7 @@ function QuietBootLoader() {
             color: isDark ? '#EAF1FF' : '#1A3A2A',
           }}
         >
-          Soyle
+          Alga
         </Typography>
         <Typography
           sx={{
@@ -918,7 +918,7 @@ export default function App() {
         <DialogTitle>Доступно обновление</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            В репозитории найден файл APK ({apkUpdate?.name || 'Soyle.apk'}). Обновить приложение сейчас?
+            В репозитории найден файл APK ({apkUpdate?.name || 'Alga.apk'}). Обновить приложение сейчас?
           </Typography>
         </DialogContent>
         <DialogActions>
