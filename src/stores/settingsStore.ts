@@ -226,7 +226,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
     }),
     {
-      name: 'alga:settings',
+      name: 'moon:settings',
       version: 4,
       migrate: (persistedState, version) => {
         if (!persistedState || typeof persistedState !== 'object') return persistedState;

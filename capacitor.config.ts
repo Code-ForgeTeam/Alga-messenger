@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.alga.messenger',
-  appName: 'Soyle',
+  appId: 'com.moon.messenger',
+  appName: 'Moon',
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {

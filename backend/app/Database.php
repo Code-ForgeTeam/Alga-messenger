@@ -18,7 +18,7 @@ final class Database
 
         $host = Config::get('DB_HOST', '127.0.0.1');
         $port = Config::get('DB_PORT', '3306');
-        $db   = Config::get('DB_NAME', 'q99916rz_alga');
+        $db   = Config::get('DB_NAME', 'q99916rz_moon');
         $user = Config::get('DB_USER', 'root');
         $pass = Config::get('DB_PASS', '');
 

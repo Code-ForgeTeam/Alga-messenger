@@ -139,7 +139,7 @@ const showSystemMessageNotification = (title: string, body: string, chatId: stri
   if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
   if (Notification.permission !== 'granted') return;
   try {
-    new Notification(title, { body, tag: `alga-chat-${chatId}` });
+    new Notification(title, { body, tag: `moon-chat-${chatId}` });
   } catch {
     // ignore notification permission/runtime issues
   }

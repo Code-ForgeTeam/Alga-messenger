@@ -29,7 +29,7 @@ export function AuthPage() {
   return (
     <Box sx={{ height: '100%', display: 'grid', placeItems: 'center', p: 2 }}>
       <Box component="form" onSubmit={submit} sx={{ width: '100%', maxWidth: 360 }}>
-        <Typography variant="h5" sx={{ mb: 2 }}>Soyle</Typography>
+        <Typography variant="h5" sx={{ mb: 2 }}>Moon</Typography>
         <TextField
           fullWidth
           label="Имя пользователя"

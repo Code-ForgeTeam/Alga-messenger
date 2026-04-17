@@ -1,4 +1,4 @@
-# FCM Setup (Android + iOS) for Alga Messenger
+# FCM Setup (Android + iOS) for Moon
 
 Этот файл — практическая инструкция, чтобы push-уведомления работали через Firebase Cloud Messaging в текущем проекте.
 
@@ -7,8 +7,8 @@
 - Google-аккаунт (Firebase Console)
 - Для iOS: Apple Developer аккаунт (нужен APNs Key)
 - Корректные `appId`/bundle IDs:
-  - Android package: `com.alga.messenger`
-  - iOS bundle id: `com.alga.messenger`
+  - Android package: `com.moon.messenger`
+  - iOS bundle id: `com.moon.messenger`
 
 ## 2) Создать Firebase проект
 
@@ -19,7 +19,7 @@
 ## 3) Подключить Android-приложение
 
 1. В Firebase: `Project settings` → `Your apps` → `Add app` → Android.
-2. Укажите package name: `com.alga.messenger`.
+2. Укажите package name: `com.moon.messenger`.
 3. Скачайте `google-services.json`.
 4. Положите файл в:
    - `android/app/google-services.json`
@@ -27,7 +27,7 @@
 ## 4) Подключить iOS-приложение
 
 1. В Firebase: `Project settings` → `Your apps` → `Add app` → iOS.
-2. Укажите bundle ID: `com.alga.messenger`.
+2. Укажите bundle ID: `com.moon.messenger`.
 3. Скачайте `GoogleService-Info.plist`.
 4. Положите файл в:
    - `ios/App/App/GoogleService-Info.plist`

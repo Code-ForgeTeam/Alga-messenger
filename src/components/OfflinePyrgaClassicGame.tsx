@@ -76,8 +76,8 @@ const TRAY_CAPACITY = 4;
 const RESHUFFLES_PER_GAME = 2;
 const BOARD_ATTEMPTS = 42;
 
-const BEST_TIME_KEY = 'alga.mahjong.best-time-sec.v2';
-const WINS_KEY = 'alga.mahjong.wins.v2';
+const BEST_TIME_KEY = 'moon.mahjong.best-time-sec.v2';
+const WINS_KEY = 'moon.mahjong.wins.v2';
 
 const TILE_FACES: TileFace[] = [
   'code', 'terminal', 'memory', 'storage', 'bug', 'security', 'cloud', 'api',

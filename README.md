@@ -1,4 +1,4 @@
-# Alga Messenger
+# Moon
 
 Короткая инструкция по сборке фронтенда, APK и IPA (без macOS).
 
@@ -46,7 +46,7 @@ npm run cap:open:android
 1. Откройте GitHub → `Actions`.
 2. Выберите workflow **Build unsigned iOS IPA**.
 3. Нажмите **Run workflow**.
-4. После завершения скачайте артефакт `AlgaMessenger-unsigned-ipa`.
+4. После завершения скачайте артефакт `Moon-unsigned-ipa`.
 
 ### Что важно понимать
 - Это именно **unsigned IPA**: Apple Developer, сертификаты и provisioning profile не нужны.

@@ -165,7 +165,7 @@ export default function GamePage() {
                 key={`${mode}-${reloadKey}`}
                 component="iframe"
                 src={resolvedOnlineUrl}
-                title="Soyle Online Game"
+                title="Moon Online Game"
                 onLoad={() => {
                   if (mode === 'checking') {
                     setMode('online');

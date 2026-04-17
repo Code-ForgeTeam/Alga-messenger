@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import type { Chat, Contact, User } from '../lib/types';
 
-const CONTACTS_STORAGE_KEY = 'alga:contacts:v1';
-const BLOCKED_STORAGE_KEY = 'alga:blocked:v1';
+const CONTACTS_STORAGE_KEY = 'moon:contacts:v1';
+const BLOCKED_STORAGE_KEY = 'moon:blocked:v1';
 
 const isClient = typeof window !== 'undefined';
 

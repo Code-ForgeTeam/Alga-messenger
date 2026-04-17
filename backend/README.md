@@ -1,4 +1,4 @@
-# Alga Messenger Backend (PHP)
+# Moon Backend (PHP)
 
 Backend rewritten to PHP (no Node.js required).
 

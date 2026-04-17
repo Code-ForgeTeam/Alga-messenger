@@ -48,6 +48,7 @@ import { useChatStore } from '../stores/chatStore';
 import { useContactsStore } from '../stores/contactsStore';
 import { useAuthStore } from '../stores/authStore';
 import { AppHeader } from '../components/AppHeader';
+import { MoonBadge } from '../components/MoonBadge';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { useTheme } from '@mui/material/styles';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -237,8 +238,8 @@ export default function ChatsPage() {
       window.setTimeout(() => setWaveTitleActive(false), 1100);
     };
 
-    window.addEventListener('soyle:intro-finished', onIntroFinished as EventListener);
-    return () => window.removeEventListener('soyle:intro-finished', onIntroFinished as EventListener);
+    window.addEventListener('moon:intro-finished', onIntroFinished as EventListener);
+    return () => window.removeEventListener('moon:intro-finished', onIntroFinished as EventListener);
   }, []);
 
   const storyPreviewUrls = useMemo(
@@ -685,26 +686,30 @@ export default function ChatsPage() {
       <AppHeader
         title={
           <Box
-            id="soyle-home-anchor"
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
+            id="moon-home-anchor"
+            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}
           >
-            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
-              {['S', 'o', 'y', 'l', 'e'].map((letter, idx) => (
+            <MoonBadge size={26} />
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.2 }}>
+              {['M', 'o', 'o', 'n'].map((letter, idx) => (
                 <Box
                   key={`${letter}-${idx}`}
                   component="span"
                   sx={{
                     display: 'inline-block',
                     fontWeight: 800,
+                    letterSpacing: 0.35,
+                    color: isDark ? '#F3F7FF' : '#1B2B47',
+                    textShadow: isDark ? '0 0 14px rgba(158, 204, 255, 0.36)' : '0 1px 0 rgba(255,255,255,0.7)',
                     ...(waveTitleActive
                       ? {
-                          animation: 'soyleWaveIn 620ms ease forwards',
+                          animation: 'moonWaveIn 620ms ease forwards',
                           animationDelay: `${idx * 85}ms`,
                           opacity: 0.35,
                           transform: 'translateY(6px) scale(0.94)',
                         }
                       : {}),
-                    '@keyframes soyleWaveIn': {
+                    '@keyframes moonWaveIn': {
                       '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
                       '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
                       '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
@@ -1505,4 +1510,3 @@ export default function ChatsPage() {
     </Box>
   );
 }
-

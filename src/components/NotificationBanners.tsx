@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, IconButton, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useNotificationStore } from '../stores/notificationStore';
+import { MoonBadge } from './MoonBadge';
 
 export function NotificationBanners() {
   const { banners, dismissBanner } = useNotificationStore();
@@ -88,6 +89,9 @@ export function NotificationBanners() {
             '100%': { opacity: 0, transform: 'translateX(-32px)' },
           },
         }}>
+          <Box sx={{ pt: 0.15 }}>
+            <MoonBadge size={18} />
+          </Box>
           <Box sx={{ flex: 1 }}>
             {!!b.title && <Typography sx={{ fontWeight: 600, fontSize: 13 }}>{b.title}</Typography>}
             {!!b.message && <Typography sx={{ opacity: 0.85, fontSize: 12 }}>{b.message}</Typography>}

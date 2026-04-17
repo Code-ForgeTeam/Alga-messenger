@@ -8,7 +8,7 @@ except Exception:  # pragma: no cover
     Client = None
 
 
-app = FastAPI(title="Alga g4f bridge")
+app = FastAPI(title="Moon g4f bridge")
 
 
 class ReplyRequest(BaseModel):
@@ -27,7 +27,7 @@ def reply(payload: ReplyRequest):
     if Client is None:
         return {"answer": "g4f не установлен на сервере."}
 
-    messages = [{"role": "system", "content": "Ты полезный ассистент Alga. Отвечай на русском кратко и понятно."}]
+    messages = [{"role": "system", "content": "Ты полезный ассистент Moon. Отвечай на русском кратко и понятно."}]
     for item in payload.history[-16:]:
         text = str(item or "").strip()
         if not text:

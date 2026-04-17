@@ -139,7 +139,7 @@ const INTRO_HOLD_MS = 900;
 const INTRO_FLY_MS = 760;
 const INTRO_FADE_MS = 200;
 const INTRO_TOTAL_MS = INTRO_HOLD_MS + INTRO_FLY_MS + INTRO_FADE_MS;
-const PENDING_PUSH_TARGET_KEY = 'soyle:pending-push-target';
+const PENDING_PUSH_TARGET_KEY = 'moon:pending-push-target';
 
 function LaunchIntro({
   active,
@@ -162,8 +162,8 @@ function LaunchIntro({
   const deltaX = Math.round(viewportWidth / 2 - finalCenterX);
   const deltaY = Math.round(viewportHeight / 2 - finalCenterY);
   const bveOffsetY = Math.max(36, target.height * 1.65);
-  const algaStartTransform = `translate3d(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px), 0) scale(${startScale})`;
-  const algaEndTransform = 'translate3d(-50%, -50%, 0) scale(1)';
+  const moonStartTransform = `translate3d(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px), 0) scale(${startScale})`;
+  const moonEndTransform = 'translate3d(-50%, -50%, 0) scale(1)';
 
   return (
     <Box
@@ -177,19 +177,19 @@ function LaunchIntro({
           '0%, 92%': { opacity: 1 },
           '100%': { opacity: 0 },
         },
-        '@keyframes algaHold': {
+        '@keyframes moonHold': {
           '0%, 100%': {
-            transform: algaStartTransform,
+            transform: moonStartTransform,
             opacity: 1,
           },
         },
-        '@keyframes algaFly': {
+        '@keyframes moonFly': {
           '0%': {
-            transform: algaStartTransform,
+            transform: moonStartTransform,
             opacity: 1,
           },
           '100%': {
-            transform: algaEndTransform,
+            transform: moonEndTransform,
             opacity: 1,
           },
         },
@@ -217,8 +217,8 @@ function LaunchIntro({
           position: 'absolute',
           top: finalCenterY,
           left: finalCenterX,
-          transform: algaEndTransform,
-          animation: `algaHold ${INTRO_HOLD_MS}ms linear 0ms 1 forwards, algaFly ${INTRO_FLY_MS}ms cubic-bezier(0.26, 0.92, 0.3, 1) ${INTRO_HOLD_MS}ms 1 forwards`,
+          transform: moonEndTransform,
+          animation: `moonHold ${INTRO_HOLD_MS}ms linear 0ms 1 forwards, moonFly ${INTRO_FLY_MS}ms cubic-bezier(0.26, 0.92, 0.3, 1) ${INTRO_HOLD_MS}ms 1 forwards`,
           willChange: 'transform, opacity',
           fontSize: `${target.fontSize}px`,
           lineHeight: `${target.lineHeight}px`,
@@ -231,7 +231,7 @@ function LaunchIntro({
           textRendering: 'geometricPrecision',
         }}
       >
-        Soyle
+        Moon
       </Typography>
 
       <Typography
@@ -281,7 +281,7 @@ function QuietBootLoader() {
             color: isDark ? '#EAF1FF' : '#1A3A2A',
           }}
         >
-          Soyle
+          Moon
         </Typography>
         <Typography
           sx={{
@@ -446,7 +446,7 @@ export default function App() {
     let attempts = 0;
 
     const tryResolveTarget = (): boolean => {
-      const anchor = document.getElementById('soyle-home-anchor');
+      const anchor = document.getElementById('moon-home-anchor');
       attempts += 1;
       if (!anchor) {
         return attempts > 40;
@@ -484,7 +484,7 @@ export default function App() {
     if (!launchIntroActive) return;
     const timerId = window.setTimeout(() => {
       setShowLaunchIntro(false);
-      window.dispatchEvent(new CustomEvent('soyle:intro-finished'));
+      window.dispatchEvent(new CustomEvent('moon:intro-finished'));
     }, INTRO_TOTAL_MS + 20);
     return () => window.clearTimeout(timerId);
   }, [launchIntroActive]);
@@ -918,7 +918,7 @@ export default function App() {
         <DialogTitle>Доступно обновление</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            В репозитории найден файл APK ({apkUpdate?.name || 'Soyle.apk'}). Обновить приложение сейчас?
+            В репозитории найден файл APK ({apkUpdate?.name || 'Moon.apk'}). Обновить приложение сейчас?
           </Typography>
         </DialogContent>
         <DialogActions>
