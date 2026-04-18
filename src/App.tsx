@@ -141,7 +141,6 @@ const INTRO_FLY_MS = 760;
 const INTRO_FADE_MS = 200;
 const INTRO_TOTAL_MS = INTRO_HOLD_MS + INTRO_FLY_MS + INTRO_FADE_MS;
 const PENDING_PUSH_TARGET_KEY = 'vibe:pending-push-target';
-const LEGACY_PENDING_PUSH_TARGET_KEY = 'soyle:pending-push-target';
 const HOME_BRAND_ANCHOR_ID = 'vibe-home-anchor';
 const INTRO_FINISHED_EVENT = 'vibe:intro-finished';
 
@@ -634,12 +633,9 @@ export default function App() {
 
     const consumePendingPushTarget = (): string => {
       try {
-        const value = String(
-          localStorage.getItem(PENDING_PUSH_TARGET_KEY) || localStorage.getItem(LEGACY_PENDING_PUSH_TARGET_KEY) || '',
-        ).trim();
+        const value = String(localStorage.getItem(PENDING_PUSH_TARGET_KEY) || '').trim();
         if (!value) return '';
         localStorage.removeItem(PENDING_PUSH_TARGET_KEY);
-        localStorage.removeItem(LEGACY_PENDING_PUSH_TARGET_KEY);
         return value;
       } catch {
         return '';

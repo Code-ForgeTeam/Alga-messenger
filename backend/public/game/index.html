@@ -571,7 +571,9 @@
         const faces = [];
         for (let i = 0; i < pairs; i += 1) {
           const symbol = symbols[i % symbols.length];
-          const face = { key: `${symbol}-${i}`, symbol };
+          // key must be symbol-level so visually identical cards always match,
+          // even when the same symbol is repeated across large layouts.
+          const face = { key: symbol, symbol };
           faces.push(face, { ...face });
         }
         return shuffle(faces);
@@ -617,7 +619,7 @@
           changed = false;
           const seen = new Map();
           for (let i = 0; i < state.tray.length; i += 1) {
-            const key = state.tray[i].face.key;
+            const key = state.tray[i].face.symbol;
             if (seen.has(key)) {
               const first = seen.get(key);
               state.tray = state.tray.filter((_, index) => index !== first && index !== i);

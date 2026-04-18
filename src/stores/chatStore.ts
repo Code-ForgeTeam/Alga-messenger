@@ -145,9 +145,51 @@ const showSystemMessageNotification = (title: string, body: string, chatId: stri
   }
 };
 
+const normalizeMessagesPayload = (response: unknown): Message[] => {
+  if (Array.isArray(response)) {
+    return response as Message[];
+  }
+  if (Array.isArray((response as { items?: Message[] } | null | undefined)?.items)) {
+    return (response as { items: Message[] }).items;
+  }
+  return [];
+};
+
+const toTimestamp = (value: string | undefined): number => {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const mergeMessageTimeline = (existing: Message[], incoming: Message[]): Message[] => {
+  if (!existing.length) {
+    return [...incoming];
+  }
+  if (!incoming.length) {
+    return [...existing];
+  }
+
+  const byId = new Map<string, Message>();
+  for (const item of existing) {
+    byId.set(String(item.id), item);
+  }
+  for (const item of incoming) {
+    const key = String(item.id);
+    const prev = byId.get(key);
+    byId.set(key, prev ? { ...prev, ...item } : item);
+  }
+
+  return Array.from(byId.values()).sort((a, b) => {
+    const tsDiff = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
+    if (tsDiff !== 0) return tsDiff;
+    return String(a.id).localeCompare(String(b.id));
+  });
+};
+
 interface ChatState {
   chats: Chat[];
   messages: Record<string, Message[]>;
+  messagesLoadedAll: Record<string, boolean>;
   currentChatId: string | null;
   isLoading: boolean;
   isLoadingMessages: boolean;
@@ -198,6 +240,7 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, get) => ({
   chats: [],
   messages: {},
+  messagesLoadedAll: {},
   currentChatId: null,
   isLoading: false,
   isLoadingMessages: false,
@@ -208,6 +251,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       chats: [],
       messages: {},
+      messagesLoadedAll: {},
       currentChatId: null,
       isLoading: false,
       isLoadingMessages: false,
@@ -277,14 +321,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadMessages: async (chatId) => {
     set({ isLoadingMessages: true });
     try {
-      const response = await messageApi.getByChatId(chatId);
-      const messages = Array.isArray(response)
-        ? (response as Message[])
-        : Array.isArray((response as { items?: Message[] })?.items)
-          ? (response as { items: Message[] }).items
-          : [];
+      const PAGE_SIZE = 200;
+      const MAX_PAGES = 120;
+      const alreadyLoadedAll = Boolean(get().messagesLoadedAll[chatId]);
+
+      if (!alreadyLoadedAll) {
+        let offset = 0;
+        let page = 0;
+        let allMessages: Message[] = [];
+
+        while (page < MAX_PAGES) {
+          const response = await messageApi.getByChatId(chatId, PAGE_SIZE, offset);
+          const batch = normalizeMessagesPayload(response);
+          if (!batch.length) break;
+
+          // Backend returns each page ordered from older -> newer within page.
+          // As we move by offset in DESC query, every next page is older, so we prepend it.
+          allMessages = batch.concat(allMessages);
+
+          if (batch.length < PAGE_SIZE) break;
+          offset += PAGE_SIZE;
+          page += 1;
+        }
+
+        set((state) => ({
+          messages: { ...state.messages, [chatId]: allMessages },
+          messagesLoadedAll: { ...state.messagesLoadedAll, [chatId]: true },
+          isLoadingMessages: false,
+        }));
+        return;
+      }
+
+      const response = await messageApi.getByChatId(chatId, PAGE_SIZE, 0);
+      const recent = normalizeMessagesPayload(response);
       set((state) => ({
-        messages: { ...state.messages, [chatId]: messages },
+        messages: {
+          ...state.messages,
+          [chatId]: mergeMessageTimeline(state.messages[chatId] || [], recent),
+        },
         isLoadingMessages: false,
       }));
     } catch (e: any) {
@@ -292,18 +366,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set((state) => {
           const map = { ...state.messages };
           delete map[chatId];
+          const loadedAll = { ...state.messagesLoadedAll };
+          delete loadedAll[chatId];
           return {
             chats: state.chats.filter((c) => c.id !== chatId),
             messages: map,
+            messagesLoadedAll: loadedAll,
             currentChatId: state.currentChatId === chatId ? null : state.currentChatId,
             isLoadingMessages: false,
           };
         });
       } else {
-        set((state) => ({
-          messages: { ...state.messages, [chatId]: [] },
-          isLoadingMessages: false,
-        }));
+        set({ isLoadingMessages: false });
       }
     }
   },
@@ -540,6 +614,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await chatApi.clear(chatId);
     set((state) => ({
       messages: { ...state.messages, [chatId]: [] },
+      messagesLoadedAll: { ...state.messagesLoadedAll, [chatId]: true },
       chats: state.chats.map((c) =>
         c.id === chatId ? { ...c, lastMessageText: '', lastMessageTime: undefined, unreadCount: 0 } : c,
       ),
@@ -551,10 +626,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await chatApi.delete(chatId, deleteForAll);
     set((state) => {
       const messages = { ...state.messages };
+      const loadedAll = { ...state.messagesLoadedAll };
       delete messages[chatId];
+      delete loadedAll[chatId];
       return {
         chats: state.chats.filter((c) => c.id !== chatId),
         messages,
+        messagesLoadedAll: loadedAll,
         currentChatId: state.currentChatId === chatId ? null : state.currentChatId,
       };
     });
@@ -745,10 +823,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   handleChatDeleted: (chatId) =>
     set((state) => {
       const messages = { ...state.messages };
+      const loadedAll = { ...state.messagesLoadedAll };
       delete messages[chatId];
+      delete loadedAll[chatId];
       return {
         chats: state.chats.filter((c) => c.id !== chatId),
         messages,
+        messagesLoadedAll: loadedAll,
         currentChatId: state.currentChatId === chatId ? null : state.currentChatId,
       };
     }),

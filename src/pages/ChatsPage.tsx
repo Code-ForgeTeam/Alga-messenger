@@ -689,7 +689,7 @@ export default function ChatsPage() {
             sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
           >
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
-              {['S', 'o', 'y', 'l', 'e'].map((letter, idx) => (
+              {['V', 'i', 'b', 'e'].map((letter, idx) => (
                 <Box
                   key={`${letter}-${idx}`}
                   component="span"
@@ -1122,24 +1122,6 @@ export default function ChatsPage() {
                 </ListItemButton>
               </List>
             </Box>
-            <Typography
-              sx={{
-                px: 1.2,
-                mt: 'auto',
-                pt: 1.1,
-                pb: 0.2,
-                textAlign: 'center',
-                fontSize: 12,
-                color: isDark ? 'rgba(188,206,227,0.56)' : 'rgba(56,74,67,0.54)',
-                cursor: 'pointer',
-              }}
-              onClick={() => {
-                setDrawerOpen(false);
-                navigate('/author-support');
-              }}
-            >
-              Поддержка автора
-            </Typography>
           </Box>
         </Box>
       </Drawer>

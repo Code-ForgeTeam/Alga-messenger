@@ -14,7 +14,6 @@ import {
   Paper,
   Typography,
   Button,
-  Stack,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded';
@@ -29,7 +28,6 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
-import { APP_ABOUT_VERSION, APP_BUILD_VERSION, APP_FEATURE_RELEASE, APP_NAME } from '../lib/appMeta';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
@@ -45,7 +43,6 @@ export default function SettingsPage() {
   const push = useSnackbarStore((s) => s.push);
 
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
-  const [showAboutDialog, setShowAboutDialog] = useState(false);
 
   const aboutTapRef = useRef<{ count: number; timer: number | null }>({ count: 0, timer: null });
   useEffect(
@@ -79,7 +76,7 @@ export default function SettingsPage() {
       return;
     }
 
-    setShowAboutDialog(true);
+    navigate('/author-support');
   };
 
   return (
@@ -205,27 +202,6 @@ export default function SettingsPage() {
           </ListItemButton>
         </List>
       </Paper>
-
-      <Dialog open={showAboutDialog} onClose={() => setShowAboutDialog(false)} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontWeight: 800 }}>О приложении</DialogTitle>
-        <DialogContent>
-          <Stack spacing={1.1} sx={{ pt: 0.5 }}>
-            <Typography><b>{APP_NAME}</b></Typography>
-            <Typography variant="body2">Версия продукта: <b>{APP_ABOUT_VERSION}</b></Typography>
-            <Typography variant="body2">Сборка: <b>{APP_BUILD_VERSION}</b></Typography>
-            <Typography variant="body2" color="text.secondary">
-              Номер релиза увеличивается только для крупных стабильных обновлений с новым функционалом.
-              Исправления багов этот номер не повышают.
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Текущий крупный релиз: #{APP_FEATURE_RELEASE}
-            </Typography>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowAboutDialog(false)}>Закрыть</Button>
-        </DialogActions>
-      </Dialog>
 
       <Dialog open={showLogoutDialog} onClose={() => setShowLogoutDialog(false)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ color: 'error.main', fontWeight: 800 }}>Выйти из аккаунта?</DialogTitle>
