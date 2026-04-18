@@ -67,7 +67,7 @@ const formatGroupMembers = (total: number): string => {
 const QUICK_REACTIONS = ['❤️', '👍', '👎', '🔥'] as const;
 type QuickReaction = (typeof QUICK_REACTIONS)[number];
 const QUICK_EMOJIS = ['😀', '😁', '😂', '😊', '😍', '😘', '🤔', '😎', '🥳', '🙏', '👍', '🔥', '❤️', '👏', '🤝', '😢', '😡'];
-const RECENT_EMOJI_STORAGE_KEY = 'soyle:recent-emojis';
+const RECENT_EMOJI_STORAGE_KEY = 'vibe:recent-emojis';
 const REACTION_VIEWER_LIMIT = 300;
 const GALLERY_PAGE_SIZE = 40;
 const MESSAGE_LINK_OR_MENTION_RE = /(https?:\/\/[^\s<]+)|@([A-Za-z0-9_]{3,32})/gi;
@@ -1071,7 +1071,7 @@ export default function ChatPage() {
 
       if (isNative) {
           const mediaFolder = attachment.type === 'video' ? 'Movies' : 'Pictures';
-      const path = `${mediaFolder}/Alga/${nativeFileName}`;
+      const path = `${mediaFolder}/Vibe/${nativeFileName}`;
           const dirs = [Directory.Documents, Directory.External, Directory.Data] as const;
           try {
             await Filesystem.requestPermissions();
@@ -1181,7 +1181,7 @@ export default function ChatPage() {
       const fileName = inferFileName(attachment, url, mimeType);
       const base64 = await blobToBase64(blob);
 
-      const folder = attachment.type === 'video' ? 'Alga/Videos' : 'Alga/Photos';
+      const folder = attachment.type === 'video' ? 'Vibe/Videos' : 'Vibe/Photos';
       const path = `${folder}/${fileName}`;
       const directories = [Directory.Documents, Directory.External, Directory.Data] as const;
 
@@ -1255,7 +1255,7 @@ export default function ChatPage() {
         });
 
       const resolveAndroidAlbumIdentifier = async (Media: any): Promise<string | undefined> => {
-      const targetName = 'Alga';
+      const targetName = 'Vibe';
         const findExisting = async (): Promise<string | undefined> => {
           try {
             const albums = await Media.getAlbums();
@@ -1332,7 +1332,7 @@ export default function ChatPage() {
         const blob = await response.blob();
         const mime = String(blob.type || (attachment.type === 'video' ? 'video/mp4' : 'image/jpeg'));
         const fileName = inferFileName(attachment, url, mime);
-      const localPath = `soyle-downloads/${Date.now()}-${sanitizeFileName(fileName)}`;
+      const localPath = `vibe-downloads/${Date.now()}-${sanitizeFileName(fileName)}`;
         const base64 = await blobToBase64(blob);
         await Filesystem.writeFile({
           path: localPath,
@@ -1503,7 +1503,7 @@ export default function ChatPage() {
 
       const mimeHint = attachment.type === 'video' ? 'video/mp4' : 'image/jpeg';
       const fileName = sanitizeFileName(inferFileName(attachment, url, mimeHint));
-      const filePath = `soyle-downloads/${Date.now()}-${fileName}`;
+      const filePath = `vibe-downloads/${Date.now()}-${fileName}`;
       const directories = [Directory.Documents, Directory.Data, Directory.Cache] as Array<unknown>;
       const externalDir = (Directory as any).ExternalStorage ?? (Directory as any).External;
       if (externalDir) directories.unshift(externalDir);
@@ -1519,7 +1519,7 @@ export default function ChatPage() {
       for (const directory of directories) {
         try {
           await Filesystem.mkdir({
-          path: 'soyle-downloads',
+          path: 'vibe-downloads',
             directory: directory as any,
             recursive: true,
           });

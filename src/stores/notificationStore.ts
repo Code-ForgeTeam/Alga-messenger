@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { notificationsApi } from '../lib/api';
 import type { NotificationBanner } from '../lib/types';
 
-const DISMISSED_NOTIFICATIONS_KEY = 'alga.dismissed-notifications.v1';
+const DISMISSED_NOTIFICATIONS_KEY = 'vibe.dismissed-notifications.v1';
 
 const readDismissedNotificationIds = (): string[] => {
   if (typeof window === 'undefined') return [];

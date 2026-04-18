@@ -104,11 +104,11 @@ jobs:
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/App.app
-          zip -qry AlgaMessenger-unsigned.ipa Payload
+          zip -qry Vibe-unsigned.ipa Payload
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AlgaMessenger-unsigned-ipa
-          path: AlgaMessenger-unsigned.ipa
+          name: Vibe-unsigned-ipa
+          path: Vibe-unsigned.ipa
           if-no-files-found: error

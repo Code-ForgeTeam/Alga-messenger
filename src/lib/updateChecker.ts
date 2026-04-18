@@ -8,7 +8,7 @@ export interface ApkUpdateInfo {
   downloadUrl: string;
 }
 
-const DISMISSED_SHA_KEY = 'alga:update:dismissedSha';
+const DISMISSED_SHA_KEY = 'vibe:update:dismissedSha';
 
 const encodePath = (value: string): string =>
   value
@@ -41,7 +41,7 @@ export async function checkGithubApkUpdate(): Promise<ApkUpdateInfo | null> {
 
     const info: ApkUpdateInfo = {
       sha: String(payload.sha || ''),
-      name: String(payload.name || 'Alga.apk'),
+      name: String(payload.name || 'Vibe.apk'),
       size: Number(payload.size || 0),
       htmlUrl: String(payload.html_url || ''),
       downloadUrl: String(payload.download_url || payload.html_url || ''),

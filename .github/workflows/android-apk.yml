@@ -106,12 +106,12 @@ jobs:
             echo "APK file not found after build"
             exit 1
           fi
-          cp "$APK_PATH" artifacts/AlgaMessenger-debug.apk
+          cp "$APK_PATH" artifacts/Vibe-debug.apk
           echo "Collected APK: $APK_PATH"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AlgaMessenger-debug-apk
-          path: artifacts/AlgaMessenger-debug.apk
+          name: Vibe-debug-apk
+          path: artifacts/Vibe-debug.apk
           if-no-files-found: error

@@ -1,6 +1,7 @@
+from typing import List
+
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List
 
 try:
     from g4f.client import Client
@@ -8,7 +9,7 @@ except Exception:  # pragma: no cover
     Client = None
 
 
-app = FastAPI(title="Alga g4f bridge")
+app = FastAPI(title="Vibe g4f bridge")
 
 
 class ReplyRequest(BaseModel):
@@ -27,7 +28,12 @@ def reply(payload: ReplyRequest):
     if Client is None:
         return {"answer": "g4f не установлен на сервере."}
 
-    messages = [{"role": "system", "content": "Ты полезный ассистент Alga. Отвечай на русском кратко и понятно."}]
+    messages = [
+        {
+            "role": "system",
+            "content": "Ты полезный ассистент Vibe. Отвечай на русском кратко и понятно.",
+        }
+    ]
     for item in payload.history[-16:]:
         text = str(item or "").strip()
         if not text:
@@ -47,4 +53,3 @@ def reply(payload: ReplyRequest):
         return {"answer": answer}
     except Exception as exc:  # pragma: no cover
         return {"answer": f"Ошибка g4f: {exc}"}
-

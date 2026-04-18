@@ -523,7 +523,7 @@ final class Api
 
         $dispatch = $this->sendAdminEventPush([
             'template' => $template,
-            'title' => $title !== '' ? $title : 'Alga',
+            'title' => $title !== '' ? $title : 'Vibe',
             'message' => $message,
             'downloadUrl' => $downloadUrl,
         ]);
@@ -2654,7 +2654,7 @@ final class Api
         $messages = [
             [
                 'role' => 'system',
-                'content' => 'Ты помощник Alga. Отвечай кратко и по делу на русском языке.',
+                'content' => 'Ты помощник Vibe. Отвечай кратко и по делу на русском языке.',
             ],
         ];
 
@@ -2854,7 +2854,7 @@ final class Api
             return 'РџСЂРёРІРµС‚! Р§РµРј РјРѕРіСѓ РїРѕРјРѕС‡СЊ?';
         }
         if (preg_match('/\\b(help|РїРѕРјРѕРіРё|С‡С‚Рѕ СѓРјРµРµС€СЊ)\\b/ui', $text)) {
-            return 'РЇ Alga AI. РњРѕРіСѓ РїРѕРґСЃРєР°Р·Р°С‚СЊ, РѕР±СЉСЏСЃРЅРёС‚СЊ Рё РїРѕРјРѕС‡СЊ СЃ РёРґРµСЏРјРё.';
+            return 'Я Vibe AI. Могу подсказать, объяснить и помочь с идеями.';
         }
 
         return 'РЇ РїРѕР»СѓС‡РёР» СЃРѕРѕР±С‰РµРЅРёРµ. Р Р°СЃСЃРєР°Р¶Рё РїРѕРґСЂРѕР±РЅРµРµ, Рё СЏ РїРѕСЃС‚Р°СЂР°СЋСЃСЊ РїРѕРјРѕС‡СЊ.';
@@ -2863,7 +2863,7 @@ final class Api
     private function composeAiReplyClean(string $text): string
     {
         if (preg_match('/\b(hello|hi|привет|здравствуй)\b/ui', $text)) {
-            return 'Привет! Я AI-помощник Alga. Чем могу помочь?';
+            return 'Привет! Я AI-помощник Vibe. Чем могу помочь?';
         }
         if (preg_match('/\b(help|помоги|что умеешь)\b/ui', $text)) {
             return 'Я могу отвечать на вопросы, помогать с идеями и объяснять сложные вещи простыми словами.';
@@ -2962,7 +2962,7 @@ final class Api
             CURLOPT_HTTPGET => true,
             CURLOPT_HTTPHEADER => [
                 'Accept: text/plain, application/json;q=0.9, */*;q=0.8',
-                'User-Agent: Alga-AI/1.0',
+                'User-Agent: Vibe-AI/1.0',
             ],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
@@ -4532,7 +4532,7 @@ final class Api
             $senderName = trim((string)($sender['full_name'] ?? ''));
             if ($senderName === '') {
                 $senderUsername = trim((string)($sender['username'] ?? ''));
-                $senderName = $senderUsername !== '' ? '@' . $senderUsername : 'Alga';
+                $senderName = $senderUsername !== '' ? '@' . $senderUsername : 'Vibe';
             }
 
             $normalizedBody = trim(preg_replace('/\s+/u', ' ', $messageText) ?? '');
@@ -4574,6 +4574,7 @@ final class Api
                                     'priority' => 'high',
                                     'notification' => [
                                         'channel_id' => 'messages',
+                                        'icon' => 'ic_stat_vibe',
                                         'sound' => 'default',
                                     ],
                                 ],
@@ -4625,6 +4626,7 @@ final class Api
                     'notification' => [
                         'title' => $senderName,
                         'body' => $normalizedBody,
+                        'icon' => 'ic_stat_vibe',
                         'sound' => 'default',
                     ],
                     'data' => [
@@ -4703,13 +4705,13 @@ final class Api
                 return ['ok' => true, 'sent' => 0];
             }
 
-            $title = trim((string)($event['title'] ?? 'Alga'));
+            $title = trim((string)($event['title'] ?? 'Vibe'));
             if ($title === '') {
-                $title = 'Alga';
+                $title = 'Vibe';
             }
             $body = trim((string)($event['message'] ?? ''));
             if ($body === '') {
-                $body = 'Откройте приложение Alga';
+                $body = 'Откройте приложение Vibe';
             }
             if (function_exists('mb_strlen') && function_exists('mb_substr')) {
                 if (mb_strlen($body) > 160) {
@@ -4752,6 +4754,7 @@ final class Api
                                     'priority' => 'high',
                                     'notification' => [
                                         'channel_id' => 'events',
+                                        'icon' => 'ic_stat_vibe',
                                         'sound' => 'default',
                                     ],
                                 ],
@@ -4814,6 +4817,7 @@ final class Api
                     'notification' => [
                         'title' => $title,
                         'body' => $body,
+                        'icon' => 'ic_stat_vibe',
                         'sound' => 'default',
                         'android_channel_id' => 'events',
                     ],

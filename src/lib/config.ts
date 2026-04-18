@@ -10,7 +10,7 @@ const maybeUpgradeToHttps = (url: string): string => {
 const rawApiBaseUrl = env.VITE_API_BASE_URL || (isDev ? 'http://localhost:3001/api' : '');
 const rawSocketUrl = env.VITE_SOCKET_URL || (isDev ? 'http://localhost:3001' : '');
 const rawUpdateRepo = env.VITE_UPDATE_REPO || 'Code-ForgeTeam/Alga-messenger';
-const rawUpdateFile = env.VITE_UPDATE_FILE || 'update/Alga.apk';
+const rawUpdateFile = env.VITE_UPDATE_FILE || 'update/Vibe.apk';
 const rawCreatorUserId = String(env.VITE_CREATOR_USER_ID || '').trim();
 
 export const API_BASE_URL = maybeUpgradeToHttps(rawApiBaseUrl);

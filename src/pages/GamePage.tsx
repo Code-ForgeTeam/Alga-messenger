@@ -165,7 +165,7 @@ export default function GamePage() {
                 key={`${mode}-${reloadKey}`}
                 component="iframe"
                 src={resolvedOnlineUrl}
-                title="Alga Online Game"
+                title="Vibe Online Game"
                 onLoad={() => {
                   if (mode === 'checking') {
                     setMode('online');

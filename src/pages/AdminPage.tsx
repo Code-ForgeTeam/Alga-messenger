@@ -440,7 +440,7 @@ export default function AdminPage() {
                   <TextField
                     size="small"
                     label="Ссылка на артефакт (APK)"
-                    placeholder="http://example.com/Alga.apk"
+                    placeholder="http://example.com/Vibe.apk"
                     value={eventDownloadUrl}
                     onChange={(e) => setEventDownloadUrl(e.target.value)}
                     required={eventTemplate === 'update'}

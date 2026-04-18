@@ -16,6 +16,7 @@ import { AppSnackbar } from './components/AppSnackbar';
 import { BottomNav } from './components/BottomNav';
 import { NotificationBanners } from './components/NotificationBanners';
 import { APP_VERSION_CODE } from './lib/config';
+import { APP_NAME } from './lib/appMeta';
 import { pushApi } from './lib/api';
 import {
   checkGithubApkUpdate,
@@ -139,7 +140,10 @@ const INTRO_HOLD_MS = 900;
 const INTRO_FLY_MS = 760;
 const INTRO_FADE_MS = 200;
 const INTRO_TOTAL_MS = INTRO_HOLD_MS + INTRO_FLY_MS + INTRO_FADE_MS;
-const PENDING_PUSH_TARGET_KEY = 'soyle:pending-push-target';
+const PENDING_PUSH_TARGET_KEY = 'vibe:pending-push-target';
+const LEGACY_PENDING_PUSH_TARGET_KEY = 'soyle:pending-push-target';
+const HOME_BRAND_ANCHOR_ID = 'vibe-home-anchor';
+const INTRO_FINISHED_EVENT = 'vibe:intro-finished';
 
 function LaunchIntro({
   active,
@@ -230,8 +234,8 @@ function LaunchIntro({
           WebkitFontSmoothing: 'subpixel-antialiased',
           textRendering: 'geometricPrecision',
         }}
-      >
-        Alga
+        >
+        {APP_NAME}
       </Typography>
 
       <Typography
@@ -281,7 +285,7 @@ function QuietBootLoader() {
             color: isDark ? '#EAF1FF' : '#1A3A2A',
           }}
         >
-          Alga
+          {APP_NAME}
         </Typography>
         <Typography
           sx={{
@@ -446,7 +450,7 @@ export default function App() {
     let attempts = 0;
 
     const tryResolveTarget = (): boolean => {
-      const anchor = document.getElementById('soyle-home-anchor');
+      const anchor = document.getElementById(HOME_BRAND_ANCHOR_ID);
       attempts += 1;
       if (!anchor) {
         return attempts > 40;
@@ -484,7 +488,7 @@ export default function App() {
     if (!launchIntroActive) return;
     const timerId = window.setTimeout(() => {
       setShowLaunchIntro(false);
-      window.dispatchEvent(new CustomEvent('soyle:intro-finished'));
+      window.dispatchEvent(new CustomEvent(INTRO_FINISHED_EVENT));
     }, INTRO_TOTAL_MS + 20);
     return () => window.clearTimeout(timerId);
   }, [launchIntroActive]);
@@ -630,9 +634,12 @@ export default function App() {
 
     const consumePendingPushTarget = (): string => {
       try {
-        const value = String(localStorage.getItem(PENDING_PUSH_TARGET_KEY) || '').trim();
+        const value = String(
+          localStorage.getItem(PENDING_PUSH_TARGET_KEY) || localStorage.getItem(LEGACY_PENDING_PUSH_TARGET_KEY) || '',
+        ).trim();
         if (!value) return '';
         localStorage.removeItem(PENDING_PUSH_TARGET_KEY);
+        localStorage.removeItem(LEGACY_PENDING_PUSH_TARGET_KEY);
         return value;
       } catch {
         return '';
@@ -918,7 +925,7 @@ export default function App() {
         <DialogTitle>Доступно обновление</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            В репозитории найден файл APK ({apkUpdate?.name || 'Alga.apk'}). Обновить приложение сейчас?
+            В репозитории найден файл APK ({apkUpdate?.name || 'Vibe.apk'}). Обновить приложение сейчас?
           </Typography>
         </DialogContent>
         <DialogActions>

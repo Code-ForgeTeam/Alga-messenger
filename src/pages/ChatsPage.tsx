@@ -237,8 +237,8 @@ export default function ChatsPage() {
       window.setTimeout(() => setWaveTitleActive(false), 1100);
     };
 
-    window.addEventListener('soyle:intro-finished', onIntroFinished as EventListener);
-    return () => window.removeEventListener('soyle:intro-finished', onIntroFinished as EventListener);
+    window.addEventListener('vibe:intro-finished', onIntroFinished as EventListener);
+    return () => window.removeEventListener('vibe:intro-finished', onIntroFinished as EventListener);
   }, []);
 
   const storyPreviewUrls = useMemo(
@@ -685,7 +685,7 @@ export default function ChatsPage() {
       <AppHeader
         title={
           <Box
-            id="soyle-home-anchor"
+            id="vibe-home-anchor"
             sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
           >
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
@@ -698,13 +698,13 @@ export default function ChatsPage() {
                     fontWeight: 800,
                     ...(waveTitleActive
                       ? {
-                          animation: 'soyleWaveIn 620ms ease forwards',
+                          animation: 'vibeWaveIn 620ms ease forwards',
                           animationDelay: `${idx * 85}ms`,
                           opacity: 0.35,
                           transform: 'translateY(6px) scale(0.94)',
                         }
                       : {}),
-                    '@keyframes soyleWaveIn': {
+                    '@keyframes vibeWaveIn': {
                       '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
                       '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
                       '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },

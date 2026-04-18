@@ -1,5 +1,6 @@
 import { Box, MenuItem, Paper, Slider, Switch, TextField, Typography } from '@mui/material';
 import { AppHeader } from '../components/AppHeader';
+import { APP_NAME } from '../lib/appMeta';
 import { useSettingsStore } from '../stores/settingsStore';
 
 export default function SpecialFeaturesPage() {
@@ -35,7 +36,7 @@ export default function SpecialFeaturesPage() {
           <Box>
             <Typography fontWeight={600}>Показывать при запуске</Typography>
             <Typography variant="body2" color="text.secondary">
-              Анимация Alga → главное меню
+              Анимация {APP_NAME} → главное меню
             </Typography>
           </Box>
           <Switch checked={launchIntroEnabled} onChange={(e) => setLaunchIntroEnabled(e.target.checked)} />

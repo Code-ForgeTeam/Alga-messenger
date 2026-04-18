@@ -1,4 +1,4 @@
--- Alga full DB reset (DANGEROUS: deletes all data)
+-- Vibe Messenger full DB reset (DANGEROUS: deletes all data)
 -- 1) Run this file.
 -- 2) Then run backend/sql/beget_init.sql to recreate schema.
 

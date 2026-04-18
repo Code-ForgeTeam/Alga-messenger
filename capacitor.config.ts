@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.alga.messenger',
-  appName: 'Alga',
+  appName: 'Vibe',
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {
@@ -14,8 +14,8 @@ const config: CapacitorConfig = {
       presentationOptions: ['badge', 'sound', 'alert'],
     },
     LocalNotifications: {
-      smallIcon: 'ic_stat_icon_config_sample',
-      iconColor: '#8774E1',
+      smallIcon: 'ic_stat_vibe',
+      iconColor: '#38D39F',
       sound: 'default',
     },
     Media: {

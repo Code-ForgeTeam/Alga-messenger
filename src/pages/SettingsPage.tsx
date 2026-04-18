@@ -14,6 +14,7 @@ import {
   Paper,
   Typography,
   Button,
+  Stack,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded';
@@ -28,6 +29,7 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
+import { APP_ABOUT_VERSION, APP_BUILD_VERSION, APP_FEATURE_RELEASE, APP_NAME } from '../lib/appMeta';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
@@ -41,7 +43,9 @@ export default function SettingsPage() {
   const user = useAuthStore((s) => s.user);
   const { theme: appTheme, setTheme } = useSettingsStore();
   const push = useSnackbarStore((s) => s.push);
+
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [showAboutDialog, setShowAboutDialog] = useState(false);
 
   const aboutTapRef = useRef<{ count: number; timer: number | null }>({ count: 0, timer: null });
   useEffect(
@@ -75,7 +79,7 @@ export default function SettingsPage() {
       return;
     }
 
-    push({ message: 'Alga v1.0.0', timeout: 1200 });
+    setShowAboutDialog(true);
   };
 
   return (
@@ -118,7 +122,7 @@ export default function SettingsPage() {
             }}
             onClick={() => user?.id && navigate(`/user/${user.id}`)}
           >
-            {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
+            {(user?.fullName || user?.username || 'U').slice(0, 1).toUpperCase()}
           </Avatar>
           <Typography fontWeight={700}>{user?.fullName || 'Пользователь'}</Typography>
           <Typography color="text.secondary">@{user?.username || 'username'}</Typography>
@@ -132,27 +136,39 @@ export default function SettingsPage() {
         <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>Основные</Typography>
         <List disablePadding>
           <ListItemButton onClick={() => navigate('/chat-settings')} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><ChatBubbleOutlineRoundedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>
+              <ChatBubbleOutlineRoundedIcon />
+            </ListItemIcon>
             <ListItemText primary="Настройки чатов" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
           <ListItemButton onClick={() => navigate('/privacy')} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><LockOutlinedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>
+              <LockOutlinedIcon />
+            </ListItemIcon>
             <ListItemText primary="Конфиденциальность" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
           <ListItemButton onClick={() => navigate('/notifications-settings')} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><NotificationsNoneRoundedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>
+              <NotificationsNoneRoundedIcon />
+            </ListItemIcon>
             <ListItemText primary="Уведомления" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
           <ListItemButton onClick={() => navigate('/data-storage')} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><StorageRoundedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>
+              <StorageRoundedIcon />
+            </ListItemIcon>
             <ListItemText primary="Данные и хранилище" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
           <ListItemButton onClick={() => navigate('/devices')} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><DevicesRoundedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>
+              <DevicesRoundedIcon />
+            </ListItemIcon>
             <ListItemText primary="Устройства" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
           <ListItemButton onClick={() => navigate('/special-features')} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><AutoAwesomeRoundedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>
+              <AutoAwesomeRoundedIcon />
+            </ListItemIcon>
             <ListItemText primary="Спец. возможности" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
         </List>
@@ -162,14 +178,18 @@ export default function SettingsPage() {
         <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>Приложение</Typography>
         <List disablePadding>
           <ListItemButton onClick={() => setTheme(appTheme === 'dark' ? 'light' : 'dark')} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><PaletteOutlinedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>
+              <PaletteOutlinedIcon />
+            </ListItemIcon>
             <ListItemText
               primary={appTheme === 'dark' ? 'Тема: Тёмная' : 'Тема: Светлая'}
               primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }}
             />
           </ListItemButton>
           <ListItemButton onClick={onAboutTap} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}><InfoOutlinedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>
+              <InfoOutlinedIcon />
+            </ListItemIcon>
             <ListItemText primary="О приложении" primaryTypographyProps={{ fontSize: 15, fontWeight: 500 }} />
           </ListItemButton>
         </List>
@@ -178,11 +198,34 @@ export default function SettingsPage() {
 
         <List disablePadding>
           <ListItemButton onClick={() => setShowLogoutDialog(true)} sx={{ py: 1.25 }}>
-            <ListItemIcon sx={{ minWidth: 38, color: 'error.main' }}><LogoutRoundedIcon /></ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 38, color: 'error.main' }}>
+              <LogoutRoundedIcon />
+            </ListItemIcon>
             <ListItemText primary="Выйти" primaryTypographyProps={{ color: 'error.main', fontSize: 15, fontWeight: 600 }} />
           </ListItemButton>
         </List>
       </Paper>
+
+      <Dialog open={showAboutDialog} onClose={() => setShowAboutDialog(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 800 }}>О приложении</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.1} sx={{ pt: 0.5 }}>
+            <Typography><b>{APP_NAME}</b></Typography>
+            <Typography variant="body2">Версия продукта: <b>{APP_ABOUT_VERSION}</b></Typography>
+            <Typography variant="body2">Сборка: <b>{APP_BUILD_VERSION}</b></Typography>
+            <Typography variant="body2" color="text.secondary">
+              Номер релиза увеличивается только для крупных стабильных обновлений с новым функционалом.
+              Исправления багов этот номер не повышают.
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Текущий крупный релиз: #{APP_FEATURE_RELEASE}
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowAboutDialog(false)}>Закрыть</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={showLogoutDialog} onClose={() => setShowLogoutDialog(false)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ color: 'error.main', fontWeight: 800 }}>Выйти из аккаунта?</DialogTitle>

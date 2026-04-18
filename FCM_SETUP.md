@@ -1,4 +1,4 @@
-# FCM Setup (Android + iOS) for Alga
+# FCM Setup (Android + iOS) for Vibe Messenger
 
 Этот файл — практическая инструкция, чтобы push-уведомления работали через Firebase Cloud Messaging в текущем проекте.
 
