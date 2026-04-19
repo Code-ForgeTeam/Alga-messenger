@@ -239,8 +239,15 @@
     }
 
     .tile .face {
-      font-size: 28px;
+      font-size: 24px;
       line-height: 1;
+      font-weight: 800;
+      letter-spacing: 0.15px;
+    }
+
+    .tile .face.red,
+    .tray-slot .face.red {
+      color: #d95959;
     }
 
     .tray-shell {
@@ -282,7 +289,9 @@
 
     .tray-slot .face {
       color: #213650;
-      font-size: 26px;
+      font-size: 23px;
+      font-weight: 800;
+      letter-spacing: 0.15px;
     }
 
     .overlay {
@@ -321,6 +330,84 @@
       flex-wrap: wrap;
     }
 
+    body.theme-night {
+      color: #dce8ff;
+    }
+
+    body.theme-night .menu-card,
+    body.theme-night .hud,
+    body.theme-night .board-shell,
+    body.theme-night .tray-shell,
+    body.theme-night .tray-slot,
+    body.theme-night .modal {
+      background: linear-gradient(180deg, #16253b, #112035);
+      border-color: #2d4462;
+      color: #d9e9ff;
+      box-shadow: 0 10px 24px rgba(4, 10, 20, 0.45);
+    }
+
+    body.theme-night .menu-field label,
+    body.theme-night .menu-subtitle,
+    body.theme-night .menu-meta,
+    body.theme-night .tray-head {
+      color: #9eb6d4;
+    }
+
+    body.theme-night .menu-field select {
+      background: #0e1b2c;
+      color: #dceaff;
+      border-color: #2d4462;
+    }
+
+    body.theme-night .btn {
+      background: #172a43;
+      color: #dceaff;
+      border-color: #2d4462;
+    }
+
+    body.theme-night .btn.primary {
+      background: linear-gradient(180deg, #3268b8, #26539a);
+      border-color: #2e61ab;
+      color: #eaf2ff;
+    }
+
+    body.theme-night .back {
+      background: rgba(19, 35, 56, 0.95);
+      color: #dce9ff;
+      border-color: #325072;
+    }
+
+    body.theme-night .tile {
+      background: linear-gradient(180deg, #203451, #182b44);
+      border-color: #39567b;
+      box-shadow: 0 4px 10px rgba(7, 13, 25, 0.42);
+      color: #eaf3ff;
+    }
+
+    body.theme-night .tile.blocked {
+      background: linear-gradient(180deg, #243850, #1c2f45);
+      border-color: #334f72;
+      filter: saturate(0.82) brightness(0.88);
+    }
+
+    body.theme-night .tray-slot {
+      background: linear-gradient(180deg, #162a42, #122339);
+      border-color: #3a577a;
+    }
+
+    body.theme-night .tile .face {
+      color: #eaf3ff;
+    }
+
+    body.theme-night .tray-slot .face {
+      color: #e2eeff;
+    }
+
+    body.theme-night .tile .face.red,
+    body.theme-night .tray-slot .face.red {
+      color: #ff8f8f;
+    }
+
     @media (max-width: 760px) {
       .game {
         gap: 7px;
@@ -353,7 +440,7 @@
       }
 
       .tile .face {
-        font-size: 25px;
+        font-size: 21px;
       }
     }
   </style>
@@ -387,7 +474,9 @@
         <div class="menu-field">
           <label for="deckSelect">Карточки</label>
           <select id="deckSelect">
-            <option value="classic">Классические</option>
+            <option value="poker">Покер классика</option>
+            <option value="royal">Покер Роял</option>
+            <option value="mahjong">Маджонг</option>
             <option value="icons">IT иконки</option>
           </select>
         </div>
@@ -445,9 +534,20 @@
         night: { top: '#11192b', bottom: '#0b1426', panel: '#17233a' },
       };
 
-      const DECKS = {
-        classic: ['🀙', '🀚', '🀛', '🀜', '🀝', '🀞', '🀟', '🀠', '🀡', '🀐', '🀑', '🀒', '🀓', '🀔', '🀕', '🀖', '🀗', '🀘', '🀇', '🀈', '🀉', '🀊', '🀋', '🀌'],
+            const DECKS = {
+        mahjong: ['🀙', '🀚', '🀛', '🀜', '🀝', '🀞', '🀟', '🀠', '🀡', '🀐', '🀑', '🀒', '🀓', '🀔', '🀕', '🀖', '🀗', '🀘', '🀇', '🀀', '🀉', '🀊', '🀋', '🀌'],
         icons: ['⌨', '🖥', '💾', '🧠', '⚙', '🔌', '🛰', '📡', '🛡', '🧩', '🔑', '🔒', '🚀', '🧪', '🧱', '🛠', '📦', '🕹', '💡', '🖱', '🧬', '🗄', '🔋', '📱'],
+      };
+
+      const SUITS = ['\u2660', '\u2665', '\u2666', '\u2663'];
+      const RANKS_CLASSIC = ['A', 'K', 'Q', 'J', '10', '9'];
+      const RANKS_ROYAL = ['A', 'K', 'Q', 'J', '10', '8'];
+      const buildPokerDeck = (ranks) => SUITS.flatMap((suit) => ranks.map((rank) => `${rank}${suit}`));
+      DECKS.poker = buildPokerDeck(RANKS_CLASSIC);
+      DECKS.royal = buildPokerDeck(RANKS_ROYAL);
+      const isRedSymbol = (symbol) => {
+        const lastChar = String(symbol || '').slice(-1);
+        return lastChar === '\u2665' || lastChar === '\u2666';
       };
 
       const state = {
@@ -462,7 +562,7 @@
         tiles: [],
         tray: [],
         layout: 'turtle',
-        deck: 'classic',
+        deck: 'poker',
         theme: 'classic',
         reshufflesLeft: SHUFFLES_PER_GAME,
         raf: 0,
@@ -566,7 +666,7 @@
       }
 
       function buildFaces(tileCount) {
-        const symbols = DECKS[state.deck] || DECKS.classic;
+        const symbols = DECKS[state.deck] || DECKS.poker;
         const pairs = Math.floor(tileCount / 2);
         const faces = [];
         for (let i = 0; i < pairs; i += 1) {
@@ -700,6 +800,7 @@
         document.documentElement.style.setProperty('--bg-top', theme.top);
         document.documentElement.style.setProperty('--bg-bottom', theme.bottom);
         document.documentElement.style.setProperty('--panel', theme.panel);
+        document.body.classList.toggle('theme-night', key === 'night');
       }
 
       function updateHud() {
@@ -746,27 +847,22 @@
         const height = Math.max(220, shell.clientHeight - 4);
         const isNarrow = window.innerWidth <= 760;
 
-        const byWidth = width / (maxX + 1 + maxZ * 0.5);
-        const byHeight = height / ((maxY + 1) * 1.22 + maxZ * 0.35);
-        const tileW = clamp(isNarrow ? 34 : 40, Math.floor(Math.min(byWidth, byHeight)), isNarrow ? 82 : 92);
-        const tileH = Math.max(42, Math.floor(tileW * 1.24));
-        const stepX = Math.max(16, Math.floor(tileW * 0.88));
-        const stepY = Math.max(14, Math.floor(tileH * 0.72));
-        const lift = Math.max(3, Math.floor(tileW * 0.2));
+        const cols = maxX + 1;
+        const rows = maxY + 1;
+        const byWidth = width / (cols + maxZ * 0.16);
+        const byHeight = height / ((rows * 1.36) + maxZ * 0.1);
+        const tileW = clamp(isNarrow ? 30 : 34, Math.floor(Math.min(byWidth, byHeight)), isNarrow ? 92 : 108);
+        const tileH = Math.max(42, Math.floor(tileW * 1.34));
+        const lift = Math.max(2, Math.floor(tileW * 0.08));
+        const safeW = Math.max(0, width - tileW - (maxZ * lift) - 4);
+        const safeH = Math.max(0, height - tileH - (maxZ * lift) - 4);
+        const stepX = maxX > 0 ? safeW / maxX : 0;
+        const stepY = maxY > 0 ? safeH / maxY : 0;
 
-        const contentW = maxX * stepX + tileW + maxZ * lift + 4;
-        const contentH = maxY * stepY + tileH + maxZ * lift + 4;
-        let scale = Math.min(width / contentW, height / contentH);
-        if (!Number.isFinite(scale) || scale <= 0) scale = 1;
-        scale = clamp(0.68, scale, 1.42);
-
-        const offsetX = Math.floor((width - contentW * scale) / 2);
-        const offsetY = Math.floor((height - contentH * scale) / 2);
-
-        el.board.style.width = `${contentW}px`;
-        el.board.style.height = `${contentH}px`;
+        el.board.style.width = `${width}px`;
+        el.board.style.height = `${height}px`;
         el.board.style.transformOrigin = 'left top';
-        el.board.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+        el.board.style.transform = 'none';
 
         const frag = document.createDocumentFragment();
         active.forEach((tile) => {
@@ -775,12 +871,14 @@
           node.className = `tile${free ? '' : ' blocked'}`;
           node.dataset.id = tile.id;
           node.disabled = !state.running || !free || state.tray.length >= TRAY_CAPACITY;
-          node.style.left = `${tile.x * stepX + tile.z * lift}px`;
-          node.style.top = `${tile.y * stepY + (maxZ - tile.z) * lift}px`;
+          node.style.left = `${Math.round(tile.x * stepX + tile.z * lift + 2)}px`;
+          node.style.top = `${Math.round(tile.y * stepY + (maxZ - tile.z) * lift + 2)}px`;
           node.style.width = `${tileW}px`;
           node.style.height = `${tileH}px`;
           node.style.zIndex = String(100 + tile.z * 20 + tile.y);
-          node.innerHTML = `<span class="face">${tile.face.symbol}</span>`;
+          const symbol = String(tile.face?.symbol || '');
+          const colorClass = isRedSymbol(symbol) ? ' red' : '';
+          node.innerHTML = `<span class="face${colorClass}">${symbol}</span>`;
           frag.appendChild(node);
         });
 
@@ -794,7 +892,13 @@
           const slot = document.createElement('div');
           slot.className = 'tray-slot';
           const item = state.tray[i];
-          slot.innerHTML = item ? `<span class="face">${item.face.symbol}</span>` : '·';
+          if (item) {
+            const symbol = String(item.face?.symbol || '');
+            const colorClass = isRedSymbol(symbol) ? ' red' : '';
+            slot.innerHTML = `<span class="face${colorClass}">${symbol}</span>`;
+          } else {
+            slot.innerHTML = '·';
+          }
           frag.appendChild(slot);
         }
         el.trayGrid.innerHTML = '';
@@ -837,7 +941,7 @@
       el.startBtn.addEventListener('click', () => {
         state.theme = String(el.themeSelect.value || 'classic');
         state.layout = String(el.layoutSelect.value || 'turtle');
-        state.deck = String(el.deckSelect.value || 'classic');
+        state.deck = String(el.deckSelect.value || 'poker');
         applyTheme(state.theme);
         startGameAtLevel(1);
       });
@@ -852,7 +956,7 @@
       });
 
       el.deckSelect.addEventListener('change', () => {
-        state.deck = String(el.deckSelect.value || 'classic');
+        state.deck = String(el.deckSelect.value || 'poker');
       });
 
       el.backBtn.addEventListener('click', openMenu);

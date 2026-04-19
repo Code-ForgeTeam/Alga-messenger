@@ -1,58 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
-import TerminalRoundedIcon from '@mui/icons-material/TerminalRounded';
-import MemoryRoundedIcon from '@mui/icons-material/MemoryRounded';
-import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
-import BugReportRoundedIcon from '@mui/icons-material/BugReportRounded';
-import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
-import CloudRoundedIcon from '@mui/icons-material/CloudRounded';
-import ApiRoundedIcon from '@mui/icons-material/ApiRounded';
-import DataObjectRoundedIcon from '@mui/icons-material/DataObjectRounded';
-import DnsRoundedIcon from '@mui/icons-material/DnsRounded';
-import LanRoundedIcon from '@mui/icons-material/LanRounded';
-import SmartToyRoundedIcon from '@mui/icons-material/SmartToyRounded';
-import RouterRoundedIcon from '@mui/icons-material/RouterRounded';
-import HubRoundedIcon from '@mui/icons-material/HubRounded';
-import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded';
-import BuildRoundedIcon from '@mui/icons-material/BuildRounded';
-import DeveloperBoardRoundedIcon from '@mui/icons-material/DeveloperBoardRounded';
-import IntegrationInstructionsRoundedIcon from '@mui/icons-material/IntegrationInstructionsRounded';
-import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
-import KeyRoundedIcon from '@mui/icons-material/KeyRounded';
-import LockRoundedIcon from '@mui/icons-material/LockRounded';
-import SpeedRoundedIcon from '@mui/icons-material/SpeedRounded';
-import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
-import PrecisionManufacturingRoundedIcon from '@mui/icons-material/PrecisionManufacturingRounded';
 import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded';
 import { AppHeader } from '../components/AppHeader';
 
-type TileFace =
-  | 'code'
-  | 'terminal'
-  | 'memory'
-  | 'storage'
-  | 'bug'
-  | 'security'
-  | 'cloud'
-  | 'api'
-  | 'data'
-  | 'dns'
-  | 'lan'
-  | 'bot'
-  | 'router'
-  | 'hub'
-  | 'rocket'
-  | 'build'
-  | 'board'
-  | 'integrate'
-  | 'mind'
-  | 'key'
-  | 'lock'
-  | 'speed'
-  | 'magic'
-  | 'chip';
+type TileFace = string;
 
 type Tile = {
   id: string;
@@ -67,8 +19,6 @@ type TrayItem = {
   face: TileFace;
 };
 
-type FaceConfig = { Icon: typeof CodeRoundedIcon; color: string };
-
 const ROWS = 6;
 const COLS = 8;
 const TILE_COUNT = ROWS * COLS;
@@ -80,37 +30,13 @@ const BEST_TIME_KEY = 'alga.mahjong.best-time-sec.v2';
 const WINS_KEY = 'alga.mahjong.wins.v2';
 
 const TILE_FACES: TileFace[] = [
-  'code', 'terminal', 'memory', 'storage', 'bug', 'security', 'cloud', 'api',
-  'data', 'dns', 'lan', 'bot', 'router', 'hub', 'rocket', 'build',
-  'board', 'integrate', 'mind', 'key', 'lock', 'speed', 'magic', 'chip',
+  'A♠', 'K♠', 'Q♠', 'J♠', '10♠', '9♠',
+  'A♥', 'K♥', 'Q♥', 'J♥', '10♥', '9♥',
+  'A♦', 'K♦', 'Q♦', 'J♦', '10♦', '9♦',
+  'A♣', 'K♣', 'Q♣', 'J♣', '10♣', '9♣',
 ];
 
-const FACE_ICON_MAP: Record<TileFace, FaceConfig> = {
-  code: { Icon: CodeRoundedIcon, color: '#246BCE' },
-  terminal: { Icon: TerminalRoundedIcon, color: '#1F7A4A' },
-  memory: { Icon: MemoryRoundedIcon, color: '#8D4CBF' },
-  storage: { Icon: StorageRoundedIcon, color: '#0F8BAA' },
-  bug: { Icon: BugReportRoundedIcon, color: '#D06724' },
-  security: { Icon: SecurityRoundedIcon, color: '#2664B8' },
-  cloud: { Icon: CloudRoundedIcon, color: '#1D93D3' },
-  api: { Icon: ApiRoundedIcon, color: '#2F8B62' },
-  data: { Icon: DataObjectRoundedIcon, color: '#6845A3' },
-  dns: { Icon: DnsRoundedIcon, color: '#468E6D' },
-  lan: { Icon: LanRoundedIcon, color: '#007FA4' },
-  bot: { Icon: SmartToyRoundedIcon, color: '#7562C4' },
-  router: { Icon: RouterRoundedIcon, color: '#4D7A98' },
-  hub: { Icon: HubRoundedIcon, color: '#3C8A8A' },
-  rocket: { Icon: RocketLaunchRoundedIcon, color: '#CA6A22' },
-  build: { Icon: BuildRoundedIcon, color: '#9A5B2E' },
-  board: { Icon: DeveloperBoardRoundedIcon, color: '#225E91' },
-  integrate: { Icon: IntegrationInstructionsRoundedIcon, color: '#1A7A73' },
-  mind: { Icon: PsychologyRoundedIcon, color: '#7B52C0' },
-  key: { Icon: KeyRoundedIcon, color: '#A57920' },
-  lock: { Icon: LockRoundedIcon, color: '#44637E' },
-  speed: { Icon: SpeedRoundedIcon, color: '#2D8F6A' },
-  magic: { Icon: AutoFixHighRoundedIcon, color: '#B35AA4' },
-  chip: { Icon: PrecisionManufacturingRoundedIcon, color: '#5777A4' },
-};
+const isRedSuit = (face: TileFace): boolean => face.includes('♥') || face.includes('♦');
 
 const shuffle = <T,>(items: T[]): T[] => {
   const copy = [...items];
@@ -418,23 +344,68 @@ export default function OfflinePyrgaClassicGame() {
         </Typography>
 
         <Stack direction="row" spacing={1} sx={{ mt: 1.1, flexWrap: 'wrap', rowGap: 1 }}>
-          <Paper sx={{ px: 1.2, py: 0.8, borderRadius: 2 }}>
+          <Paper
+            sx={{
+              px: 1.2,
+              py: 0.8,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(140,171,202,0.28)' : 'rgba(53,98,78,0.18)',
+              bgcolor: isDark ? 'rgba(14,33,54,0.86)' : '#FFFFFF',
+            }}
+          >
             <Typography variant="caption" color="text.secondary">Пары</Typography>
             <Typography sx={{ fontWeight: 800 }}>{resolvedPairs}/24</Typography>
           </Paper>
-          <Paper sx={{ px: 1.2, py: 0.8, borderRadius: 2 }}>
+          <Paper
+            sx={{
+              px: 1.2,
+              py: 0.8,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(140,171,202,0.28)' : 'rgba(53,98,78,0.18)',
+              bgcolor: isDark ? 'rgba(14,33,54,0.86)' : '#FFFFFF',
+            }}
+          >
             <Typography variant="caption" color="text.secondary">Ходы</Typography>
             <Typography sx={{ fontWeight: 800 }}>{moves}</Typography>
           </Paper>
-          <Paper sx={{ px: 1.2, py: 0.8, borderRadius: 2 }}>
+          <Paper
+            sx={{
+              px: 1.2,
+              py: 0.8,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(140,171,202,0.28)' : 'rgba(53,98,78,0.18)',
+              bgcolor: isDark ? 'rgba(14,33,54,0.86)' : '#FFFFFF',
+            }}
+          >
             <Typography variant="caption" color="text.secondary">Время</Typography>
             <Typography sx={{ fontWeight: 800 }}>{formatTime(seconds)}</Typography>
           </Paper>
-          <Paper sx={{ px: 1.2, py: 0.8, borderRadius: 2 }}>
+          <Paper
+            sx={{
+              px: 1.2,
+              py: 0.8,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(140,171,202,0.28)' : 'rgba(53,98,78,0.18)',
+              bgcolor: isDark ? 'rgba(14,33,54,0.86)' : '#FFFFFF',
+            }}
+          >
             <Typography variant="caption" color="text.secondary">Рекорд</Typography>
             <Typography sx={{ fontWeight: 800 }}>{bestTimeSec > 0 ? formatTime(bestTimeSec) : '—'}</Typography>
           </Paper>
-          <Paper sx={{ px: 1.2, py: 0.8, borderRadius: 2 }}>
+          <Paper
+            sx={{
+              px: 1.2,
+              py: 0.8,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(140,171,202,0.28)' : 'rgba(53,98,78,0.18)',
+              bgcolor: isDark ? 'rgba(14,33,54,0.86)' : '#FFFFFF',
+            }}
+          >
             <Typography variant="caption" color="text.secondary">Победы</Typography>
             <Stack direction="row" spacing={0.2} sx={{ alignItems: 'center' }}>
               <Typography sx={{ fontWeight: 800 }}>{wins}</Typography>
@@ -452,7 +423,16 @@ export default function OfflinePyrgaClassicGame() {
               </IconButton>
             </Stack>
           </Paper>
-          <Paper sx={{ px: 1.2, py: 0.8, borderRadius: 2 }}>
+          <Paper
+            sx={{
+              px: 1.2,
+              py: 0.8,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(140,171,202,0.28)' : 'rgba(53,98,78,0.18)',
+              bgcolor: isDark ? 'rgba(14,33,54,0.86)' : '#FFFFFF',
+            }}
+          >
             <Typography variant="caption" color="text.secondary">Перемешка</Typography>
             <Typography sx={{ fontWeight: 800 }}>{reshufflesLeft}</Typography>
           </Paper>
@@ -478,6 +458,7 @@ export default function OfflinePyrgaClassicGame() {
         sx={{
           mt: 1.4,
           p: 1,
+          minHeight: { xs: 'calc(100dvh - 360px)', sm: 'calc(100dvh - 400px)' },
           borderRadius: 4,
           border: '1px solid',
           borderColor: isDark ? 'rgba(122,172,220,0.26)' : 'rgba(31,163,91,0.24)',
@@ -490,7 +471,7 @@ export default function OfflinePyrgaClassicGame() {
           sx={{
             display: 'grid',
             gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`,
-            gap: 0.7,
+            gap: { xs: 0.6, sm: 0.75 },
             userSelect: 'none',
             WebkitUserSelect: 'none',
             touchAction: 'manipulation',
@@ -499,8 +480,7 @@ export default function OfflinePyrgaClassicGame() {
           {sortedTiles.map((tile) => {
             const isHinted = hintIds.includes(tile.id);
             const free = !!freeById.get(tile.id);
-            const faceConfig = FACE_ICON_MAP[tile.face];
-            const TileIcon = faceConfig.Icon;
+            const redSuit = isRedSuit(tile.face);
             return (
               <Box
                 key={tile.id}
@@ -508,7 +488,9 @@ export default function OfflinePyrgaClassicGame() {
                 onPointerDown={() => onTileTap(tile.id)}
                 disabled={tile.removed || !running || !free || tray.length >= TRAY_CAPACITY}
                 sx={{
-                  height: { xs: 42, sm: 48 },
+                  width: '100%',
+                  aspectRatio: '3 / 4',
+                  minHeight: { xs: 48, sm: 56 },
                   borderRadius: 1.5,
                   border: '1px solid',
                   borderColor: tile.removed
@@ -522,32 +504,44 @@ export default function OfflinePyrgaClassicGame() {
                     ? 'transparent'
                     : free
                       ? isDark
-                        ? 'linear-gradient(160deg, #F0F7FF, #DCEAFE)'
+                        ? 'linear-gradient(160deg, #1C2F46, #15263B)'
                         : 'linear-gradient(160deg, #FFFFFF, #F1F7F3)'
                       : isDark
-                        ? 'linear-gradient(160deg, #D4DEE9, #C8D5E2)'
+                        ? 'linear-gradient(160deg, #25384E, #1F3045)'
                         : 'linear-gradient(160deg, #EEF1EF, #E3E8E5)',
-                  color: tile.removed ? 'transparent' : '#1A2A39',
+                  color: tile.removed ? 'transparent' : redSuit ? '#D65757' : isDark ? '#DCE7F8' : '#1A2A39',
                   cursor: tile.removed || !free || tray.length >= TRAY_CAPACITY ? 'default' : 'pointer',
                   opacity: tile.removed ? 0 : 1,
                   boxShadow: tile.removed
                     ? 'none'
                     : free
-                      ? 'inset 0 0 0 1px rgba(255,255,255,0.55), 0 3px 10px rgba(0,0,0,0.1)'
-                      : 'inset 0 0 0 1px rgba(255,255,255,0.42)',
+                      ? isDark
+                        ? 'inset 0 0 0 1px rgba(202,222,246,0.18), 0 3px 10px rgba(0,0,0,0.32)'
+                        : 'inset 0 0 0 1px rgba(255,255,255,0.55), 0 3px 10px rgba(0,0,0,0.1)'
+                      : isDark
+                        ? 'inset 0 0 0 1px rgba(170,195,222,0.15)'
+                        : 'inset 0 0 0 1px rgba(255,255,255,0.42)',
                   transition: 'transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease',
                   '&:active': { transform: tile.removed ? 'none' : 'scale(0.96)' },
                 }}
               >
                 {!tile.removed && (
-                  <TileIcon
+                  <Typography
                     sx={{
-                      fontSize: { xs: 19, sm: 22 },
-                      color: faceConfig.color,
+                      fontSize: { xs: 20, sm: 22 },
+                      fontWeight: 800,
+                      letterSpacing: 0.2,
+                      color: redSuit ? '#D65757' : isDark ? '#E6EEFC' : '#1C2D44',
                       opacity: free ? 1 : 0.72,
-                      filter: free ? 'none' : 'saturate(0.75)',
+                      textShadow: free
+                        ? isDark
+                          ? '0 1px 0 rgba(0,0,0,0.35)'
+                          : '0 1px 0 rgba(255,255,255,0.6)'
+                        : 'none',
                     }}
-                  />
+                  >
+                    {tile.face}
+                  </Typography>
                 )}
               </Box>
             );
@@ -569,13 +563,14 @@ export default function OfflinePyrgaClassicGame() {
           <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${TRAY_CAPACITY}, minmax(0, 1fr))`, gap: 0.7 }}>
             {Array.from({ length: TRAY_CAPACITY }).map((_, index) => {
               const item = tray[index];
-              const config = item ? FACE_ICON_MAP[item.face] : null;
-              const SlotIcon = config?.Icon;
+              const redSuit = item ? isRedSuit(item.face) : false;
               return (
                 <Box
                   key={`tray-slot-${index}`}
                   sx={{
-                    height: { xs: 44, sm: 48 },
+                    width: '100%',
+                    aspectRatio: '3 / 4',
+                    minHeight: { xs: 46, sm: 52 },
                     borderRadius: 1.4,
                     border: '1px dashed',
                     borderColor: isDark ? 'rgba(158,189,219,0.42)' : 'rgba(66,112,88,0.34)',
@@ -584,8 +579,17 @@ export default function OfflinePyrgaClassicGame() {
                     placeItems: 'center',
                   }}
                 >
-                  {item && SlotIcon ? (
-                    <SlotIcon sx={{ fontSize: { xs: 20, sm: 23 }, color: config.color }} />
+                  {item ? (
+                    <Typography
+                      sx={{
+                        fontSize: { xs: 20, sm: 22 },
+                        fontWeight: 800,
+                        letterSpacing: 0.2,
+                        color: redSuit ? '#D65757' : isDark ? '#DCE8FC' : '#1E324D',
+                      }}
+                    >
+                      {item.face}
+                    </Typography>
                   ) : (
                     <Typography
                       sx={{
@@ -624,4 +628,3 @@ export default function OfflinePyrgaClassicGame() {
     </Box>
   );
 }
-
