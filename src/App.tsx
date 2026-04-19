@@ -409,6 +409,45 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!auth.isAuthenticated || !auth.user?.id) return;
+    useChatStore.getState().hydrateFromCache(auth.user.id);
+  }, [auth.isAuthenticated, auth.user?.id]);
+
+  useEffect(() => {
+    if (!auth.isAuthenticated || !auth.user?.id) return;
+
+    const userId = auth.user.id;
+    let timerId: number | null = null;
+    const schedulePersist = () => {
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
+      timerId = window.setTimeout(() => {
+        useChatStore.getState().persistToCache(userId);
+      }, 520);
+    };
+
+    schedulePersist();
+    const unsubscribe = useChatStore.subscribe((state, prevState) => {
+      if (
+        state.chats === prevState.chats
+        && state.messages === prevState.messages
+        && state.messagesLoadedAll === prevState.messagesLoadedAll
+      ) {
+        return;
+      }
+      schedulePersist();
+    });
+
+    return () => {
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
+      unsubscribe();
+    };
+  }, [auth.isAuthenticated, auth.user?.id]);
+
+  useEffect(() => {
     const userId = auth.user?.id;
     if (!auth.isAuthenticated || !userId) {
       resetAdminAccess();

@@ -9,8 +9,121 @@ import { useSnackbarStore } from './snackbarStore';
 import { useSettingsStore } from './settingsStore';
 
 const statusCache = new Map<string, Pick<User, 'status' | 'lastSeen'>>();
+const CHAT_CACHE_KEY_PREFIX = 'vibe:chat-cache:v2:';
+const CHAT_CACHE_MAX_CHATS = 80;
+const CHAT_CACHE_MAX_MESSAGES_PER_CHAT = 900;
+const CHAT_CACHE_MAX_TOTAL_MESSAGES = 14000;
 
 type ChatRecord = Chat & Record<string, any>;
+
+type ChatCacheSnapshot = {
+  chats: Chat[];
+  messages: Record<string, Message[]>;
+  messagesLoadedAll: Record<string, boolean>;
+  savedAt: string;
+};
+
+const isClient = typeof window !== 'undefined';
+
+const getChatCacheKey = (userId: string): string => `${CHAT_CACHE_KEY_PREFIX}${String(userId || '').trim()}`;
+
+const readChatCacheSnapshot = (userId: string): ChatCacheSnapshot | null => {
+  if (!isClient) return null;
+  const key = getChatCacheKey(userId);
+  if (!key || key === CHAT_CACHE_KEY_PREFIX) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ChatCacheSnapshot> | null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const chats = Array.isArray(parsed.chats) ? (parsed.chats as Chat[]) : [];
+    const messages = parsed.messages && typeof parsed.messages === 'object'
+      ? (parsed.messages as Record<string, Message[]>)
+      : {};
+    const messagesLoadedAll = parsed.messagesLoadedAll && typeof parsed.messagesLoadedAll === 'object'
+      ? (parsed.messagesLoadedAll as Record<string, boolean>)
+      : {};
+    if (!chats.length && Object.keys(messages).length === 0) return null;
+    return {
+      chats,
+      messages,
+      messagesLoadedAll,
+      savedAt: String(parsed.savedAt || ''),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const trimMessagesForCache = (messages: Record<string, Message[]>): Record<string, Message[]> => {
+  const entries = Object.entries(messages);
+  if (!entries.length) return {};
+
+  const trimmed: Record<string, Message[]> = {};
+  let total = 0;
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const [chatId, list] = entries[i];
+    const source = Array.isArray(list) ? list : [];
+    if (!source.length) continue;
+    const tail = source.slice(-CHAT_CACHE_MAX_MESSAGES_PER_CHAT);
+    if (!tail.length) continue;
+
+    if (total >= CHAT_CACHE_MAX_TOTAL_MESSAGES) continue;
+    const allowed = Math.min(tail.length, CHAT_CACHE_MAX_TOTAL_MESSAGES - total);
+    if (allowed <= 0) continue;
+
+    const slice = allowed === tail.length ? tail : tail.slice(tail.length - allowed);
+    trimmed[chatId] = slice;
+    total += slice.length;
+  }
+
+  return trimmed;
+};
+
+const saveChatCacheSnapshot = ({
+  userId,
+  chats,
+  messages,
+  messagesLoadedAll,
+}: {
+  userId: string;
+  chats: Chat[];
+  messages: Record<string, Message[]>;
+  messagesLoadedAll: Record<string, boolean>;
+}): void => {
+  if (!isClient) return;
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) return;
+  const key = getChatCacheKey(normalizedUserId);
+  try {
+    const limitedChats = Array.isArray(chats) ? chats.slice(0, CHAT_CACHE_MAX_CHATS) : [];
+    const limitedMessages = trimMessagesForCache(messages);
+    const limitedLoadedAll: Record<string, boolean> = {};
+    Object.keys(limitedMessages).forEach((chatId) => {
+      limitedLoadedAll[chatId] = Boolean(messagesLoadedAll?.[chatId]);
+    });
+    const payload: ChatCacheSnapshot = {
+      chats: limitedChats,
+      messages: limitedMessages,
+      messagesLoadedAll: limitedLoadedAll,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(key, JSON.stringify(payload));
+  } catch {
+    // ignore storage write failures
+  }
+};
+
+const clearChatCacheSnapshot = (userId: string): void => {
+  if (!isClient) return;
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) return;
+  try {
+    localStorage.removeItem(getChatCacheKey(normalizedUserId));
+  } catch {
+    // ignore storage cleanup failures
+  }
+};
 
 const normalizeUnread = (value: unknown): number => {
   const parsed = Number(value ?? 0);
@@ -161,29 +274,79 @@ const toTimestamp = (value: string | undefined): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const compareMessagesByTime = (a: Message, b: Message): number => {
+  const tsDiff = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
+  if (tsDiff !== 0) return tsDiff;
+  return String(a.id).localeCompare(String(b.id));
+};
+
+const hasMessageSyncDiff = (prev: Message, next: Message): boolean => {
+  if (prev.text !== next.text) return true;
+  if (prev.status !== next.status) return true;
+  if (Boolean(prev.edited) !== Boolean(next.edited)) return true;
+  if (String(prev.editedAt || '') !== String(next.editedAt || '')) return true;
+  if (String((prev as any).updatedAt || '') !== String((next as any).updatedAt || '')) return true;
+  if (String((prev as any).deletedAt || '') !== String((next as any).deletedAt || '')) return true;
+  if (String((prev as any).replyToId || '') !== String((next as any).replyToId || '')) return true;
+  if (String(prev.replyTo?.id || '') !== String(next.replyTo?.id || '')) return true;
+  if (String(prev.tempId || '') !== String(next.tempId || '')) return true;
+
+  const prevReactions = JSON.stringify((prev as any)?.reactions ?? null);
+  const nextReactions = JSON.stringify((next as any)?.reactions ?? null);
+  if (prevReactions !== nextReactions) return true;
+
+  const prevAttachments = JSON.stringify(Array.isArray(prev.attachments) ? prev.attachments : []);
+  const nextAttachments = JSON.stringify(Array.isArray(next.attachments) ? next.attachments : []);
+  return prevAttachments !== nextAttachments;
+};
+
 const mergeMessageTimeline = (existing: Message[], incoming: Message[]): Message[] => {
   if (!existing.length) {
-    return [...incoming];
+    return [...incoming].sort(compareMessagesByTime);
   }
   if (!incoming.length) {
-    return [...existing];
+    return existing;
   }
 
-  const byId = new Map<string, Message>();
-  for (const item of existing) {
-    byId.set(String(item.id), item);
-  }
-  for (const item of incoming) {
-    const key = String(item.id);
-    const prev = byId.get(key);
-    byId.set(key, prev ? { ...prev, ...item } : item);
+  const normalizedIncoming = [...incoming].sort(compareMessagesByTime);
+  const tailStart = Math.max(0, existing.length - 1200);
+  const tailIndexById = new Map<string, number>();
+  for (let i = tailStart; i < existing.length; i += 1) {
+    tailIndexById.set(String(existing[i].id), i);
   }
 
-  return Array.from(byId.values()).sort((a, b) => {
-    const tsDiff = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
-    if (tsDiff !== 0) return tsDiff;
-    return String(a.id).localeCompare(String(b.id));
-  });
+  let next: Message[] | null = null;
+  const ensureNext = (): Message[] => {
+    if (!next) {
+      next = existing.slice();
+    }
+    return next;
+  };
+
+  let added = false;
+  for (const item of normalizedIncoming) {
+    const id = String(item.id);
+    const index = tailIndexById.get(id);
+    if (index === undefined) {
+      ensureNext().push(item);
+      added = true;
+      continue;
+    }
+
+    const currentItem = (next ?? existing)[index];
+    const merged = { ...currentItem, ...item };
+    if (!hasMessageSyncDiff(currentItem, merged)) {
+      continue;
+    }
+    ensureNext()[index] = merged;
+  }
+
+  if (!next) return existing;
+  const finalList: Message[] = next;
+  if (added) {
+    finalList.sort(compareMessagesByTime);
+  }
+  return finalList;
 };
 
 interface ChatState {
@@ -232,6 +395,9 @@ interface ChatState {
   handleUserUnblocked: (payload: { chatId: string }) => void;
 
   initSocketHandlers: () => void;
+  hydrateFromCache: (userId: string) => void;
+  persistToCache: (userId?: string | null) => void;
+  clearCache: (userId?: string | null) => void;
   syncAll: () => Promise<void>;
   toggleArchiveView: () => void;
   reset: () => void;
@@ -259,9 +425,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
       showArchived: false,
     }),
 
+  hydrateFromCache: (userId) => {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) return;
+    const snapshot = readChatCacheSnapshot(normalizedUserId);
+    if (!snapshot) return;
+
+    const currentState = get();
+    if (currentState.chats.length > 0 || Object.keys(currentState.messages).length > 0) return;
+
+    set({
+      chats: Array.isArray(snapshot.chats) ? snapshot.chats : [],
+      messages: snapshot.messages && typeof snapshot.messages === 'object' ? snapshot.messages : {},
+      messagesLoadedAll:
+        snapshot.messagesLoadedAll && typeof snapshot.messagesLoadedAll === 'object'
+          ? snapshot.messagesLoadedAll
+          : {},
+      isLoading: false,
+      isLoadingMessages: false,
+    });
+  },
+
+  persistToCache: (userId) => {
+    const resolvedUserId = String(userId ?? useAuthStore.getState().user?.id ?? '').trim();
+    if (!resolvedUserId) return;
+    const state = get();
+    saveChatCacheSnapshot({
+      userId: resolvedUserId,
+      chats: state.chats,
+      messages: state.messages,
+      messagesLoadedAll: state.messagesLoadedAll,
+    });
+  },
+
+  clearCache: (userId) => {
+    const resolvedUserId = String(userId ?? useAuthStore.getState().user?.id ?? '').trim();
+    if (!resolvedUserId) return;
+    clearChatCacheSnapshot(resolvedUserId);
+  },
+
   loadChats: async (options) => {
     const silent = !!options?.silent;
-    if (!silent) set({ isLoading: true });
+    if (!silent && get().chats.length === 0) set({ isLoading: true });
     try {
       const chats = (await chatApi.getChats()) as Chat[];
       const next = Array.isArray(chats) ? chats : [];
@@ -343,24 +548,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
           offset += PAGE_SIZE;
           page += 1;
         }
+        allMessages = allMessages.sort(compareMessagesByTime);
 
-        set((state) => ({
-          messages: { ...state.messages, [chatId]: allMessages },
-          messagesLoadedAll: { ...state.messagesLoadedAll, [chatId]: true },
-          isLoadingMessages: false,
-        }));
+        set((state) => {
+          const currentList = state.messages[chatId] || [];
+          const sameSize = currentList.length === allMessages.length;
+          const sameIds =
+            sameSize
+            && currentList.every((item, index) => String(item.id) === String(allMessages[index]?.id));
+          const nextList = sameIds ? currentList : allMessages;
+          const alreadyMarkedLoaded = Boolean(state.messagesLoadedAll[chatId]);
+
+          if (nextList === currentList && alreadyMarkedLoaded) {
+            return { isLoadingMessages: false };
+          }
+
+          return {
+            messages: nextList === currentList ? state.messages : { ...state.messages, [chatId]: nextList },
+            messagesLoadedAll: alreadyMarkedLoaded
+              ? state.messagesLoadedAll
+              : { ...state.messagesLoadedAll, [chatId]: true },
+            isLoadingMessages: false,
+          };
+        });
         return;
       }
 
       const response = await messageApi.getByChatId(chatId, PAGE_SIZE, 0);
       const recent = normalizeMessagesPayload(response);
-      set((state) => ({
-        messages: {
-          ...state.messages,
-          [chatId]: mergeMessageTimeline(state.messages[chatId] || [], recent),
-        },
-        isLoadingMessages: false,
-      }));
+      set((state) => {
+        const currentList = state.messages[chatId] || [];
+        const merged = mergeMessageTimeline(currentList, recent);
+        if (merged === currentList) {
+          return { isLoadingMessages: false };
+        }
+        return {
+          messages: {
+            ...state.messages,
+            [chatId]: merged,
+          },
+          isLoadingMessages: false,
+        };
+      });
     } catch (e: any) {
       if (e.response?.status === 404) {
         set((state) => {

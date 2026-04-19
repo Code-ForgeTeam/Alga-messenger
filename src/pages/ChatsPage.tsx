@@ -169,6 +169,7 @@ export default function ChatsPage() {
   const [storyViewers, setStoryViewers] = useState<StoryViewer[]>([]);
   const [storyViewersLoading, setStoryViewersLoading] = useState(false);
   const [storyViewersSheetOpen, setStoryViewersSheetOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   const holdTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef<string | null>(null);
   const storyInputRef = useRef<HTMLInputElement | null>(null);
@@ -190,6 +191,18 @@ export default function ChatsPage() {
     if (!user?.id) return;
     loadChats();
   }, [loadChats, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -684,38 +697,53 @@ export default function ChatsPage() {
     <Box sx={{ p: 1.5, height: '100%', overflow: 'auto', bgcolor: isDark ? 'transparent' : '#FFFFFF' }}>
       <AppHeader
         title={
-          <Box
-            id="vibe-home-anchor"
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
-          >
-            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
-              {['V', 'i', 'b', 'e'].map((letter, idx) => (
-                <Box
-                  key={`${letter}-${idx}`}
-                  component="span"
-                  sx={{
-                    display: 'inline-block',
-                    fontWeight: 800,
-                    ...(waveTitleActive
-                      ? {
-                          animation: 'vibeWaveIn 620ms ease forwards',
-                          animationDelay: `${idx * 85}ms`,
-                          opacity: 0.35,
-                          transform: 'translateY(6px) scale(0.94)',
-                        }
-                      : {}),
-                    '@keyframes vibeWaveIn': {
-                      '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
-                      '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
-                      '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
-                    },
-                  }}
-                >
-                  {letter}
-                </Box>
-              ))}
+          !isOnline ? (
+            <Box
+              id="vibe-home-anchor"
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                fontWeight: 800,
+                fontSize: 18,
+                color: isDark ? '#FFB7B7' : '#B04A4A',
+              }}
+            >
+              соеденение...
             </Box>
-          </Box>
+          ) : (
+            <Box
+              id="vibe-home-anchor"
+              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}
+            >
+              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
+                {['V', 'i', 'b', 'e'].map((letter, idx) => (
+                  <Box
+                    key={`${letter}-${idx}`}
+                    component="span"
+                    sx={{
+                      display: 'inline-block',
+                      fontWeight: 800,
+                      ...(waveTitleActive
+                        ? {
+                            animation: 'vibeWaveIn 620ms ease forwards',
+                            animationDelay: `${idx * 85}ms`,
+                            opacity: 0.35,
+                            transform: 'translateY(6px) scale(0.94)',
+                          }
+                        : {}),
+                      '@keyframes vibeWaveIn': {
+                        '0%': { opacity: 0.35, transform: 'translateY(6px) scale(0.94)' },
+                        '55%': { opacity: 1, transform: 'translateY(-2px) scale(1.04)' },
+                        '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
+                      },
+                    }}
+                  >
+                    {letter}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )
         }
         showBack={false}
         leftSlot={

@@ -6,6 +6,8 @@ import { useChatStore } from './chatStore';
 import { useContactsStore } from './contactsStore';
 import { useAdminStore } from './adminStore';
 
+const AUTH_USER_CACHE_KEY = 'vibe:user-cache:v1';
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -75,6 +77,39 @@ const normalizeUser = (payload: any): User | null => {
   };
 };
 
+const persistCachedUser = (user: User | null): void => {
+  if (typeof window === 'undefined') return;
+  if (!user) return;
+  try {
+    localStorage.setItem(AUTH_USER_CACHE_KEY, JSON.stringify(user));
+    localStorage.setItem('user', JSON.stringify(user));
+  } catch {
+    // ignore cache write errors
+  }
+};
+
+const readCachedUser = (): User | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const primary = localStorage.getItem(AUTH_USER_CACHE_KEY);
+    const legacy = localStorage.getItem('user');
+    const parsed = primary ? JSON.parse(primary) : legacy ? JSON.parse(legacy) : null;
+    return normalizeUser(parsed);
+  } catch {
+    return null;
+  }
+};
+
+const clearCachedUser = (): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(AUTH_USER_CACHE_KEY);
+    localStorage.removeItem('user');
+  } catch {
+    // ignore cache cleanup errors
+  }
+};
+
 const fetchMyProfileSafe = async (): Promise<User | null> => {
   try {
     const me = await userApi.getMe();
@@ -134,6 +169,19 @@ export const useAuthStore = create<AuthState>((set) => ({
   checkAuth: async () => {
     const token = localStorage.getItem('token');
     if (!token) return set({ isAuthenticated: false, user: null, token: null });
+    const cachedUser = readCachedUser();
+    if (cachedUser) {
+      set({
+        user: cachedUser,
+        token,
+        isAuthenticated: true,
+        banned: false,
+        banReason: '',
+        error: null,
+      });
+      useAdminStore.getState().setAdminAccess(Boolean(cachedUser.isCreator), cachedUser.id);
+      connectSocket(token);
+    }
 
     try {
       const verifyResponse = await authApi.verify();
@@ -143,11 +191,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       connectSocket(token);
+      persistCachedUser(normalizedUser);
       set({ user: normalizedUser, token, isAuthenticated: true, banned: false, banReason: '', error: null });
       useAdminStore.getState().setAdminAccess(Boolean(normalizedUser.isCreator), normalizedUser.id);
     } catch (e: any) {
       if (e.response?.status === 403 && e.response?.data?.error === 'banned') {
         localStorage.removeItem('token');
+        clearCachedUser();
         useAdminStore.getState().reset();
         set({
           user: null,
@@ -156,8 +206,25 @@ export const useAuthStore = create<AuthState>((set) => ({
           banned: true,
           banReason: e.response?.data?.reason || '',
         });
+      } else if (e.response?.status === 401) {
+        localStorage.removeItem('token');
+        clearCachedUser();
+        useAdminStore.getState().reset();
+        set({ user: null, token: null, isAuthenticated: false });
+      } else if (cachedUser) {
+        connectSocket(token);
+        set({
+          user: cachedUser,
+          token,
+          isAuthenticated: true,
+          banned: false,
+          banReason: '',
+          error: null,
+        });
+        useAdminStore.getState().setAdminAccess(Boolean(cachedUser.isCreator), cachedUser.id);
       } else {
         localStorage.removeItem('token');
+        clearCachedUser();
         useAdminStore.getState().reset();
         set({ user: null, token: null, isAuthenticated: false });
       }
@@ -181,10 +248,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       connectSocket(token);
+      persistCachedUser(user);
       set({ user, token, isAuthenticated: true, isLoading: false, error: null });
       useAdminStore.getState().setAdminAccess(Boolean(user.isCreator), user.id);
     } catch (e: any) {
       localStorage.removeItem('token');
+      clearCachedUser();
       useAdminStore.getState().reset();
       if (e.response?.status === 403 && e.response?.data?.error === 'banned') {
         set({
@@ -220,10 +289,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       connectSocket(token);
+      persistCachedUser(user);
       set({ user, token, isAuthenticated: true, isLoading: false, error: null });
       useAdminStore.getState().setAdminAccess(Boolean(user.isCreator), user.id);
     } catch (e: any) {
       localStorage.removeItem('token');
+      clearCachedUser();
       useAdminStore.getState().reset();
       set({
         isLoading: false,
@@ -234,7 +305,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    const userId = useAuthStore.getState().user?.id;
+    useChatStore.getState().clearCache(userId);
     localStorage.removeItem('token');
+    clearCachedUser();
     disconnectSocket();
     useChatStore.getState().reset();
     useContactsStore.getState().reset();
@@ -253,6 +327,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw new Error('Invalid user payload');
       }
 
+      persistCachedUser(user);
       set({ user, isLoading: false, error: null });
       useAdminStore.getState().setAdminAccess(Boolean(user.isCreator), user.id);
     } catch (e: any) {

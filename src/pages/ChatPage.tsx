@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   Avatar,
   Box,
@@ -31,6 +31,7 @@ import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { messageApi, uploadApi, userApi } from '../lib/api';
+import { getSocket } from '../lib/socket';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
 import { useContactsStore } from '../stores/contactsStore';
@@ -70,6 +71,10 @@ const QUICK_EMOJIS = ['😀', '😁', '😂', '😊', '😍', '😘', '🤔', '�
 const RECENT_EMOJI_STORAGE_KEY = 'vibe:recent-emojis';
 const REACTION_VIEWER_LIMIT = 300;
 const GALLERY_PAGE_SIZE = 40;
+const MESSAGE_RENDER_BATCH = 160;
+const MESSAGE_RENDER_STEP = 90;
+const COMPOSER_POLL_PAUSE_MS = 1400;
+const SOCKET_HEALTH_POLL_MS = 20000;
 const MESSAGE_LINK_OR_MENTION_RE = /(https?:\/\/[^\s<]+)|@([A-Za-z0-9_]{3,32})/gi;
 const MESSAGE_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
@@ -166,6 +171,8 @@ type ReactionViewerItem = {
   };
 };
 
+type ChatRow = { type: 'date'; key: string; label: string } | { type: 'message'; key: string; value: Message };
+
 const IMAGE_FILE_RE = /\.(jpe?g|jfif|png|gif|webp|heic|heif|bmp|avif)$/i;
 
 const normalizeNativePath = (value: string): string => {
@@ -217,7 +224,7 @@ export default function ChatPage() {
   const setSavedChatHidden = useSettingsStore((s) => s.setSavedChatHidden);
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  const [text, setText] = useState('');
+  const [hasDraftText, setHasDraftText] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [msgMenuAnchor, setMsgMenuAnchor] = useState<HTMLElement | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -234,6 +241,7 @@ export default function ChatPage() {
   const [deviceGalleryItems, setDeviceGalleryItems] = useState<DeviceGalleryItem[]>([]);
   const [deviceGalleryLoading, setDeviceGalleryLoading] = useState(false);
   const [galleryVisibleCount, setGalleryVisibleCount] = useState(GALLERY_PAGE_SIZE);
+  const [renderedRowsLimit, setRenderedRowsLimit] = useState(MESSAGE_RENDER_BATCH);
   const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
   const [recentEmojis, setRecentEmojis] = useState<string[]>([]);
   const [reactionViewerOpen, setReactionViewerOpen] = useState(false);
@@ -252,6 +260,9 @@ export default function ChatPage() {
   const galleryLoadInFlightRef = useRef<boolean>(false);
   const reactionHoldTimerRef = useRef<number | null>(null);
   const mentionCacheRef = useRef<Record<string, string>>({});
+  const textDraftRef = useRef('');
+  const composerPauseUntilRef = useRef(0);
+  const lastFallbackPollAtRef = useRef(0);
   const edgeSwipeRef = useRef<{ active: boolean; startX: number; startY: number; swiped: boolean }>({
     active: false,
     startX: 0,
@@ -260,6 +271,55 @@ export default function ChatPage() {
   });
   const messageGestureRef = useRef<{ messageId: string; startX: number; startY: number; swipeDone: boolean } | null>(null);
   const reactionTimerRef = useRef<number | null>(null);
+
+  const syncDraftState = useCallback((value: string) => {
+    const nextHasDraft = String(value || '').trim().length > 0;
+    setHasDraftText((prev) => (prev === nextHasDraft ? prev : nextHasDraft));
+  }, []);
+
+  const noteComposerActivity = useCallback(() => {
+    composerPauseUntilRef.current = Date.now() + COMPOSER_POLL_PAUSE_MS;
+  }, []);
+
+  const setDraftText = useCallback(
+    (
+      value: string,
+      options?: {
+        syncInput?: boolean;
+        focus?: boolean;
+        cursor?: number;
+      },
+    ) => {
+      const nextValue = String(value ?? '');
+      textDraftRef.current = nextValue;
+      syncDraftState(nextValue);
+
+      if (options?.syncInput === false) return;
+      const input = messageInputRef.current;
+      if (!input) return;
+      if (input.value !== nextValue) {
+        input.value = nextValue;
+      }
+      if (typeof options?.cursor === 'number') {
+        const position = Math.max(0, Math.min(nextValue.length, options.cursor));
+        input.setSelectionRange?.(position, position);
+      }
+      if (options?.focus) {
+        input.focus();
+      }
+    },
+    [syncDraftState],
+  );
+
+  const handleDraftChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const nextValue = String(event.target.value || '');
+      textDraftRef.current = nextValue;
+      syncDraftState(nextValue);
+      noteComposerActivity();
+    },
+    [noteComposerActivity, syncDraftState],
+  );
 
   const chat = chats.find((c) => c.id === chatId);
   const loadPinnedMessages = async (targetChatId = chatId) => {
@@ -315,6 +375,15 @@ export default function ChatPage() {
     if (!chatId) return;
     const timerId = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (composerPauseUntilRef.current > now) return;
+
+      const socketConnected = Boolean(getSocket()?.connected);
+      if (socketConnected && now - lastFallbackPollAtRef.current < SOCKET_HEALTH_POLL_MS) {
+        return;
+      }
+
+      lastFallbackPollAtRef.current = now;
       loadMessages(chatId).catch(() => null);
     }, 5000);
     return () => window.clearInterval(timerId);
@@ -322,15 +391,19 @@ export default function ChatPage() {
 
   useEffect(() => {
     lastRenderedMessageIdRef.current = '';
+    composerPauseUntilRef.current = 0;
+    lastFallbackPollAtRef.current = 0;
     setSelectedMessage(null);
     setEditingMessage(null);
+    setDraftText('');
+    setRenderedRowsLimit(MESSAGE_RENDER_BATCH);
     setPinnedMessages([]);
     setReactionViewerOpen(false);
     setReactionViewerLoading(false);
     setReactionViewerMessageId(null);
     setReactionViewerItems([]);
     setEmojiAnchor(null);
-  }, [chatId]);
+  }, [chatId, setDraftText]);
 
   const chatMessages = useMemo(() => messages[chatId] || [], [messages, chatId]);
   const pinnedMessageIds = useMemo(() => {
@@ -378,26 +451,6 @@ export default function ChatPage() {
     loadPinnedMessages(chatId).catch(() => null);
   }, [chatId, chatMessages.length]);
 
-  const reactions = useMemo(() => {
-    const map: Record<string, { mine?: string; total: number; entries: Array<{ value: string; total: number }> }> = {};
-    for (const item of chatMessages) {
-      const raw = (item as any)?.reactions;
-      const mine = typeof raw?.mine === 'string' ? raw.mine : undefined;
-      const counts = raw?.counts && typeof raw.counts === 'object' ? (raw.counts as Record<string, number>) : {};
-      const entries = Object.entries(counts || {})
-        .map(([value, total]) => ({
-          value: String(value || '').trim(),
-          total: Number(total || 0),
-        }))
-        .filter((entry) => entry.value !== '' && Number.isFinite(entry.total) && entry.total > 0)
-        .sort((a, b) => b.total - a.total || a.value.localeCompare(b.value))
-        .slice(0, 8);
-      const total = entries.reduce((sum, entry) => sum + entry.total, 0);
-      map[item.id] = { mine, total, entries };
-    }
-    return map;
-  }, [chatMessages]);
-
   const emojiPalette = useMemo(() => {
     const merged = [...recentEmojis, ...QUICK_EMOJIS];
     return merged
@@ -411,8 +464,8 @@ export default function ChatPage() {
     [deviceGalleryItems, galleryVisibleCount],
   );
 
-  const rows = useMemo(() => {
-    const result: Array<{ type: 'date'; key: string; label: string } | { type: 'message'; key: string; value: Message }> = [];
+  const rows = useMemo<ChatRow[]>(() => {
+    const result: ChatRow[] = [];
     let prevDate = '';
 
     for (const m of chatMessages) {
@@ -430,6 +483,54 @@ export default function ChatPage() {
 
     return result;
   }, [chatMessages]);
+
+  const visibleRows = useMemo<ChatRow[]>(() => {
+    if (rows.length <= renderedRowsLimit) return rows;
+
+    const start = Math.max(0, rows.length - renderedRowsLimit);
+    const sliced = rows.slice(start);
+    if (!sliced.length || sliced[0].type === 'date') return sliced;
+
+    const firstMessage = sliced[0].value;
+    const date = new Date(firstMessage.createdAt);
+    const dateKey = Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+    const label = Number.isNaN(date.getTime())
+      ? 'Сегодня'
+      : date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    return [{ type: 'date', key: `window-date-${dateKey || firstMessage.id}`, label }, ...sliced];
+  }, [rows, renderedRowsLimit]);
+
+  const visibleMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    visibleRows.forEach((row) => {
+      if (row.type === 'message') ids.add(String(row.value.id || ''));
+    });
+    return ids;
+  }, [visibleRows]);
+
+  const reactions = useMemo(() => {
+    const map: Record<string, { mine?: string; total: number; entries: Array<{ value: string; total: number }> }> = {};
+    for (const item of chatMessages) {
+      const itemId = String(item.id || '');
+      if (!visibleMessageIds.has(itemId)) continue;
+
+      const raw = (item as any)?.reactions;
+      const mine = typeof raw?.mine === 'string' ? raw.mine : undefined;
+      const counts = raw?.counts && typeof raw.counts === 'object' ? (raw.counts as Record<string, number>) : {};
+      const entries = Object.entries(counts || {})
+        .map(([value, total]) => ({
+          value: String(value || '').trim(),
+          total: Number(total || 0),
+        }))
+        .filter((entry) => entry.value !== '' && Number.isFinite(entry.total) && entry.total > 0)
+        .sort((a, b) => b.total - a.total || a.value.localeCompare(b.value))
+        .slice(0, 8);
+      const total = entries.reduce((sum, entry) => sum + entry.total, 0);
+      map[item.id] = { mine, total, entries };
+    }
+    return map;
+  }, [chatMessages, visibleMessageIds]);
 
   const peerUser = useMemo(() => {
     if (!chat || chat.type === 'saved' || chat.type === 'ai') return null;
@@ -479,6 +580,24 @@ export default function ChatPage() {
     }
     return map;
   }, [chat?.participants, chat?.isAdmin, me]);
+
+  const handleMessageListScroll = useCallback(() => {
+    const list = messageListRef.current;
+    if (!list) return;
+    if (rows.length <= renderedRowsLimit) return;
+    if (list.scrollTop > 120) return;
+
+    const prevHeight = list.scrollHeight;
+    setRenderedRowsLimit((prev) => Math.min(rows.length, prev + MESSAGE_RENDER_STEP));
+    window.requestAnimationFrame(() => {
+      const updated = messageListRef.current;
+      if (!updated) return;
+      const delta = updated.scrollHeight - prevHeight;
+      if (delta > 0) {
+        updated.scrollTop += delta;
+      }
+    });
+  }, [rows.length, renderedRowsLimit]);
 
   const onPickFilesLegacy = async (list: FileList | null) => {
     if (!list?.length) return;
@@ -915,33 +1034,34 @@ export default function ChatPage() {
   };
 
   const submit = async () => {
+    const draftText = String(textDraftRef.current || '');
     if (editingMessage) {
       if (!canEditMessage(editingMessage)) {
         setEditingMessage(null);
         setSelectedMessage(null);
-        setText('');
+        setDraftText('');
         return;
       }
-      const result = await updateMessage(chatId, editingMessage.id, text);
+      const result = await updateMessage(chatId, editingMessage.id, draftText);
       if (!result.ok) {
         if (result.code === 'expired') {
           setEditingMessage(null);
           setSelectedMessage(null);
-          setText('');
+          setDraftText('');
           return;
         }
         pushSnackbar({ message: 'Не удалось изменить сообщение', timeout: 2200, tone: 'error' });
         return;
       }
-      setText('');
+      setDraftText('');
       setEditingMessage(null);
       setSelectedMessage(null);
       return;
     }
 
-    if (!text.trim() && !uploaded.length) return;
-    await sendMessage(chatId, text, uploaded, replyToMessage?.id);
-    setText('');
+    if (!draftText.trim() && !uploaded.length) return;
+    await sendMessage(chatId, draftText, uploaded, replyToMessage?.id);
+    setDraftText('');
     setFiles([]);
     setUploaded([]);
     setReplyToMessage(null);
@@ -1041,7 +1161,7 @@ export default function ChatPage() {
     if (!selectedMessage || !canEditMessage(selectedMessage)) return;
     setEditingMessage(selectedMessage);
     setReplyToMessage(null);
-    setText(selectedMessage.text || '');
+    setDraftText(selectedMessage.text || '', { focus: true, cursor: String(selectedMessage.text || '').length });
     setSelectedMessage(null);
   };
 
@@ -1783,19 +1903,16 @@ export default function ChatPage() {
     const emoji = String(value || '').trim();
     if (!emoji) return;
 
-    setText((prev) => {
-      const input = messageInputRef.current;
-      if (!input) return `${prev}${emoji}`;
-      const start = Number.isFinite(input.selectionStart ?? NaN) ? (input.selectionStart as number) : prev.length;
+    const input = messageInputRef.current;
+    const previous = String(textDraftRef.current || '');
+    if (!input) {
+      setDraftText(`${previous}${emoji}`);
+    } else {
+      const start = Number.isFinite(input.selectionStart ?? NaN) ? (input.selectionStart as number) : previous.length;
       const end = Number.isFinite(input.selectionEnd ?? NaN) ? (input.selectionEnd as number) : start;
-      const next = `${prev.slice(0, start)}${emoji}${prev.slice(end)}`;
-      window.requestAnimationFrame(() => {
-        input.focus();
-        const cursor = start + emoji.length;
-        input.setSelectionRange(cursor, cursor);
-      });
-      return next;
-    });
+      const next = `${previous.slice(0, start)}${emoji}${previous.slice(end)}`;
+      setDraftText(next, { syncInput: true, cursor: start + emoji.length, focus: true });
+    }
 
     setRecentEmojis((prev) => [emoji, ...prev.filter((item) => item !== emoji)].slice(0, 18));
     window.requestAnimationFrame(() => {
@@ -1901,11 +2018,26 @@ export default function ChatPage() {
   const scrollToMessageById = (messageId: string) => {
     const normalizedId = String(messageId || '').trim();
     if (!normalizedId) return;
-    const root = messageListRef.current;
-    if (!root) return;
-    const target = root.querySelector(`[data-message-id="${normalizedId}"]`) as HTMLElement | null;
-    if (!target) return;
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const tryScroll = (): boolean => {
+      const root = messageListRef.current;
+      if (!root) return false;
+      const target = root.querySelector(`[data-message-id="${normalizedId}"]`) as HTMLElement | null;
+      if (!target) return false;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return true;
+    };
+
+    if (tryScroll()) return;
+    const rowIndex = rows.findIndex((row) => row.type === 'message' && String(row.value.id || '') === normalizedId);
+    if (rowIndex < 0) return;
+    const needed = Math.max(MESSAGE_RENDER_BATCH, rows.length - rowIndex + 8);
+    setRenderedRowsLimit((prev) => Math.max(prev, Math.min(rows.length, needed)));
+    window.requestAnimationFrame(() => {
+      if (tryScroll()) return;
+      window.setTimeout(() => {
+        void tryScroll();
+      }, 90);
+    });
   };
 
   const togglePinForSelectedMessage = async () => {
@@ -2402,11 +2534,15 @@ export default function ChatPage() {
         </Box>
       )}
 
-      <Box ref={messageListRef} sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}>
+      <Box
+        ref={messageListRef}
+        onScroll={handleMessageListScroll}
+        sx={{ flex: 1, overflow: 'auto', p: 1.2, bgcolor: isDark ? '#0A1A32' : '#FFFFFF' }}
+      >
         {isLoadingMessages && chatMessages.length === 0 ? (
           <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}><CircularProgress /></Box>
         ) : (
-          rows.map((row) => {
+          visibleRows.map((row) => {
             if (row.type === 'date') {
               return (
                 <Box key={row.key} sx={{ display: 'flex', justifyContent: 'center', my: 1.2 }}>
@@ -2914,7 +3050,7 @@ export default function ChatPage() {
           <Typography variant="caption" sx={{ fontWeight: 700, flex: 1 }}>
             Редактирование сообщения (до 15 минут)
           </Typography>
-          <IconButton size="small" onClick={() => { setEditingMessage(null); setText(''); }} sx={{ color: isDark ? '#AFC1D9' : '#708090' }}>
+          <IconButton size="small" onClick={() => { setEditingMessage(null); setDraftText(''); }} sx={{ color: isDark ? '#AFC1D9' : '#708090' }}>
             <CloseRoundedIcon sx={{ fontSize: 18 }} />
           </IconButton>
         </Box>
@@ -3146,8 +3282,9 @@ export default function ChatPage() {
           multiline
           minRows={1}
           maxRows={4}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          defaultValue=""
+          onChange={handleDraftChange}
+          onFocus={noteComposerActivity}
           inputRef={messageInputRef}
           placeholder={editingMessage ? 'Изменить сообщение...' : 'Сообщение...'}
           sx={{
@@ -3169,8 +3306,8 @@ export default function ChatPage() {
           onClick={submit}
           disabled={
             editingMessage
-              ? !canEditMessage(editingMessage) || !text.trim()
-              : (!text.trim() && !uploaded.length)
+              ? !canEditMessage(editingMessage) || !hasDraftText
+              : (!hasDraftText && !uploaded.length)
           }
           sx={{ color: isDark ? '#8EA3BB' : '#6F7D8A' }}
         >

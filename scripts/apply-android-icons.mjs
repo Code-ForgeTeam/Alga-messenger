@@ -64,10 +64,35 @@ const applyNotificationIcon = async () => {
   await fs.writeFile(drawablePath, content, 'utf8');
 };
 
+const patchAdaptiveIconXml = async () => {
+  const anydpiPath = path.join(targetBase, 'mipmap-anydpi-v26');
+  const iconXml = path.join(anydpiPath, 'ic_launcher.xml');
+  const roundIconXml = path.join(anydpiPath, 'ic_launcher_round.xml');
+  for (const filePath of [iconXml, roundIconXml]) {
+    try {
+      await fs.unlink(filePath);
+    } catch {
+      // file can be absent after fresh generation
+    }
+  }
+};
+
 const patchManifestDefaults = async () => {
   if (!(await fileExists(manifestPath))) return;
   let manifest = await fs.readFile(manifestPath, 'utf8');
   let changed = false;
+
+  if (manifest.includes('android:icon="@mipmap/ic_launcher"')) {
+    manifest = manifest.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/ic_launcher_round"');
+    changed = true;
+  }
+  if (!manifest.includes('android:roundIcon="@mipmap/ic_launcher_round"')) {
+    manifest = manifest.replace(
+      /(<application[^>]*android:icon="[^"]+"[^>]*)(>)/,
+      '$1 android:roundIcon="@mipmap/ic_launcher_round"$2',
+    );
+    changed = true;
+  }
 
   if (!manifest.includes('com.google.firebase.messaging.default_notification_icon')) {
     manifest = manifest.replace(
@@ -111,6 +136,7 @@ const main = async () => {
 
   await copyIcons();
   await applyBackgroundColor();
+  await patchAdaptiveIconXml();
   await applyNotificationIcon();
   await patchManifestDefaults();
   console.log('[android-icons] Android launcher icons applied successfully.');
