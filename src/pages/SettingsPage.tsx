@@ -177,6 +177,43 @@ export default function SettingsPage() {
 
       <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden', bgcolor: isDark ? 'rgba(16,29,46,0.66)' : 'rgba(255,255,255,0.74)' }}>
         <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, color: 'text.secondary', fontSize: 13 }}>Приложение</Typography>
+        <Box sx={{ px: 1.4, pb: 1 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 1.5,
+              borderRadius: 3,
+              color: '#fff',
+              background: isDark
+                ? 'linear-gradient(145deg, #561714 0%, #A61B14 48%, #D92D20 100%)'
+                : 'linear-gradient(145deg, #FF7A6F 0%, #E4372A 42%, #B61D14 100%)',
+              boxShadow: '0 18px 36px rgba(217,45,32,0.24)',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.8 }}>
+              <Typography sx={{ fontSize: 22, fontWeight: 900, letterSpacing: 0.2 }}>Vibe +</Typography>
+              <PlusBadge />
+            </Box>
+            <Typography sx={{ fontSize: 14, lineHeight: 1.55, color: 'rgba(255,255,255,0.94)' }}>
+              Подписка открывает облачные чаты, хранение медиа, приоритетные возможности и более комфортную работу на нескольких
+              устройствах.
+            </Typography>
+            <Box
+              sx={{
+                mt: 1.2,
+                p: 1,
+                borderRadius: 2.2,
+                bgcolor: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.18)',
+              }}
+            >
+              <Typography sx={{ fontSize: 13, fontWeight: 700 }}>Оформление через пользователя @BVE</Typography>
+              <Typography sx={{ mt: 0.35, fontSize: 12.5, color: 'rgba(255,255,255,0.82)' }}>
+                Для подключения и сопровождения подписки используйте профиль `@BVE`.
+              </Typography>
+            </Box>
+          </Paper>
+        </Box>
         <List disablePadding>
           <ListItemButton onClick={() => setTheme(appTheme === 'dark' ? 'light' : 'dark')} sx={{ py: 1.25 }}>
             <ListItemIcon sx={{ minWidth: 38, color: 'text.secondary' }}>

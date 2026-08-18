@@ -40,6 +40,7 @@ import type { Attachment, Message, User } from '../lib/types';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { PlusBadge } from '../components/PlusBadge';
+import { MediaComposerDialog } from '../components/MediaComposerDialog';
 
 const formatPresence = (status?: User['status'], lastSeen?: string): string => {
   if (status === 'online') return 'в сети';
@@ -253,6 +254,9 @@ export default function ChatPage() {
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
+  const [mediaComposerOpen, setMediaComposerOpen] = useState(false);
+  const [mediaComposerBusy, setMediaComposerBusy] = useState(false);
+  const [mediaComposerFiles, setMediaComposerFiles] = useState<File[]>([]);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [mediaPickerBusy, setMediaPickerBusy] = useState(false);
   const [mediaPickerThumbs, setMediaPickerThumbs] = useState<string[]>([]);
@@ -292,6 +296,18 @@ export default function ChatPage() {
   });
   const messageGestureRef = useRef<{ messageId: string; startX: number; startY: number; swipeDone: boolean } | null>(null);
   const reactionTimerRef = useRef<number | null>(null);
+
+  const resetMediaInputs = () => {
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
+    if (galleryInputRef.current) {
+      galleryInputRef.current.value = '';
+    }
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
+  };
 
   const syncDraftState = useCallback((value: string) => {
     const nextHasDraft = String(value || '').trim().length > 0;
@@ -666,53 +682,71 @@ export default function ChatPage() {
       return;
     }
     const arr = Array.from(list);
-    setFiles((prev) => [...prev, ...arr]);
-    try {
-      const uploadedFiles = await uploadApi.uploadFiles(arr);
-      setUploaded((prev) => [...prev, ...(Array.isArray(uploadedFiles) ? uploadedFiles : [])]);
-    } catch {
-      setFiles((prev) => prev.slice(0, Math.max(0, prev.length - arr.length)));
-      pushSnackbar({ message: 'Не удалось загрузить фото', timeout: 2200, tone: 'error' });
-    } finally {
-      if (inputRef.current) {
-        inputRef.current.value = '';
-      }
-    }
+    setMediaComposerFiles(arr);
+    setMediaComposerOpen(true);
+    setMediaPickerOpen(false);
+    resetMediaInputs();
   };
 
   const appendAndUploadFiles = async (arr: File[]) => {
-    if (!arr.length) return;
+    if (!arr.length) return false;
     if (chat?.cloudStorageEnabled === false) {
       pushSnackbar({
         message: 'Медиа доступны только в чатах с облачным хранением (+)',
         timeout: 2400,
         tone: 'error',
       });
-      return;
+      return false;
     }
     setFiles((prev) => [...prev, ...arr]);
     try {
       const uploadedFiles = await uploadApi.uploadFiles(arr);
       setUploaded((prev) => [...prev, ...(Array.isArray(uploadedFiles) ? uploadedFiles : [])]);
       setMediaPickerOpen(false);
+      return true;
     } catch {
       setFiles((prev) => prev.slice(0, Math.max(0, prev.length - arr.length)));
       pushSnackbar({ message: 'Не удалось загрузить вложение', timeout: 2200, tone: 'error' });
+      return false;
     }
   };
 
   const onPickFiles = async (list: FileList | null) => {
     if (!list?.length) return;
+    if (chat?.cloudStorageEnabled === false) {
+      pushSnackbar({
+        message: 'Медиа доступны только в чатах с облачным хранением (+)',
+        timeout: 2400,
+        tone: 'error',
+      });
+      resetMediaInputs();
+      return;
+    }
     const arr = Array.from(list);
-    await appendAndUploadFiles(arr);
-    if (inputRef.current) {
-      inputRef.current.value = '';
-    }
-    if (galleryInputRef.current) {
-      galleryInputRef.current.value = '';
-    }
-    if (cameraInputRef.current) {
-      cameraInputRef.current.value = '';
+    setMediaComposerFiles(arr);
+    setMediaComposerOpen(true);
+    setMediaPickerOpen(false);
+    resetMediaInputs();
+  };
+
+  const closeMediaComposer = () => {
+    if (mediaComposerBusy) return;
+    setMediaComposerOpen(false);
+    setMediaComposerFiles([]);
+  };
+
+  const handleMediaComposerConfirm = async (nextFiles: File[], caption: string) => {
+    setMediaComposerBusy(true);
+    try {
+      if (caption !== textDraftRef.current) {
+        setDraftText(caption, { focus: true });
+      }
+      const success = await appendAndUploadFiles(nextFiles);
+      if (!success) return;
+      setMediaComposerOpen(false);
+      setMediaComposerFiles([]);
+    } finally {
+      setMediaComposerBusy(false);
     }
   };
 
@@ -3245,6 +3279,15 @@ export default function ChatPage() {
           </IconButton>
         </Box>
       )}
+
+      <MediaComposerDialog
+        open={mediaComposerOpen}
+        files={mediaComposerFiles}
+        initialCaption={textDraftRef.current}
+        busy={mediaComposerBusy}
+        onClose={closeMediaComposer}
+        onConfirm={handleMediaComposerConfirm}
+      />
 
       <Drawer
         anchor="bottom"
