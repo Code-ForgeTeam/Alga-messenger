@@ -32,6 +32,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { AppHeader } from '../components/AppHeader';
+import { PlusBadge } from '../components/PlusBadge';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -121,7 +122,10 @@ export default function SettingsPage() {
           >
             {(user?.fullName || user?.username || 'U').slice(0, 1).toUpperCase()}
           </Avatar>
-          <Typography fontWeight={700}>{user?.fullName || 'Пользователь'}</Typography>
+          <Box sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.8 }}>
+            <Typography fontWeight={700}>{user?.fullName || 'Пользователь'}</Typography>
+            {user?.subscriptionTier === 'plus' && <PlusBadge />}
+          </Box>
           <Typography color="text.secondary">@{user?.username || 'username'}</Typography>
         </Box>
       </Paper>

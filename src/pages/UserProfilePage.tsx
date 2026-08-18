@@ -24,6 +24,7 @@ import { useChatStore } from '../stores/chatStore';
 import { useContactsStore } from '../stores/contactsStore';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { AppHeader } from '../components/AppHeader';
+import { PlusBadge } from '../components/PlusBadge';
 
 const formatPresence = (status?: User['status'], lastSeen?: string): string => {
   if (status === 'online') return 'в сети';
@@ -285,9 +286,12 @@ export default function UserProfilePage() {
           )}
         </Box>
 
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          {displayName || user.fullName || user.username}
-        </Typography>
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.9, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+            {displayName || user.fullName || user.username}
+          </Typography>
+          {user.subscriptionTier === 'plus' && <PlusBadge />}
+        </Box>
         <Typography color="text.secondary">@{user.username}</Typography>
         <Typography sx={{ mt: 0.5 }} color={user.status === 'online' ? 'success.main' : 'text.secondary'}>
           {formatPresence(user.status, user.lastSeen)}

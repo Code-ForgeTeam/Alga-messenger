@@ -57,6 +57,7 @@ import { useAppConfigStore } from '../stores/appConfigStore';
 import { storyApi, uploadApi, userApi } from '../lib/api';
 import type { Chat, Story, StoryViewer } from '../lib/types';
 import { isCreatorUser } from '../lib/creator';
+import { PlusBadge } from '../components/PlusBadge';
 
 const STORY_MEDIA_LIMIT = 10;
 const STORY_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'bmp', 'avif'];
@@ -238,6 +239,14 @@ export default function ChatsPage() {
           bio: profile?.bio ?? user.bio,
           status: profile?.status ?? user.status,
           lastSeen,
+          subscriptionTier:
+            String(profile?.subscriptionTier ?? profile?.subscription_tier ?? user.subscriptionTier ?? '').trim().toLowerCase() === 'plus'
+              ? 'plus'
+              : 'basic',
+          cloudStorageEnabled:
+            typeof profile?.cloudStorageEnabled === 'boolean'
+              ? profile.cloudStorageEnabled
+              : String(profile?.subscriptionTier ?? profile?.subscription_tier ?? user.subscriptionTier ?? '').trim().toLowerCase() === 'plus',
           isCreator: Boolean(profile?.isCreator ?? profile?.is_creator ?? user.isCreator),
         });
       })
@@ -1027,7 +1036,12 @@ export default function ChatsPage() {
                 {chat.type === 'saved' ? <BookmarkRoundedIcon sx={{ fontSize: 30 }} /> : avatarData.initial}
               </Avatar>
               <ListItemText
-                primary={<Typography fontWeight={hasUnread ? 800 : 700}>{name}</Typography>}
+                primary={
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, maxWidth: '100%' }}>
+                    <Typography fontWeight={hasUnread ? 800 : 700} noWrap>{name}</Typography>
+                    {chat.type === 'private' && peer?.subscriptionTier === 'plus' && <PlusBadge compact />}
+                  </Box>
+                }
                 secondary={<Typography color="text.secondary" noWrap>{subtitle}</Typography>}
               />
               <Box sx={{ textAlign: 'right' }}>
@@ -1100,9 +1114,12 @@ export default function ChatsPage() {
                 {(user?.fullName || user?.username || 'A').slice(0, 1).toUpperCase()}
               </Avatar>
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="h6" fontWeight={700} sx={{ color: '#fff', fontSize: 18 }} noWrap>
-                  {user?.fullName || 'Пользователь'}
-                </Typography>
+                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.8, maxWidth: '100%' }}>
+                  <Typography variant="h6" fontWeight={700} sx={{ color: '#fff', fontSize: 18 }} noWrap>
+                    {user?.fullName || 'Пользователь'}
+                  </Typography>
+                  {user?.subscriptionTier === 'plus' && <PlusBadge />}
+                </Box>
                 <Typography sx={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }} noWrap>
                   @{user?.username || 'username'}
                 </Typography>

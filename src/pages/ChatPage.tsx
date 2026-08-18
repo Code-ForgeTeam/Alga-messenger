@@ -39,6 +39,7 @@ import { useContactsStore } from '../stores/contactsStore';
 import type { Attachment, Message, User } from '../lib/types';
 import { useSnackbarStore } from '../stores/snackbarStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { PlusBadge } from '../components/PlusBadge';
 
 const formatPresence = (status?: User['status'], lastSeen?: string): string => {
   if (status === 'online') return 'в сети';
@@ -66,7 +67,7 @@ const formatGroupMembers = (total: number): string => {
   return `${value} участников`;
 };
 
-const QUICK_REACTIONS = ['❤️', '👍', '👎', '🔥'] as const;
+const QUICK_REACTIONS = ['❤️', '👍', '🤣', '👎', '🔥'] as const;
 type QuickReaction = (typeof QUICK_REACTIONS)[number];
 const QUICK_EMOJIS = ['😀', '😁', '😂', '😊', '😍', '😘', '🤔', '😎', '🥳', '🙏', '👍', '🔥', '❤️', '👏', '🤝', '😢', '😡'];
 const RECENT_EMOJI_STORAGE_KEY = 'vibe:recent-emojis';
@@ -653,6 +654,17 @@ export default function ChatPage() {
 
   const onPickFilesLegacy = async (list: FileList | null) => {
     if (!list?.length) return;
+    if (chat?.cloudStorageEnabled === false) {
+      pushSnackbar({
+        message: 'Медиа доступны только в чатах с облачным хранением (+)',
+        timeout: 2400,
+        tone: 'error',
+      });
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
+      return;
+    }
     const arr = Array.from(list);
     setFiles((prev) => [...prev, ...arr]);
     try {
@@ -670,6 +682,14 @@ export default function ChatPage() {
 
   const appendAndUploadFiles = async (arr: File[]) => {
     if (!arr.length) return;
+    if (chat?.cloudStorageEnabled === false) {
+      pushSnackbar({
+        message: 'Медиа доступны только в чатах с облачным хранением (+)',
+        timeout: 2400,
+        tone: 'error',
+      });
+      return;
+    }
     setFiles((prev) => [...prev, ...arr]);
     try {
       const uploadedFiles = await uploadApi.uploadFiles(arr);
@@ -2319,7 +2339,10 @@ export default function ChatPage() {
             {chat.type === 'saved' ? <BookmarkRoundedIcon sx={{ fontSize: 27 }} /> : title.slice(0, 1).toUpperCase()}
           </Avatar>
           <Box sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontWeight: 700, fontSize: 18 }} noWrap>{title}</Typography>
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, maxWidth: '100%' }}>
+              <Typography sx={{ fontWeight: 700, fontSize: 18 }} noWrap>{title}</Typography>
+              {chat.type === 'private' && peerUser?.subscriptionTier === 'plus' && <PlusBadge compact />}
+            </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
               {chat.type === 'private' && peerUser?.status === 'online' && !typingUsers[chatId]?.length && (
                 <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#32C26A', flexShrink: 0 }} />

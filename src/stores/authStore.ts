@@ -68,6 +68,14 @@ const normalizeUser = (payload: any): User | null => {
     lastSeen: payload.lastSeen ?? payload.last_seen ?? undefined,
     badge: payload.badge ?? undefined,
     birthday: payload.birthday ?? payload.birthDate ?? payload.birth_date ?? payload.dob ?? undefined,
+    subscriptionTier:
+      String(payload.subscriptionTier ?? payload.subscription_tier ?? '').trim().toLowerCase() === 'plus'
+        ? 'plus'
+        : 'basic',
+    cloudStorageEnabled:
+      typeof payload.cloudStorageEnabled === 'boolean'
+        ? payload.cloudStorageEnabled
+        : String(payload.subscriptionTier ?? payload.subscription_tier ?? '').trim().toLowerCase() === 'plus',
     isCreator:
       typeof payload.isCreator === 'boolean'
         ? payload.isCreator
@@ -316,7 +324,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user: null, token: null, isAuthenticated: false, error: null, banned: false, banReason: '' });
   },
 
-  updateUser: (patch) => set((state) => ({ user: state.user ? { ...state.user, ...patch } : null })),
+  updateUser: (patch) =>
+    set((state) => {
+      const nextUser = state.user ? { ...state.user, ...patch } : null;
+      if (nextUser) {
+        persistCachedUser(nextUser);
+      }
+      return { user: nextUser };
+    }),
 
   updateProfile: async (payload) => {
     set({ isLoading: true, error: null });

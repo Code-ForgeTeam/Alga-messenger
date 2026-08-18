@@ -29,6 +29,14 @@ const sanitizeUser = (value: any): User | null => {
     status: value.status ?? undefined,
     lastSeen: value.lastSeen ?? value.last_seen ?? undefined,
     badge: value.badge ?? undefined,
+    subscriptionTier:
+      String(value.subscriptionTier ?? value.subscription_tier ?? '').trim().toLowerCase() === 'plus'
+        ? 'plus'
+        : 'basic',
+    cloudStorageEnabled:
+      typeof value.cloudStorageEnabled === 'boolean'
+        ? value.cloudStorageEnabled
+        : String(value.subscriptionTier ?? value.subscription_tier ?? '').trim().toLowerCase() === 'plus',
   };
 };
 
@@ -82,7 +90,9 @@ const sameUserMeta = (a: User, b: User) =>
   a.bio === b.bio &&
   a.status === b.status &&
   a.lastSeen === b.lastSeen &&
-  a.badge === b.badge;
+  a.badge === b.badge &&
+  a.subscriptionTier === b.subscriptionTier &&
+  a.cloudStorageEnabled === b.cloudStorageEnabled;
 
 const defaultContactDisplayName = (user: Partial<User> | null | undefined): string => {
   const fullName = String(user?.fullName ?? '').trim();

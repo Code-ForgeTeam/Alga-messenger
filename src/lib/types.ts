@@ -1,5 +1,7 @@
 export type BadgeType = 'admin' | 'support' | 'tech' | 'veteran' | null;
 
+export type SubscriptionTier = 'basic' | 'plus';
+
 export interface User {
   id: string;
   username: string;
@@ -12,6 +14,8 @@ export interface User {
   bio?: string;
   birthday?: string;
   isCreator?: boolean;
+  subscriptionTier?: SubscriptionTier;
+  cloudStorageEnabled?: boolean;
 }
 
 export interface Attachment {
@@ -54,6 +58,7 @@ export interface Chat {
   type: 'private' | 'group' | 'saved' | 'ai';
   participants: User[];
   avatar?: string;
+  cloudStorageEnabled?: boolean;
   isAdmin?: boolean;
   archived?: boolean;
   pinned?: boolean;

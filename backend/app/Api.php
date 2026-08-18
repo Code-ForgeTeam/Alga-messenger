@@ -25,6 +25,7 @@ final class Api
     private ?array $chatColumns = null;
     private ?array $notificationColumns = null;
     private ?array $firebaseAccessTokenCache = null;
+    private bool $storyCleanupAttempted = false;
 
     public function __construct()
     {
@@ -43,6 +44,8 @@ final class Api
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
         $body = json_decode(file_get_contents('php://input') ?: '[]', true) ?: [];
 
+        $this->maybeCleanupExpiredStories($path);
+
         if ($path === '/health') { $this->json(['ok' => true]); }
         if ($path === '/api') { $this->json(['ok' => true, 'message' => 'API root']); }
         if ($path === '/api/app/config' && $method === 'GET') { $this->appConfig(); }
@@ -58,6 +61,7 @@ final class Api
         if ($path === '/api/admin/clear-push-tokens' && $method === 'POST') { $this->adminClearPushTokens(); }
         if ($path === '/api/admin/reset-users' && $method === 'POST') { $this->adminResetUsers(); }
         if ($path === '/api/admin/users' && $method === 'GET') { $this->adminUsers(); }
+        if ($path === '/api/admin/users/subscription' && ($method === 'PUT' || $method === 'POST')) { $this->adminUpdateUserSubscription($body); }
         if ($path === '/api/admin/app-config' && ($method === 'PUT' || $method === 'POST')) { $this->adminUpdateAppConfig($body); }
         if ($path === '/api/admin/events' && $method === 'POST') { $this->adminCreateEvent($body); }
 
@@ -157,6 +161,8 @@ final class Api
                 'fullName' => $n,
                 'avatar' => null,
                 'birthday' => null,
+                'subscriptionTier' => 'basic',
+                'cloudStorageEnabled' => false,
                 'isCreator' => $this->isCreatorMatch($id),
             ],
         ]);
@@ -166,9 +172,10 @@ final class Api
     {
         $u = trim((string)($body['username'] ?? ''));
         $p = (string)($body['password'] ?? '');
+        $this->ensureUserProfileColumns();
 
         try {
-            $select = 'SELECT id, username, full_name, avatar, password_hash';
+            $select = 'SELECT id, username, full_name, avatar, password_hash, subscription_tier';
             if ($this->hasUserColumn('birth_date')) {
                 $select .= ', birth_date';
             }
@@ -207,6 +214,8 @@ final class Api
                 'fullName' => $user['full_name'],
                 'avatar' => $user['avatar'] ?? null,
                 'birthday' => $user['birth_date'] ?? null,
+                'subscriptionTier' => $this->normalizeSubscriptionTier($user['subscription_tier'] ?? null),
+                'cloudStorageEnabled' => $this->userHasCloudStorage($user['subscription_tier'] ?? null),
                 'isCreator' => $this->isCreatorMatch((string)$user['id']),
             ],
         ]);
@@ -216,7 +225,7 @@ final class Api
     {
         $userId = $this->authUserId();
         $this->ensureUserProfileColumns();
-        $select = 'SELECT id, username, full_name, avatar, status, last_seen';
+        $select = 'SELECT id, username, full_name, avatar, status, last_seen, subscription_tier';
         if ($this->hasUserColumn('birth_date')) {
             $select .= ', birth_date';
         }
@@ -236,6 +245,8 @@ final class Api
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
             'birthday' => $u['birth_date'] ?? null,
+            'subscriptionTier' => $this->normalizeSubscriptionTier($u['subscription_tier'] ?? null),
+            'cloudStorageEnabled' => $this->userHasCloudStorage($u['subscription_tier'] ?? null),
             'isCreator' => $this->isCreatorMatch((string)$u['id']),
         ]]);
     }
@@ -315,7 +326,7 @@ final class Api
         $this->assertCreator($userId);
         $this->ensureUserProfileColumns();
 
-        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen, subscription_tier';
         if ($this->hasUserColumn('birth_date')) {
             $select .= ', birth_date';
         }
@@ -324,7 +335,7 @@ final class Api
         try {
             $rows = $this->db()->query($select)->fetchAll() ?: [];
         } catch (\Throwable) {
-            $fallback = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+            $fallback = 'SELECT id, username, full_name, bio, avatar, status, last_seen, subscription_tier';
             if ($this->hasUserColumn('birth_date')) {
                 $fallback .= ', birth_date';
             }
@@ -343,6 +354,8 @@ final class Api
                 'status' => $presence['status'],
                 'lastSeen' => $presence['lastSeen'],
                 'birthday' => $u['birth_date'] ?? null,
+                'subscriptionTier' => $this->normalizeSubscriptionTier($u['subscription_tier'] ?? null),
+                'cloudStorageEnabled' => $this->userHasCloudStorage($u['subscription_tier'] ?? null),
                 'isCreator' => $this->isCreatorMatch((string)($u['id'] ?? '')),
             ];
         }, $rows);
@@ -351,6 +364,37 @@ final class Api
             'ok' => true,
             'count' => count($items),
             'items' => $items,
+        ]);
+    }
+
+    private function adminUpdateUserSubscription(array $body): void
+    {
+        $actorId = $this->authUserId();
+        $this->assertCreator($actorId);
+        $this->ensureUserProfileColumns();
+
+        $userId = trim((string)($body['userId'] ?? $body['user_id'] ?? ''));
+        $tier = $this->normalizeSubscriptionTier($body['subscriptionTier'] ?? $body['subscription_tier'] ?? null);
+
+        if ($userId === '') {
+            $this->json(['error' => 'userId is required'], 400);
+        }
+
+        $stmt = $this->db()->prepare('UPDATE users SET subscription_tier = ? WHERE id = ?');
+        $stmt->execute([$tier, $userId]);
+        if ($stmt->rowCount() < 1) {
+            $check = $this->db()->prepare('SELECT id FROM users WHERE id = ? LIMIT 1');
+            $check->execute([$userId]);
+            if (!$check->fetchColumn()) {
+                $this->json(['error' => 'User not found'], 404);
+            }
+        }
+
+        $this->json([
+            'ok' => true,
+            'userId' => $userId,
+            'subscriptionTier' => $tier,
+            'cloudStorageEnabled' => $this->userHasCloudStorage($tier),
         ]);
     }
 
@@ -1898,6 +1942,32 @@ final class Api
             $replyToId = (string)$replyTo['id'];
         }
 
+        $cloudStorageEnabled = $this->chatHasCloudStorage($chatId);
+        if (!$cloudStorageEnabled) {
+            if ($attachments) {
+                $this->deleteAttachmentPayloadFiles($attachments);
+                $this->json(['error' => 'Local-only chats currently support text messages only'], 400);
+            }
+
+            $senderPayload = $this->messageSenderPayload($userId);
+            $message = [
+                'id' => $this->uuid(),
+                'chatId' => $chatId,
+                'userId' => $userId,
+                'text' => $text,
+                'attachments' => [],
+                'replyTo' => $replyTo,
+                'createdAt' => date('c'),
+                'edited' => 0,
+                'status' => 'delivered',
+                'isAi' => false,
+                'cloudStored' => false,
+                'reactions' => ['mine' => null, 'counts' => new \stdClass()],
+                'sender' => $senderPayload,
+            ];
+            $this->json(['message' => $message, 'cloudStorageEnabled' => false], 201);
+        }
+
         $messageId = $this->uuid();
         $inserted = false;
         if ($replyToId !== null) {
@@ -1940,6 +2010,7 @@ final class Api
             'edited' => 0,
             'status' => 'delivered',
             'isAi' => false,
+            'cloudStored' => true,
             'reactions' => ['mine' => null, 'counts' => new \stdClass()],
             'sender' => $senderPayload,
         ];
@@ -2457,6 +2528,7 @@ final class Api
         }
 
         $this->deleteStoryMediaFilesFromRow($story);
+        $this->deleteStoryMediaIndexRows($storyId);
 
         $delete = $this->db()->prepare('DELETE FROM stories WHERE id = ?');
         $delete->execute([$storyId]);
@@ -2478,6 +2550,10 @@ final class Api
             $expired = $stmt ? ($stmt->fetchAll() ?: []) : [];
             foreach ($expired as $storyRow) {
                 $this->deleteStoryMediaFilesFromRow($storyRow);
+                $storyId = trim((string)($storyRow['id'] ?? ''));
+                if ($storyId !== '') {
+                    $this->deleteStoryMediaIndexRows($storyId);
+                }
             }
 
             $this->db()->exec('DELETE FROM stories WHERE expires_at <= CURRENT_TIMESTAMP');
@@ -3212,7 +3288,7 @@ final class Api
     {
         $userId = $this->authUserId();
         $this->ensureUserProfileColumns();
-        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen, subscription_tier';
         if ($this->hasUserColumn('birth_date')) {
             $select .= ', birth_date';
         }
@@ -3235,6 +3311,8 @@ final class Api
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
             'birthday' => $u['birth_date'] ?? null,
+            'subscriptionTier' => $this->normalizeSubscriptionTier($u['subscription_tier'] ?? null),
+            'cloudStorageEnabled' => $this->userHasCloudStorage($u['subscription_tier'] ?? null),
             'isCreator' => $this->isCreatorMatch((string)$u['id']),
         ]);
     }
@@ -3368,7 +3446,7 @@ final class Api
         }
 
         $like = '%' . $q . '%';
-        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen, subscription_tier';
         if ($this->hasUserColumn('birth_date')) {
             $select .= ', birth_date';
         }
@@ -3388,6 +3466,8 @@ final class Api
                 'status' => $presence['status'],
                 'lastSeen' => $presence['lastSeen'],
                 'birthday' => $u['birth_date'] ?? null,
+                'subscriptionTier' => $this->normalizeSubscriptionTier($u['subscription_tier'] ?? null),
+                'cloudStorageEnabled' => $this->userHasCloudStorage($u['subscription_tier'] ?? null),
             ];
         }, $rows ?: []);
 
@@ -3403,7 +3483,7 @@ final class Api
             $this->json(['error' => 'Not found'], 404);
         }
 
-        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen, subscription_tier';
         if ($this->hasUserColumn('birth_date')) {
             $select .= ', birth_date';
         }
@@ -3426,6 +3506,8 @@ final class Api
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
             'birthday' => $row['birth_date'] ?? null,
+            'subscriptionTier' => $this->normalizeSubscriptionTier($row['subscription_tier'] ?? null),
+            'cloudStorageEnabled' => $this->userHasCloudStorage($row['subscription_tier'] ?? null),
             'isCreator' => $this->isCreatorMatch((string)$row['id']),
         ]);
     }
@@ -3434,7 +3516,7 @@ final class Api
     {
         $this->authUserId();
         $this->ensureUserProfileColumns();
-        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen';
+        $select = 'SELECT id, username, full_name, bio, avatar, status, last_seen, subscription_tier';
         if ($this->hasUserColumn('birth_date')) {
             $select .= ', birth_date';
         }
@@ -3457,6 +3539,8 @@ final class Api
             'status' => $presence['status'],
             'lastSeen' => $presence['lastSeen'],
             'birthday' => $row['birth_date'] ?? null,
+            'subscriptionTier' => $this->normalizeSubscriptionTier($row['subscription_tier'] ?? null),
+            'cloudStorageEnabled' => $this->userHasCloudStorage($row['subscription_tier'] ?? null),
             'isCreator' => $this->isCreatorMatch((string)$row['id']),
         ]);
     }
@@ -3465,6 +3549,9 @@ final class Api
     {
         $userId = $this->authUserId();
         $this->assertChatParticipant($chatId, $userId);
+        if (!$this->chatHasCloudStorage($chatId)) {
+            $this->json([]);
+        }
         $limitRaw = (int)($_GET['limit'] ?? 50);
         $offsetRaw = (int)($_GET['offset'] ?? 0);
         $limit = max(1, min(500, $limitRaw > 0 ? $limitRaw : 50));
@@ -3594,6 +3681,7 @@ final class Api
 
         $participants = $this->chatParticipants((string)$row['id'], $viewerId, (string)$row['type']);
         $last = $this->chatLastMessage((string)$row['id'], $viewerId);
+        $cloudStorageEnabled = $this->chatHasCloudStorage((string)$row['id']);
 
         return [
             'id' => $row['id'],
@@ -3601,6 +3689,7 @@ final class Api
             'type' => $row['type'],
             'avatar' => $row['avatar'],
             'participants' => $participants,
+            'cloudStorageEnabled' => $cloudStorageEnabled,
             'archived' => (bool)$row['archived'],
             'pinned' => (bool)$row['pinned'],
             'muted' => (bool)$row['muted'],
@@ -3753,7 +3842,7 @@ final class Api
             ? 'cp.is_admin AS is_admin,'
             : '0 AS is_admin,';
         $stmt = $this->db()->prepare(
-            "SELECT u.id, u.username, u.full_name, u.avatar, u.bio, u.status, u.last_seen, {$adminSelect} u.badge
+            "SELECT u.id, u.username, u.full_name, u.avatar, u.bio, u.status, u.last_seen, {$adminSelect} u.badge, u.subscription_tier
              FROM chat_participants cp
              JOIN users u ON u.id = cp.user_id
              WHERE cp.chat_id = ? AND cp.user_id <> ?"
@@ -3773,6 +3862,8 @@ final class Api
                 'status' => $presence['status'],
                 'lastSeen' => $presence['lastSeen'],
                 'badge' => $u['badge'] ?? null,
+                'subscriptionTier' => $this->normalizeSubscriptionTier($u['subscription_tier'] ?? null),
+                'cloudStorageEnabled' => $this->userHasCloudStorage($u['subscription_tier'] ?? null),
                 'isAdmin' => (bool)($u['is_admin'] ?? false),
             ];
         }, $rows ?: []);
@@ -3928,6 +4019,20 @@ final class Api
 
         foreach ($urls as $url) {
             $this->deleteUploadedFileByUrl($url, ['/uploads/stories/']);
+        }
+    }
+
+    private function deleteStoryMediaIndexRows(string $storyId): void
+    {
+        if ($storyId === '' || !$this->ensureStoryMediaTable()) {
+            return;
+        }
+
+        try {
+            $stmt = $this->db()->prepare('DELETE FROM story_media WHERE story_id = ?');
+            $stmt->execute([$storyId]);
+        } catch (\Throwable) {
+            // ignore manual cleanup failures when FK cascade is unavailable
         }
     }
 
@@ -5965,12 +6070,17 @@ final class Api
 
     private function extractUploadsRelativePath(string $url): ?string
     {
-        $path = parse_url($url, PHP_URL_PATH);
-        if (!is_string($path) || trim($path) === '') {
+        $raw = trim($url);
+        if ($raw === '') {
             return null;
         }
 
-        $normalized = '/' . ltrim(str_replace('\\', '/', $path), '/');
+        $path = parse_url($raw, PHP_URL_PATH);
+        if (!is_string($path) || trim($path) === '') {
+            $path = $raw;
+        }
+
+        $normalized = urldecode('/' . ltrim(str_replace('\\', '/', $path), '/'));
         $position = strpos($normalized, '/uploads/');
         if ($position === false) {
             return null;
@@ -5978,6 +6088,11 @@ final class Api
 
         $relative = substr($normalized, $position);
         if (!is_string($relative) || $relative === '' || strpos($relative, '..') !== false) {
+            return null;
+        }
+
+        $relative = preg_replace('#/+#', '/', $relative);
+        if (!is_string($relative) || $relative === '') {
             return null;
         }
 
@@ -6008,6 +6123,20 @@ final class Api
         if (is_file($fullPath)) {
             @unlink($fullPath);
         }
+    }
+
+    private function maybeCleanupExpiredStories(string $path): void
+    {
+        if ($this->storyCleanupAttempted) {
+            return;
+        }
+
+        if (!$this->startsWith($path, '/api/')) {
+            return;
+        }
+
+        $this->storyCleanupAttempted = true;
+        $this->cleanupExpiredStories();
     }
 
     private function attachmentTypeFromPath(string $path): string
@@ -6237,15 +6366,66 @@ final class Api
 
     private function ensureUserProfileColumns(): void
     {
-        if ($this->hasUserColumn('birth_date')) {
-            return;
-        }
-
         try {
-            $this->db()->exec('ALTER TABLE users ADD COLUMN birth_date DATE NULL');
+            if (!$this->hasUserColumn('birth_date')) {
+                $this->db()->exec('ALTER TABLE users ADD COLUMN birth_date DATE NULL');
+            }
+            if (!$this->hasUserColumn('subscription_tier')) {
+                $this->db()->exec("ALTER TABLE users ADD COLUMN subscription_tier VARCHAR(16) NOT NULL DEFAULT 'basic'");
+            }
             $this->userColumns = null;
         } catch (\Throwable) {
             // ignore profile schema migration errors on restricted hosting
+        }
+    }
+
+    private function normalizeSubscriptionTier(mixed $value): string
+    {
+        return strtolower(trim((string)$value)) === 'plus' ? 'plus' : 'basic';
+    }
+
+    private function userHasCloudStorage(mixed $subscriptionTier): bool
+    {
+        return $this->normalizeSubscriptionTier($subscriptionTier) === 'plus';
+    }
+
+    private function chatHasCloudStorage(string $chatId): bool
+    {
+        $normalizedChatId = trim($chatId);
+        if ($normalizedChatId === '') {
+            return false;
+        }
+
+        try {
+            $stmt = $this->db()->prepare(
+                'SELECT MAX(CASE WHEN COALESCE(u.subscription_tier, "basic") = "plus" THEN 1 ELSE 0 END)
+                 FROM chat_participants cp
+                 JOIN users u ON u.id = cp.user_id
+                 WHERE cp.chat_id = ?'
+            );
+            $stmt->execute([$normalizedChatId]);
+            return ((int)$stmt->fetchColumn()) === 1;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function deleteAttachmentPayloadFiles(array $attachments): void
+    {
+        foreach ($attachments as $attachment) {
+            if (!is_array($attachment)) {
+                continue;
+            }
+
+            $url = trim((string)($attachment['url'] ?? ''));
+            if ($url !== '') {
+                $this->deleteUploadedFileByUrl($url, ['/uploads/messages/']);
+            }
+
+            $thumbnailUrl = trim((string)($attachment['thumbnailUrl'] ?? $attachment['thumbnail_url'] ?? ''));
+            if ($thumbnailUrl !== '') {
+                $this->deleteUploadedFileByUrl($thumbnailUrl, ['/uploads/messages/']);
+            }
         }
     }
 

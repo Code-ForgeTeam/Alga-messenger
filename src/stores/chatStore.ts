@@ -246,6 +246,8 @@ const messageNotificationTitle = (chat: Chat | undefined, viewerId?: string): st
   return String(peer?.fullName || '').trim() || (peer?.username ? `@${peer.username}` : 'Новый чат');
 };
 
+const isChatCloudStorageEnabled = (chat?: Chat | null): boolean => chat?.cloudStorageEnabled !== false;
+
 const showSystemMessageNotification = (title: string, body: string, chatId: string): void => {
   if (typeof window === 'undefined') return;
   if (!('Notification' in window)) return;
@@ -505,10 +507,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
           currentChatId,
         });
 
-        if (readUnreadCount(record) === unreadCount) {
-          return chat;
+        const baseChat = readUnreadCount(record) === unreadCount ? chat : { ...chat, unreadCount };
+        if (!isChatCloudStorageEnabled(record) && previousChat) {
+          return {
+            ...baseChat,
+            unreadCount: readUnreadCount(record) === unreadCount
+              ? readUnreadCount(previousChat)
+              : unreadCount,
+            lastMessage: previousChat.lastMessage ?? baseChat.lastMessage,
+            lastMessageText: previousChat.lastMessageText || baseChat.lastMessageText,
+            lastMessageTime: previousChat.lastMessageTime || baseChat.lastMessageTime,
+          };
         }
-        return { ...chat, unreadCount };
+        return baseChat;
       });
 
       useContactsStore.getState().hydrateFromChats(merged, myId);
@@ -524,6 +535,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   loadMessages: async (chatId) => {
+    const chat = get().chats.find((item) => item.id === chatId);
+    if (chat && !isChatCloudStorageEnabled(chat)) {
+      set((state) => ({
+        isLoadingMessages: false,
+        messagesLoadedAll: { ...state.messagesLoadedAll, [chatId]: true },
+      }));
+      return;
+    }
     set({ isLoadingMessages: true });
     try {
       const PAGE_SIZE = 200;
@@ -736,6 +755,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   markAsRead: async (chatId) => {
+    const chat = get().chats.find((item) => item.id === chatId);
+    if (chat && !isChatCloudStorageEnabled(chat)) {
+      set((state) => ({
+        chats: state.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c)),
+      }));
+      return;
+    }
     await messageApi.markAsRead(chatId);
     getSocket()?.emit('message:read', { chatId });
     set((state) => ({
@@ -749,7 +775,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const message = (get().messages[chatId] || []).find((item) => item.id === messageId);
     const me = useAuthStore.getState().user?.id;
+    const chat = get().chats.find((item) => item.id === chatId);
     if (!message || message.userId !== me) return { ok: false, code: 'forbidden' };
+
+    if (chat && !isChatCloudStorageEnabled(chat)) {
+      const editedAt = new Date().toISOString();
+      set((state) => {
+        const list = (state.messages[chatId] || []).map((item) =>
+          item.id === messageId ? { ...item, text: normalizedText, edited: true, editedAt } : item,
+        );
+        const last = list[list.length - 1];
+        return {
+          messages: { ...state.messages, [chatId]: list },
+          chats: state.chats.map((entry) =>
+            entry.id === chatId
+              ? {
+                  ...entry,
+                  lastMessage: last,
+                  lastMessageText: last ? messagePreviewText(last) : '',
+                  lastMessageTime: last?.createdAt,
+                }
+              : entry,
+          ),
+        };
+      });
+      return { ok: true };
+    }
 
     try {
       const response = await messageApi.update(messageId, normalizedText);
@@ -795,14 +846,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   deleteMessage: async (chatId, messageId, deleteForAll = false) => {
     const me = useAuthStore.getState().user?.id;
     const target = (get().messages[chatId] || []).find((m) => m.id === messageId);
+    const chat = get().chats.find((item) => item.id === chatId);
 
     if (!target) return;
     if (deleteForAll && target.userId !== me) return;
 
-    try {
-      await messageApi.delete(messageId, deleteForAll);
-    } catch {
-      // ignore backend errors for local UX continuity
+    if (chat && isChatCloudStorageEnabled(chat)) {
+      try {
+        await messageApi.delete(messageId, deleteForAll);
+      } catch {
+        // ignore backend errors for local UX continuity
+      }
     }
 
     set((state) => {
@@ -1093,7 +1147,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   handleUserProfileUpdate: (payload) => {
     const patch: Partial<User> = {};
-    ['avatar', 'fullName', 'username', 'bio', 'status', 'lastSeen', 'badge'].forEach((k) => {
+    ['avatar', 'fullName', 'username', 'bio', 'status', 'lastSeen', 'badge', 'subscriptionTier', 'cloudStorageEnabled'].forEach((k) => {
       const key = k as keyof User;
       if (payload[key] !== undefined) patch[key] = payload[key] as any;
     });

@@ -47,6 +47,8 @@ type AdminUser = {
   status?: string;
   lastSeen?: string | null;
   isCreator?: boolean;
+  subscriptionTier?: 'basic' | 'plus';
+  cloudStorageEnabled?: boolean;
 };
 
 type AdminAction = 'clear-chats' | 'clear-messages' | 'clear-content' | 'clear-push-tokens' | 'reset-users' | null;
@@ -102,6 +104,7 @@ export default function AdminPage() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const me = useAuthStore((s) => s.user);
+  const updateMe = useAuthStore((s) => s.updateUser);
   const canUseAdminTools = useAdminStore((s) => s.canUseAdminTools);
   const setAdminAccess = useAdminStore((s) => s.setAdminAccess);
   const loadChats = useChatStore((s) => s.loadChats);
@@ -119,6 +122,7 @@ export default function AdminPage() {
   const [confirmDeleteUserOpen, setConfirmDeleteUserOpen] = useState(false);
   const [usersDialogOpen, setUsersDialogOpen] = useState(false);
   const [usersListLoading, setUsersListLoading] = useState(false);
+  const [subscriptionBusyUserId, setSubscriptionBusyUserId] = useState<string | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
 
   const [eventTemplate, setEventTemplate] = useState<'update' | 'custom'>('update');
@@ -255,6 +259,45 @@ export default function AdminPage() {
       });
     } finally {
       setIsBusy(false);
+    }
+  };
+
+  const toggleUserSubscription = async (item: AdminUser) => {
+    const nextTier = item.subscriptionTier === 'plus' ? 'basic' : 'plus';
+    setSubscriptionBusyUserId(item.id);
+    try {
+      await adminApi.updateUserSubscription(item.id, nextTier);
+      setAdminUsers((prev) =>
+        prev.map((entry) =>
+          entry.id === item.id
+            ? {
+                ...entry,
+                subscriptionTier: nextTier,
+                cloudStorageEnabled: nextTier === 'plus',
+              }
+            : entry,
+        ),
+      );
+      if (me?.id === item.id) {
+        updateMe({
+          subscriptionTier: nextTier,
+          cloudStorageEnabled: nextTier === 'plus',
+        });
+        await loadChats({ silent: true });
+      }
+      pushSnackbar({
+        message: nextTier === 'plus' ? 'Подписка + включена' : 'Обычный статус включён',
+        timeout: 2200,
+        tone: 'success',
+      });
+    } catch (error: any) {
+      pushSnackbar({
+        message: error?.response?.data?.error || 'Не удалось обновить подписку',
+        timeout: 2600,
+        tone: 'error',
+      });
+    } finally {
+      setSubscriptionBusyUserId(null);
     }
   };
 
@@ -664,9 +707,28 @@ export default function AdminPage() {
                   <ListItemText
                     primary={item.fullName || `@${item.username}`}
                     secondary={
-                      item.username
-                        ? `@${item.username}${item.isCreator ? ' • создатель' : ''}`
-                        : (item.isCreator ? 'создатель' : '')
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                        <Typography variant="body2" color="text.secondary">
+                          {item.username
+                            ? `@${item.username}${item.isCreator ? ' • создатель' : ''}`
+                            : (item.isCreator ? 'создатель' : '')}
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant={item.subscriptionTier === 'plus' ? 'contained' : 'outlined'}
+                          disabled={subscriptionBusyUserId === item.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void toggleUserSubscription(item);
+                          }}
+                        >
+                          {subscriptionBusyUserId === item.id
+                            ? '...'
+                            : item.subscriptionTier === 'plus'
+                              ? 'Подписка +'
+                              : 'Обычный'}
+                        </Button>
+                      </Stack>
                     }
                   />
                 </ListItemButton>

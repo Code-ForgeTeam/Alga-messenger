@@ -155,6 +155,8 @@ export const notificationsApi = {
 export const adminApi = {
   getOverview: async () => (await api.get('/admin/overview')).data,
   getUsers: async () => (await api.get('/admin/users')).data,
+  updateUserSubscription: async (userId: string, subscriptionTier: 'basic' | 'plus') =>
+    (await api.put('/admin/users/subscription', { userId, subscriptionTier })).data,
   clearAllChats: async () => (await api.post('/admin/clear-chats')).data,
   clearAllMessages: async () => (await api.post('/admin/clear-messages')).data,
   clearAllContent: async () => (await api.post('/admin/clear-content')).data,
