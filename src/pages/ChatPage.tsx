@@ -682,6 +682,11 @@ export default function ChatPage() {
       return;
     }
     const arr = Array.from(list);
+    openMediaComposer(arr);
+  };
+
+  const openMediaComposer = (arr: File[]) => {
+    if (!arr.length) return;
     setMediaComposerFiles(arr);
     setMediaComposerOpen(true);
     setMediaPickerOpen(false);
@@ -723,10 +728,7 @@ export default function ChatPage() {
       return;
     }
     const arr = Array.from(list);
-    setMediaComposerFiles(arr);
-    setMediaComposerOpen(true);
-    setMediaPickerOpen(false);
-    resetMediaInputs();
+    openMediaComposer(arr);
   };
 
   const closeMediaComposer = () => {
@@ -1025,7 +1027,7 @@ export default function ChatPage() {
       }
 
       setMediaPickerThumbs((prev) => [...thumbs, ...prev].slice(0, 24));
-      await appendAndUploadFiles(filesFromGallery);
+      openMediaComposer(filesFromGallery);
     } catch {
       pushSnackbar({ message: 'Не удалось открыть галерею', timeout: 2200, tone: 'error' });
     } finally {
@@ -1157,7 +1159,7 @@ export default function ChatPage() {
       }
       const file = await fileFromWebPath(sourcePath, `camera-${Date.now()}`);
       setMediaPickerThumbs((prev) => [sourcePath, ...prev].slice(0, 24));
-      await appendAndUploadFiles([file]);
+      openMediaComposer([file]);
     } catch {
       pushSnackbar({ message: 'Не удалось сделать снимок', timeout: 2200, tone: 'error' });
     } finally {
@@ -1172,7 +1174,7 @@ export default function ChatPage() {
       if (item.previewUrl) {
         setMediaPickerThumbs((prev) => [item.previewUrl, ...prev].slice(0, 24));
       }
-      await appendAndUploadFiles([file]);
+      openMediaComposer([file]);
     } catch {
       pushSnackbar({ message: 'Не удалось добавить фото', timeout: 2200, tone: 'error' });
     } finally {

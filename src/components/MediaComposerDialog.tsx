@@ -18,6 +18,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import CropRoundedIcon from '@mui/icons-material/CropRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import RotateLeftRoundedIcon from '@mui/icons-material/RotateLeftRounded';
 import RotateRightRoundedIcon from '@mui/icons-material/RotateRightRounded';
 import TextFieldsRoundedIcon from '@mui/icons-material/TextFieldsRounded';
@@ -27,6 +28,7 @@ import { trimVideoWithFfmpeg } from '../lib/videoTrim';
 
 type CropPreset = 'original' | 'square' | 'portrait' | 'wide';
 type ToolMode = 'draw' | 'arrow' | 'blur' | 'text';
+type ComposerViewMode = 'preview' | 'edit';
 
 type MediaComposerDialogProps = {
   open: boolean;
@@ -40,6 +42,13 @@ type MediaComposerDialogProps = {
 type NormalizedPoint = {
   x: number;
   y: number;
+};
+
+type CropRect = {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
 };
 
 type OverlayStroke = {
@@ -143,7 +152,7 @@ const loadVideoMetadata = (url: string): Promise<{ width: number; height: number
 const getRotatedDimensions = (width: number, height: number, rotation: number) =>
   rotation % 180 === 0 ? { width, height } : { width: height, height: width };
 
-const getCropRect = (width: number, height: number, preset: CropPreset) => {
+const getCropRect = (width: number, height: number, preset: CropPreset): CropRect => {
   if (preset === 'original') return { sx: 0, sy: 0, sw: width, sh: height };
 
   const targetRatio = preset === 'square' ? 1 : preset === 'portrait' ? 4 / 5 : 16 / 9;
@@ -189,28 +198,64 @@ const toolButtonSx = (active: boolean, theme: Theme) => ({
   px: 1.2,
   borderRadius: 999,
   border: '1px solid',
-  borderColor: active ? 'rgba(255,88,80,0.8)' : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+  borderColor: active
+    ? 'rgba(255,88,80,0.8)'
+    : theme.palette.mode === 'dark'
+      ? 'rgba(255,255,255,0.12)'
+      : 'rgba(0,0,0,0.1)',
   bgcolor: active ? 'rgba(255,88,80,0.14)' : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.04)' : '#fff',
   color: '#fff',
   flexShrink: 0,
 });
 
-const drawStrokePath = (ctx: CanvasRenderingContext2D, stroke: OverlayStroke, width: number, height: number) => {
+const toDisplayPoint = (
+  point: NormalizedPoint,
+  sourceWidth: number,
+  sourceHeight: number,
+  cropRect?: CropRect | null,
+): NormalizedPoint => {
+  if (!cropRect) return point;
+  return {
+    x: (point.x * sourceWidth - cropRect.sx) / Math.max(cropRect.sw, 1),
+    y: (point.y * sourceHeight - cropRect.sy) / Math.max(cropRect.sh, 1),
+  };
+};
+
+const drawStrokePath = (
+  ctx: CanvasRenderingContext2D,
+  stroke: OverlayStroke,
+  width: number,
+  height: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  cropRect?: CropRect | null,
+) => {
   if (stroke.points.length < 2) return;
   ctx.beginPath();
   stroke.points.forEach((point, index) => {
-    const x = point.x * width;
-    const y = point.y * height;
+    const mapped = toDisplayPoint(point, sourceWidth, sourceHeight, cropRect);
+    const x = mapped.x * width;
+    const y = mapped.y * height;
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
 };
 
-const drawArrow = (ctx: CanvasRenderingContext2D, overlay: ArrowOverlay, width: number, height: number) => {
-  const startX = overlay.start.x * width;
-  const startY = overlay.start.y * height;
-  const endX = overlay.end.x * width;
-  const endY = overlay.end.y * height;
+const drawArrow = (
+  ctx: CanvasRenderingContext2D,
+  overlay: ArrowOverlay,
+  width: number,
+  height: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  cropRect?: CropRect | null,
+) => {
+  const start = toDisplayPoint(overlay.start, sourceWidth, sourceHeight, cropRect);
+  const end = toDisplayPoint(overlay.end, sourceWidth, sourceHeight, cropRect);
+  const startX = start.x * width;
+  const startY = start.y * height;
+  const endX = end.x * width;
+  const endY = end.y * height;
   const angle = Math.atan2(endY - startY, endX - startX);
   const headLength = Math.max(10, overlay.size * 2.8);
 
@@ -230,9 +275,18 @@ const drawArrow = (ctx: CanvasRenderingContext2D, overlay: ArrowOverlay, width: 
   ctx.fill();
 };
 
-const drawTextOverlay = (ctx: CanvasRenderingContext2D, overlay: TextOverlay, width: number, height: number) => {
-  const x = overlay.point.x * width;
-  const y = overlay.point.y * height;
+const drawTextOverlay = (
+  ctx: CanvasRenderingContext2D,
+  overlay: TextOverlay,
+  width: number,
+  height: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  cropRect?: CropRect | null,
+) => {
+  const point = toDisplayPoint(overlay.point, sourceWidth, sourceHeight, cropRect);
+  const x = point.x * width;
+  const y = point.y * height;
   ctx.font = `${overlay.weight} ${overlay.size}px "Segoe UI", sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -249,6 +303,9 @@ const renderImageOverlayCanvas = (
   rectWidth: number,
   rectHeight: number,
   state: ImageEditorState,
+  sourceWidth: number,
+  sourceHeight: number,
+  cropRect?: CropRect | null,
 ) => {
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
   const width = Math.max(1, Math.round(rectWidth));
@@ -270,7 +327,7 @@ const renderImageOverlayCanvas = (
   state.drawStrokes.forEach((stroke) => {
     ctx.strokeStyle = stroke.color;
     ctx.lineWidth = stroke.size;
-    drawStrokePath(ctx, stroke, width, height);
+    drawStrokePath(ctx, stroke, width, height, sourceWidth, sourceHeight, cropRect);
     ctx.stroke();
   });
 
@@ -279,12 +336,12 @@ const renderImageOverlayCanvas = (
     ctx.strokeStyle = 'rgba(255,255,255,0.26)';
     ctx.lineWidth = stroke.size * 1.7;
     ctx.filter = `blur(${Math.max(6, stroke.size * 1.1)}px)`;
-    drawStrokePath(ctx, stroke, width, height);
+    drawStrokePath(ctx, stroke, width, height, sourceWidth, sourceHeight, cropRect);
     ctx.stroke();
     ctx.restore();
   });
 
-  state.arrows.forEach((overlay) => drawArrow(ctx, overlay, width, height));
+  state.arrows.forEach((overlay) => drawArrow(ctx, overlay, width, height, sourceWidth, sourceHeight, cropRect));
 };
 
 const resolveRecorderMimeType = (): string => {
@@ -355,7 +412,7 @@ const trimVideoFile = async (
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: mimeType });
         if (!blob.size) {
-          reject(new Error('VIDEO_RECORD_EMPTY'));
+          reject(new Error('VIDEO_EXPORT_EMPTY'));
           return;
         }
         const baseName = file.name.replace(/\.[^.]+$/, '') || 'video';
@@ -471,29 +528,14 @@ const exportEditedImageFile = async (
   });
 
   state.arrows.forEach((overlay) => {
-    drawArrow(outputCtx, {
-      ...overlay,
-      start: {
-        x: (overlay.start.x * rotatedCanvas.width - crop.sx) / Math.max(outputCanvas.width, 1),
-        y: (overlay.start.y * rotatedCanvas.height - crop.sy) / Math.max(outputCanvas.height, 1),
-      },
-      end: {
-        x: (overlay.end.x * rotatedCanvas.width - crop.sx) / Math.max(outputCanvas.width, 1),
-        y: (overlay.end.y * rotatedCanvas.height - crop.sy) / Math.max(outputCanvas.height, 1),
-      },
-      size: overlay.size * (outputCanvas.width / Math.max(rotatedCanvas.width, 1)),
-    }, outputCanvas.width, outputCanvas.height);
+    drawArrow(outputCtx, overlay, outputCanvas.width, outputCanvas.height, rotatedCanvas.width, rotatedCanvas.height, crop);
   });
 
   state.texts.forEach((overlay) => {
     drawTextOverlay(outputCtx, {
       ...overlay,
       size: overlay.size * (outputCanvas.width / Math.max(rotatedCanvas.width, 1)),
-      point: {
-        x: (overlay.point.x * rotatedCanvas.width - crop.sx) / Math.max(outputCanvas.width, 1),
-        y: (overlay.point.y * rotatedCanvas.height - crop.sy) / Math.max(outputCanvas.height, 1),
-      },
-    }, outputCanvas.width, outputCanvas.height);
+    }, outputCanvas.width, outputCanvas.height, rotatedCanvas.width, rotatedCanvas.height, crop);
   });
 
   const mimeType = file.type.includes('png') || file.type.includes('webp') || file.type.includes('gif')
@@ -522,6 +564,17 @@ const formatSeconds = (value: number): string => {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
 
+const hasImageEdits = (state: ImageEditorState): boolean =>
+  state.rotation !== 0 ||
+  state.cropPreset !== 'original' ||
+  state.drawStrokes.length > 0 ||
+  state.blurStrokes.length > 0 ||
+  state.arrows.length > 0 ||
+  state.texts.length > 0;
+
+const hasVideoEdits = (state: VideoEditorState): boolean =>
+  (state.trimEnd > 0 && state.trimEnd < state.duration - 0.05) || state.trimStart > 0.05;
+
 export function MediaComposerDialog({
   open,
   files,
@@ -533,6 +586,7 @@ export function MediaComposerDialog({
   const [draftFiles, setDraftFiles] = useState<File[]>([]);
   const [caption, setCaption] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [viewMode, setViewMode] = useState<ComposerViewMode>('preview');
   const [toolMode, setToolMode] = useState<ToolMode>('draw');
   const [brushColor, setBrushColor] = useState<(typeof BRUSH_COLORS)[number]>('#FF3B30');
   const [brushSize, setBrushSize] = useState(5);
@@ -558,6 +612,7 @@ export function MediaComposerDialog({
     setDraftFiles(files);
     setCaption(initialCaption);
     setCurrentIndex(0);
+    setViewMode('preview');
     setToolMode('draw');
     setBrushColor('#FF3B30');
     setBrushSize(5);
@@ -568,10 +623,8 @@ export function MediaComposerDialog({
 
   const previewUrls = useMemo(() => draftFiles.map((file) => URL.createObjectURL(file)), [draftFiles]);
 
-  useEffect(() => {
-    return () => {
-      previewUrls.forEach((url) => URL.revokeObjectURL(url));
-    };
+  useEffect(() => () => {
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
   }, [previewUrls]);
 
   const currentFile = draftFiles[currentIndex] || null;
@@ -579,6 +632,13 @@ export function MediaComposerDialog({
   const currentEditor = editorStates[currentIndex];
   const currentImageState = currentEditor?.kind === 'image' ? currentEditor : null;
   const currentVideoState = currentEditor?.kind === 'video' ? currentEditor : null;
+  const canEditCurrentFile = Boolean(currentImageState || currentVideoState);
+
+  useEffect(() => {
+    if (viewMode === 'edit' && !canEditCurrentFile) {
+      setViewMode('preview');
+    }
+  }, [canEditCurrentFile, viewMode]);
 
   useEffect(() => {
     if (!open || !surfaceRef.current) return;
@@ -644,9 +704,20 @@ export function MediaComposerDialog({
     return getRotatedDimensions(currentMediaSize.width, currentMediaSize.height, currentImageState.rotation);
   }, [currentImageState, currentMediaSize]);
 
+  const previewCropRect = useMemo(() => {
+    if (!currentImageState || viewMode !== 'preview') return null;
+    if (currentImageState.cropPreset === 'original') return null;
+    return getCropRect(rotatedMediaSize.width, rotatedMediaSize.height, currentImageState.cropPreset);
+  }, [currentImageState, rotatedMediaSize, viewMode]);
+
+  const displayMediaSize = useMemo(() => {
+    if (!previewCropRect) return rotatedMediaSize;
+    return { width: previewCropRect.sw, height: previewCropRect.sh };
+  }, [previewCropRect, rotatedMediaSize]);
+
   const stageRect = useMemo(
-    () => getContainedRect(rotatedMediaSize.width || 1, rotatedMediaSize.height || 1, surfaceSize.width || 1, surfaceSize.height || 1),
-    [rotatedMediaSize, surfaceSize],
+    () => getContainedRect(displayMediaSize.width || 1, displayMediaSize.height || 1, surfaceSize.width || 1, surfaceSize.height || 1),
+    [displayMediaSize, surfaceSize],
   );
 
   useEffect(() => {
@@ -656,6 +727,28 @@ export function MediaComposerDialog({
         const image = await loadImage(currentPreviewUrl);
         const canvas = previewCanvasRef.current;
         if (!canvas) return;
+
+        const rotated = getRotatedDimensions(image.naturalWidth, image.naturalHeight, currentImageState.rotation);
+        const rotatedCanvas = document.createElement('canvas');
+        rotatedCanvas.width = Math.max(1, Math.round(rotated.width));
+        rotatedCanvas.height = Math.max(1, Math.round(rotated.height));
+        const rotatedCtx = rotatedCanvas.getContext('2d');
+        if (!rotatedCtx) return;
+
+        rotatedCtx.save();
+        if (currentImageState.rotation === 90) {
+          rotatedCtx.translate(rotatedCanvas.width, 0);
+          rotatedCtx.rotate(Math.PI / 2);
+        } else if (currentImageState.rotation === 180) {
+          rotatedCtx.translate(rotatedCanvas.width, rotatedCanvas.height);
+          rotatedCtx.rotate(Math.PI);
+        } else if (currentImageState.rotation === 270) {
+          rotatedCtx.translate(0, rotatedCanvas.height);
+          rotatedCtx.rotate(-Math.PI / 2);
+        }
+        rotatedCtx.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight);
+        rotatedCtx.restore();
+
         const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
         const width = Math.max(1, Math.round(stageRect.width));
         const height = Math.max(1, Math.round(stageRect.height));
@@ -667,35 +760,39 @@ export function MediaComposerDialog({
         if (!ctx) return;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, width, height);
-        ctx.save();
-        const rotation = currentImageState.rotation;
-        if (rotation === 90) {
-          ctx.translate(width, 0);
-          ctx.rotate(Math.PI / 2);
-          ctx.drawImage(image, 0, 0, height, width);
-        } else if (rotation === 180) {
-          ctx.translate(width, height);
-          ctx.rotate(Math.PI);
-          ctx.drawImage(image, 0, 0, width, height);
-        } else if (rotation === 270) {
-          ctx.translate(0, height);
-          ctx.rotate(-Math.PI / 2);
-          ctx.drawImage(image, 0, 0, height, width);
-        } else {
-          ctx.drawImage(image, 0, 0, width, height);
-        }
-        ctx.restore();
+
+        const drawCrop = previewCropRect ?? { sx: 0, sy: 0, sw: rotatedCanvas.width, sh: rotatedCanvas.height };
+        ctx.drawImage(
+          rotatedCanvas,
+          drawCrop.sx,
+          drawCrop.sy,
+          drawCrop.sw,
+          drawCrop.sh,
+          0,
+          0,
+          width,
+          height,
+        );
       } catch {
         // ignore preview draw errors
       }
     };
     void draw();
-  }, [currentImageState, currentPreviewUrl, stageRect]);
+  }, [currentImageState, currentPreviewUrl, previewCropRect, stageRect]);
 
   useEffect(() => {
-    if (!currentImageState || !overlayCanvasRef.current) return;
-    renderImageOverlayCanvas(overlayCanvasRef.current, stageRect.width, stageRect.height, currentImageState);
-  }, [currentImageState, stageRect]);
+    const canvas = overlayCanvasRef.current;
+    if (!currentImageState || !canvas) return;
+    renderImageOverlayCanvas(
+      canvas,
+      stageRect.width,
+      stageRect.height,
+      currentImageState,
+      rotatedMediaSize.width,
+      rotatedMediaSize.height,
+      previewCropRect,
+    );
+  }, [currentImageState, previewCropRect, rotatedMediaSize, stageRect]);
 
   const updateCurrentEditor = (updater: (state: FileEditorState) => FileEditorState) => {
     setEditorStates((prev) => prev.map((item, index) => (index === currentIndex ? updater(item) : item)));
@@ -718,7 +815,7 @@ export function MediaComposerDialog({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!currentImageState) return;
+    if (!currentImageState || viewMode !== 'edit') return;
     const point = normalizePoint(event);
     if (!point) return;
     if (toolMode === 'text') {
@@ -764,7 +861,7 @@ export function MediaComposerDialog({
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!pointerDrawingRef.current || !currentImageState) return;
+    if (!pointerDrawingRef.current || !currentImageState || viewMode !== 'edit') return;
     const point = normalizePoint(event);
     if (!point) return;
 
@@ -858,29 +955,17 @@ export function MediaComposerDialog({
         const editor = editorStates[index];
         const previewUrl = previewUrls[index];
 
-        if (editor?.kind === 'image' && previewUrl) {
-          const hasImageEdits =
-            editor.rotation !== 0 ||
-            editor.cropPreset !== 'original' ||
-            editor.drawStrokes.length > 0 ||
-            editor.blurStrokes.length > 0 ||
-            editor.arrows.length > 0 ||
-            editor.texts.length > 0;
-          if (hasImageEdits) {
-            finalFiles.push(await exportEditedImageFile(file, previewUrl, editor));
-            continue;
-          }
+        if (editor?.kind === 'image' && previewUrl && hasImageEdits(editor)) {
+          finalFiles.push(await exportEditedImageFile(file, previewUrl, editor));
+          continue;
         }
 
-        if (editor?.kind === 'video') {
-          const trimNeeded = editor.trimEnd > 0 && editor.trimEnd < editor.duration - 0.05 || editor.trimStart > 0.05;
-          if (trimNeeded) {
-            setVideoProcessingState({ active: true, progress: 0.02, message: 'Подготовка видео...' });
-            finalFiles.push(await trimVideoFile(file, editor.trimStart, editor.trimEnd, (progress, message) => {
-              setVideoProcessingState({ active: true, progress, message });
-            }));
-            continue;
-          }
+        if (editor?.kind === 'video' && hasVideoEdits(editor)) {
+          setVideoProcessingState({ active: true, progress: 0.02, message: 'Подготовка видео...' });
+          finalFiles.push(await trimVideoFile(file, editor.trimStart, editor.trimEnd, (progress, message) => {
+            setVideoProcessingState({ active: true, progress, message });
+          }));
+          continue;
         }
 
         finalFiles.push(file);
@@ -893,6 +978,8 @@ export function MediaComposerDialog({
   };
 
   const currentImageHasHistory = Boolean(currentImageState?.history.length);
+  const currentImageHasEdits = Boolean(currentImageState && hasImageEdits(currentImageState));
+  const currentVideoHasEdits = Boolean(currentVideoState && hasVideoEdits(currentVideoState));
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} fullScreen>
@@ -920,11 +1007,24 @@ export function MediaComposerDialog({
             <CloseRoundedIcon />
           </IconButton>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontWeight: 800, fontSize: 18 }}>Редактор медиа</Typography>
+            <Typography sx={{ fontWeight: 800, fontSize: 18 }}>
+              {viewMode === 'edit' ? 'Редактирование' : 'Предпросмотр'}
+            </Typography>
             <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>
               {draftFiles.length} файл(ов)
             </Typography>
           </Box>
+          {canEditCurrentFile && (
+            <Button
+              variant="text"
+              onClick={() => setViewMode((prev) => (prev === 'edit' ? 'preview' : 'edit'))}
+              disabled={busy}
+              startIcon={viewMode === 'edit' ? <DoneRoundedIcon /> : <EditRoundedIcon />}
+              sx={{ color: '#fff', borderRadius: 999, px: 1.1 }}
+            >
+              {viewMode === 'edit' ? 'Готово' : 'Изменить'}
+            </Button>
+          )}
           <Button
             variant="contained"
             disableElevation
@@ -962,14 +1062,16 @@ export function MediaComposerDialog({
                   top: stageRect.y,
                   width: stageRect.width,
                   height: stageRect.height,
+                  overflow: 'hidden',
+                  borderRadius: 2.5,
                 }}
               >
                 <Box
                   component="canvas"
                   ref={previewCanvasRef}
-                  sx={{ width: '100%', height: '100%', display: 'block', borderRadius: 2.5 }}
+                  sx={{ width: '100%', height: '100%', display: 'block' }}
                 />
-                {!!currentImageState && currentImageState.cropPreset !== 'original' && (
+                {viewMode === 'edit' && !!currentImageState && currentImageState.cropPreset !== 'original' && (
                   <Box
                     sx={{
                       pointerEvents: 'none',
@@ -990,28 +1092,31 @@ export function MediaComposerDialog({
                     }}
                   />
                 )}
-                {currentImageState?.texts.map((item, index) => (
-                  <Box
-                    key={`${item.text}-${index}`}
-                    sx={{
-                      position: 'absolute',
-                      left: `${item.point.x * 100}%`,
-                      top: `${item.point.y * 100}%`,
-                      transform: 'translate(-50%, -50%)',
-                      color: item.color,
-                      fontWeight: item.weight,
-                      fontSize: item.size,
-                      textShadow: '0 2px 6px rgba(0,0,0,0.42)',
-                      userSelect: 'none',
-                      textAlign: 'center',
-                      maxWidth: '80%',
-                      whiteSpace: 'pre-wrap',
-                      overflowWrap: 'anywhere',
-                    }}
-                  >
-                    {item.text}
-                  </Box>
-                ))}
+                {currentImageState?.texts.map((item, index) => {
+                  const point = toDisplayPoint(item.point, rotatedMediaSize.width, rotatedMediaSize.height, previewCropRect);
+                  return (
+                    <Box
+                      key={`${item.text}-${index}`}
+                      sx={{
+                        position: 'absolute',
+                        left: `${point.x * 100}%`,
+                        top: `${point.y * 100}%`,
+                        transform: 'translate(-50%, -50%)',
+                        color: item.color,
+                        fontWeight: item.weight,
+                        fontSize: item.size,
+                        textShadow: '0 2px 6px rgba(0,0,0,0.42)',
+                        userSelect: 'none',
+                        textAlign: 'center',
+                        maxWidth: '80%',
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
+                      {item.text}
+                    </Box>
+                  );
+                })}
                 <Box
                   component="canvas"
                   ref={overlayCanvasRef}
@@ -1023,8 +1128,9 @@ export function MediaComposerDialog({
                   sx={{
                     position: 'absolute',
                     inset: 0,
-                    cursor: toolMode === 'text' ? 'copy' : 'crosshair',
-                    touchAction: 'none',
+                    cursor: viewMode === 'edit' ? (toolMode === 'text' ? 'copy' : 'crosshair') : 'default',
+                    touchAction: viewMode === 'edit' ? 'none' : 'auto',
+                    pointerEvents: viewMode === 'edit' ? 'auto' : 'none',
                   }}
                 />
               </Box>
@@ -1137,7 +1243,30 @@ export function MediaComposerDialog({
               backdropFilter: 'blur(18px)',
             }}
           >
-            {!!currentImageState && (
+            {viewMode === 'preview' && (
+              <Stack direction="row" spacing={0.8} sx={{ mb: 1, overflowX: 'auto', pb: 0.2 }}>
+                {canEditCurrentFile && (
+                  <Button startIcon={<EditRoundedIcon />} onClick={() => setViewMode('edit')} sx={(theme) => toolButtonSx(false, theme)}>
+                    {currentImageState ? 'Редактировать фото' : 'Обрезать видео'}
+                  </Button>
+                )}
+                <Button startIcon={<DeleteOutlineRoundedIcon />} onClick={removeCurrentFile} sx={(theme) => toolButtonSx(false, theme)}>
+                  Убрать
+                </Button>
+                {currentImageHasEdits && (
+                  <Button disabled sx={(theme) => toolButtonSx(true, theme)}>
+                    Изменено
+                  </Button>
+                )}
+                {currentVideoHasEdits && (
+                  <Button disabled sx={(theme) => toolButtonSx(true, theme)}>
+                    Клип изменён
+                  </Button>
+                )}
+              </Stack>
+            )}
+
+            {!!currentImageState && viewMode === 'edit' && (
               <>
                 <Stack direction="row" spacing={0.8} sx={{ mb: 1, overflowX: 'auto', pb: 0.3 }}>
                   <Button
@@ -1221,7 +1350,9 @@ export function MediaComposerDialog({
                       }}
                     />
                   ))}
-                  <Typography sx={{ minWidth: 96, fontSize: 13 }}>{toolMode === 'text' ? 'Размер текста' : 'Размер кисти'}</Typography>
+                  <Typography sx={{ minWidth: 96, fontSize: 13 }}>
+                    {toolMode === 'text' ? 'Размер текста' : 'Размер кисти'}
+                  </Typography>
                   <Box sx={{ width: 132, px: 0.5 }}>
                     <Slider
                       min={toolMode === 'text' ? 14 : 2}
@@ -1260,7 +1391,7 @@ export function MediaComposerDialog({
               </>
             )}
 
-            {!!currentVideoState && (
+            {!!currentVideoState && viewMode === 'edit' && (
               <Stack spacing={1} sx={{ mb: 1.1 }}>
                 <Typography sx={{ fontWeight: 700 }}>Видео</Typography>
                 <Typography sx={{ fontSize: 13, color: 'rgba(255,255,255,0.72)' }}>
