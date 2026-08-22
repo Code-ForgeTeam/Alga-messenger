@@ -7,6 +7,7 @@ import {
   Slider,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded';
@@ -27,7 +28,7 @@ import type { Theme } from '@mui/material/styles';
 import { trimVideoWithFfmpeg } from '../lib/videoTrim';
 
 type CropPreset = 'original' | 'square' | 'portrait' | 'wide';
-type ToolMode = 'draw' | 'arrow' | 'blur' | 'text';
+type ToolMode = 'crop' | 'draw' | 'arrow' | 'blur' | 'text';
 type ComposerViewMode = 'preview' | 'edit';
 
 type MediaComposerDialogProps = {
@@ -42,6 +43,13 @@ type MediaComposerDialogProps = {
 type NormalizedPoint = {
   x: number;
   y: number;
+};
+
+type NormalizedCropRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 type CropRect = {
@@ -77,6 +85,7 @@ type HistoryEntry = 'draw' | 'blur' | 'arrow' | 'text';
 type ImageEditorState = {
   kind: 'image';
   cropPreset: CropPreset;
+  cropRect: NormalizedCropRect | null;
   rotation: 0 | 90 | 180 | 270;
   drawStrokes: OverlayStroke[];
   blurStrokes: OverlayStroke[];
@@ -95,6 +104,12 @@ type VideoEditorState = {
 
 type FileEditorState = ImageEditorState | VideoEditorState | { kind: 'file' };
 
+type CropInteraction = {
+  mode: 'move' | 'nw' | 'ne' | 'sw' | 'se';
+  startPoint: NormalizedPoint;
+  startRect: NormalizedCropRect;
+};
+
 const BRUSH_COLORS = ['#FF3B30', '#FF9500', '#FFD60A', '#34C759', '#0A84FF', '#FFFFFF'] as const;
 const VIDEO_TRIM_MIN_SECONDS = 0.4;
 
@@ -104,6 +119,7 @@ const isVideoFile = (file?: File | null): boolean => Boolean(file?.type.startsWi
 const createImageEditorState = (): ImageEditorState => ({
   kind: 'image',
   cropPreset: 'original',
+  cropRect: null,
   rotation: 0,
   drawStrokes: [],
   blurStrokes: [],
@@ -193,19 +209,80 @@ const cropLabel = (preset: CropPreset): string => {
   return 'Оригинал';
 };
 
+const getNormalizedCropRect = (width: number, height: number, preset: CropPreset): NormalizedCropRect => {
+  const crop = getCropRect(width, height, preset);
+  return {
+    x: crop.sx / Math.max(width, 1),
+    y: crop.sy / Math.max(height, 1),
+    width: crop.sw / Math.max(width, 1),
+    height: crop.sh / Math.max(height, 1),
+  };
+};
+
+const getCropRectFromNormalized = (
+  width: number,
+  height: number,
+  rect: NormalizedCropRect,
+): CropRect => ({
+  sx: rect.x * width,
+  sy: rect.y * height,
+  sw: rect.width * width,
+  sh: rect.height * height,
+});
+
+const clampNormalizedCropRect = (
+  rect: NormalizedCropRect,
+  minSize = 0.08,
+): NormalizedCropRect => {
+  const width = Math.min(1, Math.max(minSize, rect.width));
+  const height = Math.min(1, Math.max(minSize, rect.height));
+  return {
+    x: Math.min(1 - width, Math.max(0, rect.x)),
+    y: Math.min(1 - height, Math.max(0, rect.y)),
+    width,
+    height,
+  };
+};
+
 const toolButtonSx = (active: boolean, theme: Theme) => ({
-  minHeight: 34,
-  px: 1.2,
+  minHeight: 38,
+  px: 1.35,
   borderRadius: 999,
   border: '1px solid',
-  borderColor: active
-    ? 'rgba(255,88,80,0.8)'
-    : theme.palette.mode === 'dark'
-      ? 'rgba(255,255,255,0.12)'
-      : 'rgba(0,0,0,0.1)',
-  bgcolor: active ? 'rgba(255,88,80,0.14)' : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.04)' : '#fff',
-  color: '#fff',
+  borderColor: active ? '#FF4B3E' : '#E7E7E7',
+  bgcolor: active ? '#FFF0EE' : '#FFFFFF',
+  color: '#252525',
   flexShrink: 0,
+  textTransform: 'none',
+  '&:hover': {
+    bgcolor: active ? '#FFE5E1' : '#F7F7F7',
+  },
+  '&.Mui-disabled': {
+    color: '#AAAAAA',
+    borderColor: '#EEEEEE',
+    bgcolor: '#FAFAFA',
+  },
+});
+
+const roundToolButtonSx = (active: boolean) => ({
+  width: 44,
+  height: 44,
+  minWidth: 44,
+  borderRadius: '50%',
+  color: '#252525',
+  border: '1px solid',
+  borderColor: active ? '#FF4B3E' : '#E7E7E7',
+  bgcolor: active ? '#FFF0EE' : '#FFFFFF',
+  flexShrink: 0,
+  transition: 'background-color 180ms ease, border-color 180ms ease',
+  '&:hover': {
+    bgcolor: active ? '#FFE5E1' : '#F7F7F7',
+  },
+  '&.Mui-disabled': {
+    color: '#B8B8B8',
+    borderColor: '#EEEEEE',
+    bgcolor: '#FAFAFA',
+  },
 });
 
 const toDisplayPoint = (
@@ -221,6 +298,19 @@ const toDisplayPoint = (
   };
 };
 
+const fromDisplayPoint = (
+  point: NormalizedPoint,
+  sourceWidth: number,
+  sourceHeight: number,
+  cropRect?: CropRect | null,
+): NormalizedPoint => {
+  if (!cropRect) return point;
+  return {
+    x: Math.min(1, Math.max(0, (cropRect.sx + point.x * cropRect.sw) / Math.max(sourceWidth, 1))),
+    y: Math.min(1, Math.max(0, (cropRect.sy + point.y * cropRect.sh) / Math.max(sourceHeight, 1))),
+  };
+};
+
 const drawStrokePath = (
   ctx: CanvasRenderingContext2D,
   stroke: OverlayStroke,
@@ -229,8 +319,18 @@ const drawStrokePath = (
   sourceWidth: number,
   sourceHeight: number,
   cropRect?: CropRect | null,
-) => {
-  if (stroke.points.length < 2) return;
+): boolean => {
+  if (!stroke.points.length) return false;
+
+  if (stroke.points.length === 1) {
+    const mapped = toDisplayPoint(stroke.points[0], sourceWidth, sourceHeight, cropRect);
+    ctx.beginPath();
+    ctx.arc(mapped.x * width, mapped.y * height, Math.max(1, stroke.size / 2), 0, Math.PI * 2);
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+    return false;
+  }
+
   ctx.beginPath();
   stroke.points.forEach((point, index) => {
     const mapped = toDisplayPoint(point, sourceWidth, sourceHeight, cropRect);
@@ -239,6 +339,7 @@ const drawStrokePath = (
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
+  return true;
 };
 
 const drawArrow = (
@@ -327,8 +428,9 @@ const renderImageOverlayCanvas = (
   state.drawStrokes.forEach((stroke) => {
     ctx.strokeStyle = stroke.color;
     ctx.lineWidth = stroke.size;
-    drawStrokePath(ctx, stroke, width, height, sourceWidth, sourceHeight, cropRect);
-    ctx.stroke();
+    if (drawStrokePath(ctx, stroke, width, height, sourceWidth, sourceHeight, cropRect)) {
+      ctx.stroke();
+    }
   });
 
   state.blurStrokes.forEach((stroke) => {
@@ -336,8 +438,9 @@ const renderImageOverlayCanvas = (
     ctx.strokeStyle = 'rgba(255,255,255,0.26)';
     ctx.lineWidth = stroke.size * 1.7;
     ctx.filter = `blur(${Math.max(6, stroke.size * 1.1)}px)`;
-    drawStrokePath(ctx, stroke, width, height, sourceWidth, sourceHeight, cropRect);
-    ctx.stroke();
+    if (drawStrokePath(ctx, stroke, width, height, sourceWidth, sourceHeight, cropRect)) {
+      ctx.stroke();
+    }
     ctx.restore();
   });
 
@@ -487,7 +590,9 @@ const exportEditedImageFile = async (
   rotatedCtx.drawImage(image, 0, 0, image.naturalWidth, image.naturalHeight);
   rotatedCtx.restore();
 
-  const crop = getCropRect(rotatedCanvas.width, rotatedCanvas.height, state.cropPreset);
+  const crop = state.cropRect
+    ? getCropRectFromNormalized(rotatedCanvas.width, rotatedCanvas.height, state.cropRect)
+    : getCropRect(rotatedCanvas.width, rotatedCanvas.height, state.cropPreset);
   const outputCanvas = document.createElement('canvas');
   outputCanvas.width = Math.max(1, Math.round(crop.sw));
   outputCanvas.height = Math.max(1, Math.round(crop.sh));
@@ -567,6 +672,7 @@ const formatSeconds = (value: number): string => {
 const hasImageEdits = (state: ImageEditorState): boolean =>
   state.rotation !== 0 ||
   state.cropPreset !== 'original' ||
+  Boolean(state.cropRect) ||
   state.drawStrokes.length > 0 ||
   state.blurStrokes.length > 0 ||
   state.arrows.length > 0 ||
@@ -602,10 +708,12 @@ export function MediaComposerDialog({
   });
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
   const pointerDrawingRef = useRef(false);
+  const cropInteractionRef = useRef<CropInteraction | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -705,15 +813,20 @@ export function MediaComposerDialog({
   }, [currentImageState, currentMediaSize]);
 
   const previewCropRect = useMemo(() => {
-    if (!currentImageState || viewMode !== 'preview') return null;
+    if (!currentImageState) return null;
+    if (currentImageState.cropRect) {
+      return getCropRectFromNormalized(rotatedMediaSize.width, rotatedMediaSize.height, currentImageState.cropRect);
+    }
     if (currentImageState.cropPreset === 'original') return null;
     return getCropRect(rotatedMediaSize.width, rotatedMediaSize.height, currentImageState.cropPreset);
-  }, [currentImageState, rotatedMediaSize, viewMode]);
+  }, [currentImageState, rotatedMediaSize]);
+
+  const displayCropRect = toolMode === 'crop' ? null : previewCropRect;
 
   const displayMediaSize = useMemo(() => {
-    if (!previewCropRect) return rotatedMediaSize;
-    return { width: previewCropRect.sw, height: previewCropRect.sh };
-  }, [previewCropRect, rotatedMediaSize]);
+    if (!displayCropRect) return rotatedMediaSize;
+    return { width: displayCropRect.sw, height: displayCropRect.sh };
+  }, [displayCropRect, rotatedMediaSize]);
 
   const stageRect = useMemo(
     () => getContainedRect(displayMediaSize.width || 1, displayMediaSize.height || 1, surfaceSize.width || 1, surfaceSize.height || 1),
@@ -761,7 +874,7 @@ export function MediaComposerDialog({
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, width, height);
 
-        const drawCrop = previewCropRect ?? { sx: 0, sy: 0, sw: rotatedCanvas.width, sh: rotatedCanvas.height };
+        const drawCrop = displayCropRect ?? { sx: 0, sy: 0, sw: rotatedCanvas.width, sh: rotatedCanvas.height };
         ctx.drawImage(
           rotatedCanvas,
           drawCrop.sx,
@@ -778,7 +891,7 @@ export function MediaComposerDialog({
       }
     };
     void draw();
-  }, [currentImageState, currentPreviewUrl, previewCropRect, stageRect]);
+  }, [currentImageState, currentPreviewUrl, displayCropRect, stageRect]);
 
   useEffect(() => {
     const canvas = overlayCanvasRef.current;
@@ -790,9 +903,9 @@ export function MediaComposerDialog({
       currentImageState,
       rotatedMediaSize.width,
       rotatedMediaSize.height,
-      previewCropRect,
+      displayCropRect,
     );
-  }, [currentImageState, previewCropRect, rotatedMediaSize, stageRect]);
+  }, [currentImageState, displayCropRect, rotatedMediaSize, stageRect]);
 
   const updateCurrentEditor = (updater: (state: FileEditorState) => FileEditorState) => {
     setEditorStates((prev) => prev.map((item, index) => (index === currentIndex ? updater(item) : item)));
@@ -806,16 +919,106 @@ export function MediaComposerDialog({
     updateCurrentEditor((state) => (state.kind === 'video' ? updater(state) : state));
   };
 
-  const normalizePoint = (event: React.PointerEvent<HTMLCanvasElement>): NormalizedPoint | null => {
-    if (stageRect.width <= 0 || stageRect.height <= 0) return null;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(rect.width, 1)));
-    const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / Math.max(rect.height, 1)));
-    return { x, y };
+  const getStagePoint = (
+    clientX: number,
+    clientY: number,
+    cropRect: CropRect | null,
+  ): NormalizedPoint | null => {
+    const stage = stageRef.current;
+    if (!stage || stageRect.width <= 0 || stageRect.height <= 0) return null;
+    const rect = stage.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(rect.width, 1)));
+    const y = Math.min(1, Math.max(0, (clientY - rect.top) / Math.max(rect.height, 1)));
+    return fromDisplayPoint({ x, y }, rotatedMediaSize.width, rotatedMediaSize.height, cropRect);
+  };
+
+  const normalizePoint = (event: React.PointerEvent<HTMLCanvasElement>): NormalizedPoint | null =>
+    getStagePoint(event.clientX, event.clientY, displayCropRect);
+
+  const cropSelection = useMemo(() => {
+    if (!currentImageState || !rotatedMediaSize.width || !rotatedMediaSize.height) return null;
+    return currentImageState.cropRect
+      ?? getNormalizedCropRect(rotatedMediaSize.width, rotatedMediaSize.height, currentImageState.cropPreset);
+  }, [currentImageState, rotatedMediaSize]);
+
+  const handleCropPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>,
+    mode: CropInteraction['mode'],
+  ) => {
+    if (!currentImageState || viewMode !== 'edit' || toolMode !== 'crop' || !cropSelection) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const point = getStagePoint(event.clientX, event.clientY, null);
+    if (!point) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropInteractionRef.current = { mode, startPoint: point, startRect: cropSelection };
+  };
+
+  const handleCropPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const interaction = cropInteractionRef.current;
+    if (!interaction || !currentImageState || toolMode !== 'crop') return;
+    const point = getStagePoint(event.clientX, event.clientY, null);
+    if (!point) return;
+
+    const dx = point.x - interaction.startPoint.x;
+    const dy = point.y - interaction.startPoint.y;
+    const start = interaction.startRect;
+    const minSize = 0.08;
+    let left = start.x;
+    let top = start.y;
+    let right = start.x + start.width;
+    let bottom = start.y + start.height;
+
+    if (interaction.mode === 'move') {
+      left += dx;
+      right += dx;
+      top += dy;
+      bottom += dy;
+      const width = right - left;
+      const height = bottom - top;
+      left = Math.min(1 - width, Math.max(0, left));
+      top = Math.min(1 - height, Math.max(0, top));
+      right = left + width;
+      bottom = top + height;
+    } else {
+      if (interaction.mode.includes('w')) {
+        left = Math.min(right - minSize, Math.max(0, start.x + dx));
+      }
+      if (interaction.mode.includes('e')) {
+        right = Math.max(left + minSize, Math.min(1, start.x + start.width + dx));
+      }
+      if (interaction.mode.includes('n')) {
+        top = Math.min(bottom - minSize, Math.max(0, start.y + dy));
+      }
+      if (interaction.mode.includes('s')) {
+        bottom = Math.max(top + minSize, Math.min(1, start.y + start.height + dy));
+      }
+    }
+
+    const nextRect = clampNormalizedCropRect({
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    }, minSize);
+
+    updateCurrentImageState((state) => ({
+      ...state,
+      cropRect: nextRect,
+      cropPreset: 'original',
+    }));
+  };
+
+  const handleCropPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    cropInteractionRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!currentImageState || viewMode !== 'edit') return;
+    if (toolMode === 'crop') return;
     const point = normalizePoint(event);
     if (!point) return;
     if (toolMode === 'text') {
@@ -862,6 +1065,7 @@ export function MediaComposerDialog({
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!pointerDrawingRef.current || !currentImageState || viewMode !== 'edit') return;
+    if (toolMode === 'crop') return;
     const point = normalizePoint(event);
     if (!point) return;
 
@@ -916,6 +1120,9 @@ export function MediaComposerDialog({
   const clearCurrentImageEdits = () => {
     updateCurrentImageState((state) => ({
       ...state,
+      cropPreset: 'original',
+      cropRect: null,
+      rotation: 0,
       drawStrokes: [],
       blurStrokes: [],
       arrows: [],
@@ -986,8 +1193,8 @@ export function MediaComposerDialog({
       <Box
         sx={{
           height: '100%',
-          bgcolor: '#0C111D',
-          color: '#fff',
+          bgcolor: '#F8F9FB',
+          color: '#24272D',
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -1000,30 +1207,33 @@ export function MediaComposerDialog({
             display: 'flex',
             alignItems: 'center',
             gap: 1,
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            borderBottom: '1px solid #E9EAEE',
           }}
         >
-          <IconButton onClick={onClose} disabled={busy} sx={{ color: '#fff' }}>
+          <IconButton onClick={onClose} disabled={busy} sx={{ color: '#24272D' }}>
             <CloseRoundedIcon />
           </IconButton>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ fontWeight: 800, fontSize: 18 }}>
               {viewMode === 'edit' ? 'Редактирование' : 'Предпросмотр'}
             </Typography>
-            <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>
+            <Typography sx={{ color: '#7A7F89', fontSize: 13 }}>
               {draftFiles.length} файл(ов)
             </Typography>
           </Box>
           {canEditCurrentFile && (
-            <Button
-              variant="text"
-              onClick={() => setViewMode((prev) => (prev === 'edit' ? 'preview' : 'edit'))}
-              disabled={busy}
-              startIcon={viewMode === 'edit' ? <DoneRoundedIcon /> : <EditRoundedIcon />}
-              sx={{ color: '#fff', borderRadius: 999, px: 1.1 }}
-            >
-              {viewMode === 'edit' ? 'Готово' : 'Изменить'}
-            </Button>
+            <Tooltip title={viewMode === 'edit' ? 'Готово' : 'Редактировать'}>
+              <span>
+                <IconButton
+                  aria-label={viewMode === 'edit' ? 'Готово' : 'Редактировать'}
+                  onClick={() => setViewMode((prev) => (prev === 'edit' ? 'preview' : 'edit'))}
+                  disabled={busy}
+                  sx={roundToolButtonSx(viewMode === 'edit')}
+                >
+                  {viewMode === 'edit' ? <DoneRoundedIcon /> : <EditRoundedIcon />}
+                </IconButton>
+              </span>
+            </Tooltip>
           )}
           <Button
             variant="contained"
@@ -1031,10 +1241,13 @@ export function MediaComposerDialog({
             onClick={() => void handleConfirm()}
             disabled={busy || draftFiles.length === 0}
             sx={{
+              minHeight: 44,
               borderRadius: 999,
               bgcolor: '#FF584F',
               color: '#fff',
-              px: 1.8,
+              px: { xs: 1.45, sm: 1.8 },
+              fontWeight: 800,
+              textTransform: 'none',
               '&:hover': { bgcolor: '#F2443A' },
             }}
           >
@@ -1051,11 +1264,12 @@ export function MediaComposerDialog({
               minHeight: 320,
               overflow: 'hidden',
               background:
-                'radial-gradient(circle at top, rgba(255,88,80,0.18), transparent 40%), linear-gradient(180deg, #151D2D 0%, #0A0F18 100%)',
+                'radial-gradient(circle at 50% 0%, rgba(255,88,80,0.08), transparent 38%), #F4F5F7',
             }}
           >
             {currentFile && isImageFile(currentFile) ? (
               <Box
+                ref={stageRef}
                 sx={{
                   position: 'absolute',
                   left: stageRect.x,
@@ -1063,37 +1277,51 @@ export function MediaComposerDialog({
                   width: stageRect.width,
                   height: stageRect.height,
                   overflow: 'hidden',
-                  borderRadius: 2.5,
+                  borderRadius: { xs: 2.5, sm: 3 },
+                  bgcolor: '#FFFFFF',
+                  boxShadow: '0 16px 48px rgba(26,31,39,0.16)',
                 }}
               >
                 <Box
+                  component="img"
+                  src={currentPreviewUrl}
+                  alt=""
+                  draggable={false}
+                  sx={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    opacity: 1,
+                  }}
+                />
+                <Box
                   component="canvas"
                   ref={previewCanvasRef}
-                  sx={{ width: '100%', height: '100%', display: 'block' }}
+                  sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
                 />
-                {viewMode === 'edit' && !!currentImageState && currentImageState.cropPreset !== 'original' && (
+                {viewMode === 'edit' && !!currentImageState && toolMode !== 'crop' && previewCropRect && (
                   <Box
                     sx={{
                       pointerEvents: 'none',
                       position: 'absolute',
                       inset: 0,
+                      backgroundImage:
+                        'linear-gradient(rgba(255,255,255,0.42) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.42) 1px, transparent 1px)',
+                      backgroundSize: '33.333% 33.333%',
+                      border: '1px solid rgba(255,255,255,0.8)',
                       '&::before': {
                         content: '""',
                         position: 'absolute',
                         inset: 0,
-                        boxShadow: 'inset 0 0 0 9999px rgba(0,0,0,0.38), inset 0 0 0 2px rgba(255,255,255,0.58)',
-                        clipPath:
-                          currentImageState.cropPreset === 'square'
-                            ? 'inset(calc(50% - min(42vw, 160px)) calc(50% - min(42vw, 160px)))'
-                            : currentImageState.cropPreset === 'portrait'
-                              ? 'inset(calc(50% - min(46vw, 200px)) calc(50% - min(36vw, 145px)))'
-                              : 'inset(calc(50% - min(24vw, 96px)) calc(50% - min(43vw, 170px)))',
+                        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.34)',
                       },
                     }}
                   />
                 )}
                 {currentImageState?.texts.map((item, index) => {
-                  const point = toDisplayPoint(item.point, rotatedMediaSize.width, rotatedMediaSize.height, previewCropRect);
+                  const point = toDisplayPoint(item.point, rotatedMediaSize.width, rotatedMediaSize.height, displayCropRect);
                   return (
                     <Box
                       key={`${item.text}-${index}`}
@@ -1133,6 +1361,60 @@ export function MediaComposerDialog({
                     pointerEvents: viewMode === 'edit' ? 'auto' : 'none',
                   }}
                 />
+                {viewMode === 'edit' && toolMode === 'crop' && cropSelection && (
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      inset: 0,
+                      zIndex: 4,
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        left: `${cropSelection.x * 100}%`,
+                        top: `${cropSelection.y * 100}%`,
+                        width: `${cropSelection.width * 100}%`,
+                        height: `${cropSelection.height * 100}%`,
+                        border: '2px solid #FFFFFF',
+                        boxShadow: '0 0 0 9999px rgba(20,24,31,0.54)',
+                        backgroundImage:
+                          'linear-gradient(rgba(255,255,255,0.36) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.36) 1px, transparent 1px)',
+                        backgroundSize: '33.333% 33.333%',
+                        cursor: 'move',
+                        pointerEvents: 'auto',
+                        touchAction: 'none',
+                      }}
+                      onPointerDown={(event) => handleCropPointerDown(event, 'move')}
+                      onPointerMove={handleCropPointerMove}
+                      onPointerUp={handleCropPointerUp}
+                      onPointerCancel={handleCropPointerUp}
+                    >
+                      {([
+                        ['nw', { left: -9, top: -9, cursor: 'nwse-resize' }],
+                        ['ne', { right: -9, top: -9, cursor: 'nesw-resize' }],
+                        ['sw', { left: -9, bottom: -9, cursor: 'nesw-resize' }],
+                        ['se', { right: -9, bottom: -9, cursor: 'nwse-resize' }],
+                      ] as const).map(([mode, position]) => (
+                        <Box
+                          key={mode}
+                          onPointerDown={(event) => handleCropPointerDown(event, mode)}
+                          sx={{
+                            position: 'absolute',
+                            width: 18,
+                            height: 18,
+                            borderRadius: '4px',
+                            bgcolor: '#FFFFFF',
+                            border: '2px solid #FF4B3E',
+                            boxShadow: '0 2px 8px rgba(20,24,31,0.22)',
+                            ...position,
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  </Box>
+                )}
               </Box>
             ) : currentFile && isVideoFile(currentFile) ? (
               <Box
@@ -1163,8 +1445,9 @@ export function MediaComposerDialog({
                       bottom: 16,
                       p: 1.2,
                       borderRadius: 2.5,
-                      bgcolor: 'rgba(8,11,18,0.8)',
-                      border: '1px solid rgba(255,255,255,0.12)',
+                      bgcolor: 'rgba(255,255,255,0.94)',
+                      color: '#24272D',
+                      border: '1px solid #E2E4E8',
                       backdropFilter: 'blur(16px)',
                     }}
                   >
@@ -1176,7 +1459,7 @@ export function MediaComposerDialog({
                         mt: 0.8,
                         height: 6,
                         borderRadius: 999,
-                        bgcolor: 'rgba(255,255,255,0.1)',
+                        bgcolor: '#E6E8EC',
                         overflow: 'hidden',
                       }}
                     >
@@ -1195,7 +1478,7 @@ export function MediaComposerDialog({
             ) : currentFile ? (
               <Stack spacing={1.2} sx={{ px: 2.5, pt: 8, alignItems: 'center', textAlign: 'center' }}>
                 <Typography sx={{ fontWeight: 700, fontSize: 16 }}>{currentFile.name}</Typography>
-                <Typography sx={{ color: 'rgba(255,255,255,0.68)', fontSize: 13 }}>
+                <Typography sx={{ color: '#7A7F89', fontSize: 13 }}>
                   Для этого типа вложения доступен только предпросмотр перед отправкой.
                 </Typography>
               </Stack>
@@ -1211,8 +1494,10 @@ export function MediaComposerDialog({
                     left: 10,
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    color: '#fff',
-                    bgcolor: 'rgba(0,0,0,0.34)',
+                    color: '#24272D',
+                    bgcolor: 'rgba(255,255,255,0.92)',
+                    boxShadow: '0 4px 14px rgba(30,36,45,0.14)',
+                    '&:hover': { bgcolor: '#FFFFFF' },
                   }}
                 >
                   <ArrowBackIosNewRoundedIcon />
@@ -1225,8 +1510,10 @@ export function MediaComposerDialog({
                     right: 10,
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    color: '#fff',
-                    bgcolor: 'rgba(0,0,0,0.34)',
+                    color: '#24272D',
+                    bgcolor: 'rgba(255,255,255,0.92)',
+                    boxShadow: '0 4px 14px rgba(30,36,45,0.14)',
+                    '&:hover': { bgcolor: '#FFFFFF' },
                   }}
                 >
                   <ArrowForwardIosRoundedIcon />
@@ -1238,8 +1525,8 @@ export function MediaComposerDialog({
           <Box
             sx={{
               p: 1.1,
-              borderTop: '1px solid rgba(255,255,255,0.08)',
-              bgcolor: 'rgba(10,14,22,0.96)',
+              borderTop: '1px solid #E9EAEE',
+              bgcolor: 'rgba(255,255,255,0.96)',
               backdropFilter: 'blur(18px)',
             }}
           >
@@ -1271,19 +1558,56 @@ export function MediaComposerDialog({
                 <Stack direction="row" spacing={0.8} sx={{ mb: 1, overflowX: 'auto', pb: 0.3 }}>
                   <Button
                     startIcon={<CropRoundedIcon />}
-                    onClick={() => updateCurrentImageState((state) => ({ ...state, cropPreset: state.cropPreset === 'square' ? 'original' : 'square' }))}
+                    onClick={() => {
+                      setToolMode('crop');
+                      updateCurrentImageState((state) => ({
+                        ...state,
+                        cropRect: state.cropRect ?? getNormalizedCropRect(
+                          rotatedMediaSize.width,
+                          rotatedMediaSize.height,
+                          state.cropPreset,
+                        ),
+                      }));
+                    }}
+                    sx={(theme) => toolButtonSx(toolMode === 'crop', theme)}
+                  >
+                    Свободно
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setToolMode('crop');
+                      updateCurrentImageState((state) => ({
+                        ...state,
+                        cropPreset: state.cropPreset === 'square' ? 'original' : 'square',
+                        cropRect: null,
+                      }));
+                    }}
                     sx={(theme) => toolButtonSx(currentImageState.cropPreset === 'square', theme)}
                   >
                     1:1
                   </Button>
                   <Button
-                    onClick={() => updateCurrentImageState((state) => ({ ...state, cropPreset: state.cropPreset === 'portrait' ? 'original' : 'portrait' }))}
+                    onClick={() => {
+                      setToolMode('crop');
+                      updateCurrentImageState((state) => ({
+                        ...state,
+                        cropPreset: state.cropPreset === 'portrait' ? 'original' : 'portrait',
+                        cropRect: null,
+                      }));
+                    }}
                     sx={(theme) => toolButtonSx(currentImageState.cropPreset === 'portrait', theme)}
                   >
                     4:5
                   </Button>
                   <Button
-                    onClick={() => updateCurrentImageState((state) => ({ ...state, cropPreset: state.cropPreset === 'wide' ? 'original' : 'wide' }))}
+                    onClick={() => {
+                      setToolMode('crop');
+                      updateCurrentImageState((state) => ({
+                        ...state,
+                        cropPreset: state.cropPreset === 'wide' ? 'original' : 'wide',
+                        cropRect: null,
+                      }));
+                    }}
                     sx={(theme) => toolButtonSx(currentImageState.cropPreset === 'wide', theme)}
                   >
                     16:9
@@ -1304,33 +1628,50 @@ export function MediaComposerDialog({
                   </Button>
                 </Stack>
 
-                <Stack direction="row" spacing={0.8} sx={{ mb: 1, overflowX: 'auto', pb: 0.3 }}>
-                  <Button startIcon={<BrushRoundedIcon />} onClick={() => setToolMode('draw')} sx={(theme) => toolButtonSx(toolMode === 'draw', theme)}>
-                    Рисование
-                  </Button>
-                  <Button startIcon={<ArrowOutwardRoundedIcon />} onClick={() => setToolMode('arrow')} sx={(theme) => toolButtonSx(toolMode === 'arrow', theme)}>
-                    Стрелка
-                  </Button>
-                  <Button startIcon={<BlurOnRoundedIcon />} onClick={() => setToolMode('blur')} sx={(theme) => toolButtonSx(toolMode === 'blur', theme)}>
-                    Blur
-                  </Button>
-                  <Button startIcon={<TextFieldsRoundedIcon />} onClick={() => setToolMode('text')} sx={(theme) => toolButtonSx(toolMode === 'text', theme)}>
-                    Текст
-                  </Button>
-                  <Button
-                    startIcon={<UndoRoundedIcon />}
-                    onClick={undoCurrentImageChange}
-                    disabled={!currentImageHasHistory}
-                    sx={(theme) => toolButtonSx(currentImageHasHistory, theme)}
-                  >
-                    Отмена
-                  </Button>
-                  <Button startIcon={<DoneRoundedIcon />} onClick={clearCurrentImageEdits} sx={(theme) => toolButtonSx(false, theme)}>
-                    Сброс
-                  </Button>
-                  <Button startIcon={<DeleteOutlineRoundedIcon />} onClick={removeCurrentFile} sx={(theme) => toolButtonSx(false, theme)}>
-                    Убрать
-                  </Button>
+                <Stack direction="row" spacing={1} sx={{ mb: 1, overflowX: 'auto', pb: 0.3, alignItems: 'center' }}>
+                  <Tooltip title="Кисть">
+                    <IconButton aria-label="Кисть" onClick={() => setToolMode('draw')} sx={roundToolButtonSx(toolMode === 'draw')}>
+                      <BrushRoundedIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Стрелка">
+                    <IconButton aria-label="Стрелка" onClick={() => setToolMode('arrow')} sx={roundToolButtonSx(toolMode === 'arrow')}>
+                      <ArrowOutwardRoundedIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Размытие">
+                    <IconButton aria-label="Размытие" onClick={() => setToolMode('blur')} sx={roundToolButtonSx(toolMode === 'blur')}>
+                      <BlurOnRoundedIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Текст">
+                    <IconButton aria-label="Текст" onClick={() => setToolMode('text')} sx={roundToolButtonSx(toolMode === 'text')}>
+                      <TextFieldsRoundedIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Box sx={{ width: 1, height: 30, bgcolor: '#E2E4E8', flexShrink: 0 }} />
+                  <Tooltip title="Отменить">
+                    <span>
+                      <IconButton
+                        aria-label="Отменить"
+                        onClick={undoCurrentImageChange}
+                        disabled={!currentImageHasHistory}
+                        sx={roundToolButtonSx(currentImageHasHistory)}
+                      >
+                        <UndoRoundedIcon />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Сбросить правки">
+                    <IconButton aria-label="Сбросить правки" onClick={clearCurrentImageEdits} sx={roundToolButtonSx(false)}>
+                      <DoneRoundedIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Убрать файл">
+                    <IconButton aria-label="Убрать файл" onClick={removeCurrentFile} sx={roundToolButtonSx(false)}>
+                      <DeleteOutlineRoundedIcon />
+                    </IconButton>
+                  </Tooltip>
                 </Stack>
 
                 <Stack direction="row" spacing={0.8} sx={{ mb: 1, alignItems: 'center', overflowX: 'auto' }}>
@@ -1347,7 +1688,9 @@ export function MediaComposerDialog({
                         border: brushColor === color ? '2px solid #fff' : '1px solid rgba(255,255,255,0.18)',
                         bgcolor: color,
                         flexShrink: 0,
+                        cursor: 'pointer',
                       }}
+                      aria-label={`Цвет ${color}`}
                     />
                   ))}
                   <Typography sx={{ minWidth: 96, fontSize: 13 }}>
@@ -1375,15 +1718,26 @@ export function MediaComposerDialog({
                     placeholder="Введите текст и тапните по фото, чтобы разместить"
                     value={textOverlayValue}
                     onChange={(event) => setTextOverlayValue(event.target.value)}
+                    inputProps={{ 'aria-label': 'Текст на фото' }}
                     sx={{
                       mb: 1,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 3,
-                        bgcolor: 'rgba(255,255,255,0.06)',
-                        color: '#fff',
+                        bgcolor: '#F5F6F8',
+                        color: '#24272D',
+                      },
+                      '& .MuiOutlinedInput-input::placeholder': {
+                        color: '#8A909B',
+                        opacity: 1,
                       },
                       '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(255,255,255,0.12)',
+                        borderColor: '#E2E4E8',
+                      },
+                      '&:hover .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#C8CBD2',
+                      },
+                      '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#FF584F',
                       },
                     }}
                   />
@@ -1394,7 +1748,7 @@ export function MediaComposerDialog({
             {!!currentVideoState && viewMode === 'edit' && (
               <Stack spacing={1} sx={{ mb: 1.1 }}>
                 <Typography sx={{ fontWeight: 700 }}>Видео</Typography>
-                <Typography sx={{ fontSize: 13, color: 'rgba(255,255,255,0.72)' }}>
+                <Typography sx={{ fontSize: 13, color: '#7A7F89' }}>
                   Обрезка работает в браузере best-effort. На поддерживаемых устройствах клип экспортируется как новый файл.
                 </Typography>
                 <Box>
@@ -1463,14 +1817,25 @@ export function MediaComposerDialog({
               placeholder="Добавьте подпись"
               value={caption}
               onChange={(event) => setCaption(event.target.value)}
+              inputProps={{ 'aria-label': 'Подпись к медиа' }}
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: 3,
-                  bgcolor: 'rgba(255,255,255,0.06)',
-                  color: '#fff',
+                  bgcolor: '#F5F6F8',
+                  color: '#24272D',
+                },
+                '& .MuiOutlinedInput-input::placeholder': {
+                  color: '#8A909B',
+                  opacity: 1,
                 },
                 '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(255,255,255,0.12)',
+                  borderColor: '#E2E4E8',
+                },
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: '#C8CBD2',
+                },
+                '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: '#FF584F',
                 },
               }}
             />
@@ -1487,15 +1852,15 @@ export function MediaComposerDialog({
                     px: 0.8,
                     py: 0.6,
                     border: '1px solid',
-                    borderColor: currentIndex === index ? 'rgba(255,88,80,0.8)' : 'rgba(255,255,255,0.08)',
-                    bgcolor: currentIndex === index ? 'rgba(255,88,80,0.12)' : 'rgba(255,255,255,0.04)',
+                    borderColor: currentIndex === index ? 'rgba(255,88,80,0.8)' : '#E2E4E8',
+                    bgcolor: currentIndex === index ? '#FFF0EE' : '#F7F8FA',
                   }}
                 >
                   <Stack spacing={0.2} sx={{ alignItems: 'flex-start', minWidth: 0 }}>
                     <Typography sx={{ fontSize: 12, fontWeight: 700 }} noWrap>
                       {index + 1}. {isImageFile(file) ? cropLabel(editorStates[index]?.kind === 'image' ? editorStates[index].cropPreset : 'original') : isVideoFile(file) ? 'Видео' : 'Файл'}
                     </Typography>
-                    <Typography sx={{ fontSize: 11, color: 'rgba(255,255,255,0.68)' }} noWrap>
+                    <Typography sx={{ fontSize: 11, color: '#7A7F89' }} noWrap>
                       {file.name}
                     </Typography>
                   </Stack>

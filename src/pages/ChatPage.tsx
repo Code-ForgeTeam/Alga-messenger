@@ -1038,84 +1038,44 @@ export default function ChatPage() {
   const handlePickFromGallery = async () => {
     setMediaPickerBusy(true);
     try {
-      const { Capacitor: quickCapacitor } = await import('@capacitor/core');
-      if (quickCapacitor.getPlatform() === 'web') {
-        galleryInputRef.current?.click();
-        return;
-      }
-      await loadDeviceGallery();
-      return;
-
-      const [{ Capacitor }, cameraModule] = await Promise.all([
-        import('@capacitor/core'),
-        import('@capacitor/camera'),
-      ]);
+      const { Capacitor } = await import('@capacitor/core');
       const platform = Capacitor.getPlatform();
       if (platform === 'web') {
         galleryInputRef.current?.click();
         return;
       }
+
       if (platform === 'android') {
-        const photos: any[] = [];
-        const filesFromGallery: File[] = [];
-        const thumbs: string[] = [];
         await loadDeviceGallery();
         return;
+      }
 
-        for (let index = 0; index < photos.length; index += 1) {
-          const photo = photos[index];
-          const webPath = String(photo?.webPath || '').trim();
-          if (!webPath) continue;
-          thumbs.push(webPath);
-          try {
-            const file = await fileFromWebPath(webPath, `gallery-${Date.now()}-${index}`);
-            filesFromGallery.push(file);
-          } catch {
-            // keep successfully converted files
-          }
+      const { Camera } = await import('@capacitor/camera');
+      const picked = await Camera.pickImages({ quality: 90, limit: 20 });
+      const photos = Array.isArray(picked?.photos) ? picked.photos : [];
+      const filesFromGallery: File[] = [];
+      const thumbs: string[] = [];
+
+      for (let index = 0; index < photos.length; index += 1) {
+        const photo = photos[index];
+        const webPath = String(photo?.webPath || '').trim();
+        if (!webPath) continue;
+        thumbs.push(webPath);
+        try {
+          const file = await fileFromWebPath(webPath, `gallery-${Date.now()}-${index}`);
+          filesFromGallery.push(file);
+        } catch {
+          // keep successfully converted files
         }
+      }
 
-        if (!filesFromGallery.length) {
-          pushSnackbar({ message: 'Не удалось получить фото из галереи', timeout: 2200, tone: 'error' });
-          return;
-        }
-
-        setMediaPickerThumbs((prev) => [...thumbs, ...prev].slice(0, 24));
-        setMediaPickerOpen(false);
-        await appendAndUploadFiles(filesFromGallery);
+      if (!filesFromGallery.length) {
+        pushSnackbar({ message: 'Не удалось получить фото из галереи', timeout: 2200, tone: 'error' });
         return;
       }
-      if (platform === 'ios') {
-        const { Camera } = cameraModule;
-        const picked = await Camera.pickImages({ quality: 88, limit: 20 });
-        const photos = Array.isArray(picked?.photos) ? picked.photos : [];
-        const filesFromGallery: File[] = [];
-        const thumbs: string[] = [];
 
-        for (let index = 0; index < photos.length; index += 1) {
-          const photo = photos[index];
-          const webPath = String(photo?.webPath || '').trim();
-          if (!webPath) continue;
-          thumbs.push(webPath);
-          try {
-            const file = await fileFromWebPath(webPath, `gallery-${Date.now()}-${index}`);
-            filesFromGallery.push(file);
-          } catch {
-            // keep successfully converted files
-          }
-        }
-
-        if (!filesFromGallery.length) {
-          pushSnackbar({ message: 'Не удалось получить фото из галереи', timeout: 2200, tone: 'error' });
-          return;
-        }
-
-        setMediaPickerThumbs((prev) => [...thumbs, ...prev].slice(0, 24));
-        setMediaPickerOpen(false);
-        await appendAndUploadFiles(filesFromGallery);
-        return;
-      }
-      await loadDeviceGallery();
+      setMediaPickerThumbs((prev) => [...thumbs, ...prev].slice(0, 24));
+      openMediaComposer(filesFromGallery);
     } catch {
       pushSnackbar({ message: 'Не удалось открыть галерею', timeout: 2200, tone: 'error' });
     } finally {
@@ -3305,58 +3265,73 @@ export default function ChatPage() {
           },
         }}
       >
-        <Box sx={{ p: 1.25, '& > .MuiTypography-root:first-of-type': { display: 'none' } }}>
+        <Box sx={{ p: 1.25 }}>
           <Typography sx={{ fontWeight: 700, mb: 1 }}>Выбор медиа</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1 }}>
             <ButtonBase
               disabled={mediaPickerBusy}
               onClick={() => void handleTakePhotoNow()}
               sx={{
-                minHeight: 62,
-                borderRadius: 2,
+                minHeight: 76,
+                borderRadius: 3,
                 border: '1px solid',
                 borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
+                bgcolor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.72)',
                 display: 'grid',
                 placeItems: 'center',
+                transition: 'background-color 180ms ease, border-color 180ms ease',
+                '&:hover': {
+                  bgcolor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.92)',
+                },
               }}
             >
-              <Box sx={{ textAlign: 'center', '& .MuiTypography-root': { display: 'none' } }}>
+              <Box sx={{ textAlign: 'center', display: 'grid', gap: 0.35, placeItems: 'center' }}>
                 <PhotoCameraRoundedIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
-                <Typography variant="caption">Снимок</Typography>
+                <Typography variant="caption" sx={{ fontWeight: 700 }}>Снимок</Typography>
               </Box>
             </ButtonBase>
             <ButtonBase
               disabled={mediaPickerBusy}
               onClick={() => void handlePickFromGallery()}
               sx={{
-                minHeight: 62,
-                borderRadius: 2,
+                minHeight: 76,
+                borderRadius: 3,
                 border: '1px solid',
                 borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
+                bgcolor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.72)',
                 display: 'grid',
                 placeItems: 'center',
+                transition: 'background-color 180ms ease, border-color 180ms ease',
+                '&:hover': {
+                  bgcolor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.92)',
+                },
               }}
             >
-              <Box sx={{ textAlign: 'center', '& .MuiTypography-root': { display: 'none' } }}>
+              <Box sx={{ textAlign: 'center', display: 'grid', gap: 0.35, placeItems: 'center' }}>
                 <CollectionsRoundedIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
-                <Typography variant="caption">Галерея</Typography>
+                <Typography variant="caption" sx={{ fontWeight: 700 }}>Галерея</Typography>
               </Box>
             </ButtonBase>
             <ButtonBase
               disabled={mediaPickerBusy}
               onClick={() => inputRef.current?.click()}
               sx={{
-                minHeight: 62,
-                borderRadius: 2,
+                minHeight: 76,
+                borderRadius: 3,
                 border: '1px solid',
                 borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.14)',
+                bgcolor: isDark ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.72)',
                 display: 'grid',
                 placeItems: 'center',
+                transition: 'background-color 180ms ease, border-color 180ms ease',
+                '&:hover': {
+                  bgcolor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.92)',
+                },
               }}
             >
-              <Box sx={{ textAlign: 'center', '& .MuiTypography-root': { display: 'none' } }}>
+              <Box sx={{ textAlign: 'center', display: 'grid', gap: 0.35, placeItems: 'center' }}>
                 <AttachFileIcon sx={{ fontSize: 28, mb: 0.35, color: isDark ? '#8FC7FF' : '#1FA35B' }} />
-                <Typography variant="caption">Файл</Typography>
+                <Typography variant="caption" sx={{ fontWeight: 700 }}>Файл</Typography>
               </Box>
             </ButtonBase>
           </Box>
