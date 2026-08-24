@@ -24,7 +24,7 @@ import RotateLeftRoundedIcon from '@mui/icons-material/RotateLeftRounded';
 import RotateRightRoundedIcon from '@mui/icons-material/RotateRightRounded';
 import TextFieldsRoundedIcon from '@mui/icons-material/TextFieldsRounded';
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded';
-import type { Theme } from '@mui/material/styles';
+import { alpha, type Theme } from '@mui/material/styles';
 import { trimVideoWithFfmpeg } from '../lib/videoTrim';
 
 type CropPreset = 'original' | 'square' | 'portrait' | 'wide';
@@ -111,6 +111,8 @@ type CropInteraction = {
 };
 
 const BRUSH_COLORS = ['#FF3B30', '#FF9500', '#FFD60A', '#34C759', '#0A84FF', '#FFFFFF'] as const;
+const COMPOSER_ACCENT = '#FF584F';
+const COMPOSER_ACCENT_HOVER = '#F2443A';
 const VIDEO_TRIM_MIN_SECONDS = 0.4;
 
 const isImageFile = (file?: File | null): boolean => Boolean(file?.type.startsWith('image/'));
@@ -202,6 +204,51 @@ const getContainedRect = (contentWidth: number, contentHeight: number, boxWidth:
   return { x: (safeBoxWidth - width) / 2, y: 0, width, height };
 };
 
+const getCoveredRect = (contentWidth: number, contentHeight: number, boxWidth: number, boxHeight: number) => {
+  const safeWidth = Math.max(contentWidth, 1);
+  const safeHeight = Math.max(contentHeight, 1);
+  const safeBoxWidth = Math.max(boxWidth, 1);
+  const safeBoxHeight = Math.max(boxHeight, 1);
+  const contentRatio = safeWidth / safeHeight;
+  const boxRatio = safeBoxWidth / safeBoxHeight;
+
+  if (contentRatio > boxRatio) {
+    const height = safeBoxHeight;
+    const width = height * contentRatio;
+    return { x: (safeBoxWidth - width) / 2, y: 0, width, height };
+  }
+
+  const width = safeBoxWidth;
+  const height = width / contentRatio;
+  return { x: 0, y: (safeBoxHeight - height) / 2, width, height };
+};
+
+const getComposerColors = (theme: Theme) => {
+  const dark = theme.palette.mode === 'dark';
+  return {
+    background: dark ? theme.palette.background.default : '#F8F9FB',
+    header: dark ? alpha(theme.palette.background.paper, 0.96) : alpha('#FFFFFF', 0.96),
+    panel: dark ? alpha(theme.palette.background.paper, 0.98) : alpha('#FFFFFF', 0.96),
+    surface: dark
+      ? `radial-gradient(circle at 50% 0%, ${alpha(COMPOSER_ACCENT, 0.16)}, transparent 40%), #101217`
+      : `radial-gradient(circle at 50% 0%, ${alpha(COMPOSER_ACCENT, 0.08)}, transparent 38%), #F4F5F7`,
+    stage: dark ? '#06070A' : '#FFFFFF',
+    text: theme.palette.text.primary,
+    muted: theme.palette.text.secondary,
+    border: dark ? alpha('#FFFFFF', 0.12) : '#E9EAEE',
+    field: dark ? alpha('#FFFFFF', 0.07) : '#F5F6F8',
+    fieldBorder: dark ? alpha('#FFFFFF', 0.14) : '#E2E4E8',
+    fieldHover: dark ? alpha('#FFFFFF', 0.24) : '#C8CBD2',
+    button: dark ? alpha('#FFFFFF', 0.07) : '#FFFFFF',
+    buttonHover: dark ? alpha('#FFFFFF', 0.12) : '#F7F7F7',
+    active: dark ? alpha(COMPOSER_ACCENT, 0.22) : '#FFF0EE',
+    activeHover: dark ? alpha(COMPOSER_ACCENT, 0.3) : '#FFE5E1',
+    disabled: dark ? alpha('#FFFFFF', 0.04) : '#FAFAFA',
+    disabledText: dark ? alpha('#FFFFFF', 0.34) : '#AAAAAA',
+    shadow: dark ? '0 16px 48px rgba(0,0,0,0.46)' : '0 16px 48px rgba(26,31,39,0.16)',
+  };
+};
+
 const cropLabel = (preset: CropPreset): string => {
   if (preset === 'square') return '1:1';
   if (preset === 'portrait') return '4:5';
@@ -244,46 +291,77 @@ const clampNormalizedCropRect = (
   };
 };
 
-const toolButtonSx = (active: boolean, theme: Theme) => ({
+const toolButtonSx = (active: boolean, theme: Theme) => {
+  const colors = getComposerColors(theme);
+  return {
   minHeight: 38,
   px: 1.35,
   borderRadius: 999,
   border: '1px solid',
-  borderColor: active ? '#FF4B3E' : '#E7E7E7',
-  bgcolor: active ? '#FFF0EE' : '#FFFFFF',
-  color: '#252525',
+  borderColor: active ? COMPOSER_ACCENT : colors.fieldBorder,
+  bgcolor: active ? colors.active : colors.button,
+  color: colors.text,
   flexShrink: 0,
   textTransform: 'none',
   '&:hover': {
-    bgcolor: active ? '#FFE5E1' : '#F7F7F7',
+    bgcolor: active ? colors.activeHover : colors.buttonHover,
   },
   '&.Mui-disabled': {
-    color: '#AAAAAA',
-    borderColor: '#EEEEEE',
-    bgcolor: '#FAFAFA',
+    color: colors.disabledText,
+    borderColor: colors.fieldBorder,
+    bgcolor: colors.disabled,
   },
-});
+};
+};
 
-const roundToolButtonSx = (active: boolean) => ({
-  width: 44,
-  height: 44,
-  minWidth: 44,
-  borderRadius: '50%',
-  color: '#252525',
-  border: '1px solid',
-  borderColor: active ? '#FF4B3E' : '#E7E7E7',
-  bgcolor: active ? '#FFF0EE' : '#FFFFFF',
-  flexShrink: 0,
-  transition: 'background-color 180ms ease, border-color 180ms ease',
-  '&:hover': {
-    bgcolor: active ? '#FFE5E1' : '#F7F7F7',
-  },
-  '&.Mui-disabled': {
-    color: '#B8B8B8',
-    borderColor: '#EEEEEE',
-    bgcolor: '#FAFAFA',
-  },
-});
+const roundToolButtonSx = (active: boolean, theme: Theme) => {
+  const colors = getComposerColors(theme);
+  return {
+    width: 44,
+    height: 44,
+    minWidth: 44,
+    borderRadius: '50%',
+    color: colors.text,
+    border: '1px solid',
+    borderColor: active ? COMPOSER_ACCENT : colors.fieldBorder,
+    bgcolor: active ? colors.active : colors.button,
+    flexShrink: 0,
+    transition: 'background-color 180ms ease, border-color 180ms ease',
+    '&:hover': {
+      bgcolor: active ? colors.activeHover : colors.buttonHover,
+    },
+    '&.Mui-disabled': {
+      color: colors.disabledText,
+      borderColor: colors.fieldBorder,
+      bgcolor: colors.disabled,
+    },
+  };
+};
+
+const composerTextFieldSx = (theme: Theme, mb = 0) => {
+  const colors = getComposerColors(theme);
+  return {
+    mb,
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 3,
+      bgcolor: colors.field,
+      color: colors.text,
+    },
+    '& .MuiOutlinedInput-input::placeholder': {
+      color: colors.muted,
+      opacity: 1,
+    },
+    '& .MuiOutlinedInput-notchedOutline': {
+      borderColor: colors.fieldBorder,
+    },
+    '&:hover .MuiOutlinedInput-notchedOutline': {
+      borderColor: colors.fieldHover,
+    },
+    '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+      borderColor: COMPOSER_ACCENT,
+    },
+  };
+};
 
 const toDisplayPoint = (
   point: NormalizedPoint,
@@ -828,10 +906,16 @@ export function MediaComposerDialog({
     return { width: displayCropRect.sw, height: displayCropRect.sh };
   }, [displayCropRect, rotatedMediaSize]);
 
-  const stageRect = useMemo(
-    () => getContainedRect(displayMediaSize.width || 1, displayMediaSize.height || 1, surfaceSize.width || 1, surfaceSize.height || 1),
-    [displayMediaSize, surfaceSize],
-  );
+  const stageRect = useMemo(() => {
+    const width = displayMediaSize.width || 1;
+    const height = displayMediaSize.height || 1;
+    const boxWidth = surfaceSize.width || 1;
+    const boxHeight = surfaceSize.height || 1;
+    const shouldCoverSurface = Boolean(currentImageState && !(viewMode === 'edit' && toolMode === 'crop'));
+    return shouldCoverSurface
+      ? getCoveredRect(width, height, boxWidth, boxHeight)
+      : getContainedRect(width, height, boxWidth, boxHeight);
+  }, [currentImageState, displayMediaSize, surfaceSize, toolMode, viewMode]);
 
   useEffect(() => {
     if (!currentImageState || !currentPreviewUrl || !previewCanvasRef.current) return;
@@ -1189,35 +1273,52 @@ export function MediaComposerDialog({
   const currentVideoHasEdits = Boolean(currentVideoState && hasVideoEdits(currentVideoState));
 
   return (
-    <Dialog open={open} onClose={busy ? undefined : onClose} fullScreen>
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : onClose}
+      fullScreen
+      PaperProps={{
+        sx: (theme) => ({
+          bgcolor: getComposerColors(theme).background,
+        }),
+      }}
+    >
       <Box
-        sx={{
-          height: '100%',
-          bgcolor: '#F8F9FB',
-          color: '#24272D',
-          display: 'flex',
-          flexDirection: 'column',
+        sx={(theme) => {
+          const colors = getComposerColors(theme);
+          return {
+            height: '100%',
+            bgcolor: colors.background,
+            color: colors.text,
+            display: 'flex',
+            flexDirection: 'column',
+          };
         }}
       >
         <Box
-          sx={{
-            pt: 'max(env(safe-area-inset-top), 10px)',
-            px: 1,
-            pb: 0.8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            borderBottom: '1px solid #E9EAEE',
+          sx={(theme) => {
+            const colors = getComposerColors(theme);
+            return {
+              pt: 'max(env(safe-area-inset-top), 10px)',
+              px: 1,
+              pb: 0.8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              borderBottom: `1px solid ${colors.border}`,
+              bgcolor: colors.header,
+              backdropFilter: 'blur(18px)',
+            };
           }}
         >
-          <IconButton onClick={onClose} disabled={busy} sx={{ color: '#24272D' }}>
+          <IconButton onClick={onClose} disabled={busy} sx={(theme) => ({ color: getComposerColors(theme).text })}>
             <CloseRoundedIcon />
           </IconButton>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ fontWeight: 800, fontSize: 18 }}>
               {viewMode === 'edit' ? 'Редактирование' : 'Предпросмотр'}
             </Typography>
-            <Typography sx={{ color: '#7A7F89', fontSize: 13 }}>
+            <Typography sx={(theme) => ({ color: getComposerColors(theme).muted, fontSize: 13 })}>
               {draftFiles.length} файл(ов)
             </Typography>
           </Box>
@@ -1228,7 +1329,7 @@ export function MediaComposerDialog({
                   aria-label={viewMode === 'edit' ? 'Готово' : 'Редактировать'}
                   onClick={() => setViewMode((prev) => (prev === 'edit' ? 'preview' : 'edit'))}
                   disabled={busy}
-                  sx={roundToolButtonSx(viewMode === 'edit')}
+                  sx={(theme) => roundToolButtonSx(viewMode === 'edit', theme)}
                 >
                   {viewMode === 'edit' ? <DoneRoundedIcon /> : <EditRoundedIcon />}
                 </IconButton>
@@ -1243,12 +1344,12 @@ export function MediaComposerDialog({
             sx={{
               minHeight: 44,
               borderRadius: 999,
-              bgcolor: '#FF584F',
+              bgcolor: COMPOSER_ACCENT,
               color: '#fff',
               px: { xs: 1.45, sm: 1.8 },
               fontWeight: 800,
               textTransform: 'none',
-              '&:hover': { bgcolor: '#F2443A' },
+              '&:hover': { bgcolor: COMPOSER_ACCENT_HOVER },
             }}
           >
             {busy ? 'Загрузка...' : 'Отправить'}
@@ -1258,44 +1359,32 @@ export function MediaComposerDialog({
         <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <Box
             ref={surfaceRef}
-            sx={{
+            sx={(theme) => ({
               position: 'relative',
               flex: 1,
               minHeight: 320,
               overflow: 'hidden',
-              background:
-                'radial-gradient(circle at 50% 0%, rgba(255,88,80,0.08), transparent 38%), #F4F5F7',
-            }}
+              background: getComposerColors(theme).surface,
+            })}
           >
             {currentFile && isImageFile(currentFile) ? (
               <Box
                 ref={stageRef}
-                sx={{
-                  position: 'absolute',
-                  left: stageRect.x,
-                  top: stageRect.y,
-                  width: stageRect.width,
-                  height: stageRect.height,
-                  overflow: 'hidden',
-                  borderRadius: { xs: 2.5, sm: 3 },
-                  bgcolor: '#FFFFFF',
-                  boxShadow: '0 16px 48px rgba(26,31,39,0.16)',
+                sx={(theme) => {
+                  const colors = getComposerColors(theme);
+                  return {
+                    position: 'absolute',
+                    left: stageRect.x,
+                    top: stageRect.y,
+                    width: stageRect.width,
+                    height: stageRect.height,
+                    overflow: 'hidden',
+                    borderRadius: viewMode === 'edit' && toolMode === 'crop' ? { xs: 2.5, sm: 3 } : 0,
+                    bgcolor: colors.stage,
+                    boxShadow: colors.shadow,
+                  };
                 }}
               >
-                <Box
-                  component="img"
-                  src={currentPreviewUrl}
-                  alt=""
-                  draggable={false}
-                  sx={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    opacity: 1,
-                  }}
-                />
                 <Box
                   component="canvas"
                   ref={previewCanvasRef}
@@ -1406,7 +1495,7 @@ export function MediaComposerDialog({
                             height: 18,
                             borderRadius: '4px',
                             bgcolor: '#FFFFFF',
-                            border: '2px solid #FF4B3E',
+                            border: `2px solid ${COMPOSER_ACCENT}`,
                             boxShadow: '0 2px 8px rgba(20,24,31,0.22)',
                             ...position,
                           }}
@@ -1438,17 +1527,20 @@ export function MediaComposerDialog({
                 />
                 {videoProcessingState.active && (
                   <Box
-                    sx={{
-                      position: 'absolute',
-                      left: 16,
-                      right: 16,
-                      bottom: 16,
-                      p: 1.2,
-                      borderRadius: 2.5,
-                      bgcolor: 'rgba(255,255,255,0.94)',
-                      color: '#24272D',
-                      border: '1px solid #E2E4E8',
-                      backdropFilter: 'blur(16px)',
+                    sx={(theme) => {
+                      const colors = getComposerColors(theme);
+                      return {
+                        position: 'absolute',
+                        left: 16,
+                        right: 16,
+                        bottom: 16,
+                        p: 1.2,
+                        borderRadius: 2.5,
+                        bgcolor: colors.panel,
+                        color: colors.text,
+                        border: `1px solid ${colors.fieldBorder}`,
+                        backdropFilter: 'blur(16px)',
+                      };
                     }}
                   >
                     <Typography sx={{ fontSize: 13, fontWeight: 700 }}>
@@ -1459,7 +1551,7 @@ export function MediaComposerDialog({
                         mt: 0.8,
                         height: 6,
                         borderRadius: 999,
-                        bgcolor: '#E6E8EC',
+                        bgcolor: 'rgba(128,128,128,0.22)',
                         overflow: 'hidden',
                       }}
                     >
@@ -1468,7 +1560,7 @@ export function MediaComposerDialog({
                           width: `${Math.max(4, Math.round(videoProcessingState.progress * 100))}%`,
                           height: '100%',
                           borderRadius: 999,
-                          background: 'linear-gradient(90deg, #FF7A6F 0%, #FF584F 100%)',
+                          background: `linear-gradient(90deg, #FF7A6F 0%, ${COMPOSER_ACCENT} 100%)`,
                         }}
                       />
                     </Box>
@@ -1478,7 +1570,7 @@ export function MediaComposerDialog({
             ) : currentFile ? (
               <Stack spacing={1.2} sx={{ px: 2.5, pt: 8, alignItems: 'center', textAlign: 'center' }}>
                 <Typography sx={{ fontWeight: 700, fontSize: 16 }}>{currentFile.name}</Typography>
-                <Typography sx={{ color: '#7A7F89', fontSize: 13 }}>
+                <Typography sx={(theme) => ({ color: getComposerColors(theme).muted, fontSize: 13 })}>
                   Для этого типа вложения доступен только предпросмотр перед отправкой.
                 </Typography>
               </Stack>
@@ -1489,15 +1581,18 @@ export function MediaComposerDialog({
                 <IconButton
                   onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
                   disabled={currentIndex <= 0}
-                  sx={{
+                  sx={(theme) => {
+                    const colors = getComposerColors(theme);
+                    return {
                     position: 'absolute',
                     left: 10,
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    color: '#24272D',
-                    bgcolor: 'rgba(255,255,255,0.92)',
+                    color: colors.text,
+                    bgcolor: colors.panel,
                     boxShadow: '0 4px 14px rgba(30,36,45,0.14)',
-                    '&:hover': { bgcolor: '#FFFFFF' },
+                    '&:hover': { bgcolor: colors.buttonHover },
+                  };
                   }}
                 >
                   <ArrowBackIosNewRoundedIcon />
@@ -1505,15 +1600,18 @@ export function MediaComposerDialog({
                 <IconButton
                   onClick={() => setCurrentIndex((prev) => Math.min(draftFiles.length - 1, prev + 1))}
                   disabled={currentIndex >= draftFiles.length - 1}
-                  sx={{
+                  sx={(theme) => {
+                    const colors = getComposerColors(theme);
+                    return {
                     position: 'absolute',
                     right: 10,
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    color: '#24272D',
-                    bgcolor: 'rgba(255,255,255,0.92)',
+                    color: colors.text,
+                    bgcolor: colors.panel,
                     boxShadow: '0 4px 14px rgba(30,36,45,0.14)',
-                    '&:hover': { bgcolor: '#FFFFFF' },
+                    '&:hover': { bgcolor: colors.buttonHover },
+                  };
                   }}
                 >
                   <ArrowForwardIosRoundedIcon />
@@ -1523,11 +1621,14 @@ export function MediaComposerDialog({
           </Box>
 
           <Box
-            sx={{
-              p: 1.1,
-              borderTop: '1px solid #E9EAEE',
-              bgcolor: 'rgba(255,255,255,0.96)',
-              backdropFilter: 'blur(18px)',
+            sx={(theme) => {
+              const colors = getComposerColors(theme);
+              return {
+                p: 1.1,
+                borderTop: `1px solid ${colors.border}`,
+                bgcolor: colors.panel,
+                backdropFilter: 'blur(18px)',
+              };
             }}
           >
             {viewMode === 'preview' && (
@@ -1630,45 +1731,45 @@ export function MediaComposerDialog({
 
                 <Stack direction="row" spacing={1} sx={{ mb: 1, overflowX: 'auto', pb: 0.3, alignItems: 'center' }}>
                   <Tooltip title="Кисть">
-                    <IconButton aria-label="Кисть" onClick={() => setToolMode('draw')} sx={roundToolButtonSx(toolMode === 'draw')}>
+                    <IconButton aria-label="Кисть" onClick={() => setToolMode('draw')} sx={(theme) => roundToolButtonSx(toolMode === 'draw', theme)}>
                       <BrushRoundedIcon />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Стрелка">
-                    <IconButton aria-label="Стрелка" onClick={() => setToolMode('arrow')} sx={roundToolButtonSx(toolMode === 'arrow')}>
+                    <IconButton aria-label="Стрелка" onClick={() => setToolMode('arrow')} sx={(theme) => roundToolButtonSx(toolMode === 'arrow', theme)}>
                       <ArrowOutwardRoundedIcon />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Размытие">
-                    <IconButton aria-label="Размытие" onClick={() => setToolMode('blur')} sx={roundToolButtonSx(toolMode === 'blur')}>
+                    <IconButton aria-label="Размытие" onClick={() => setToolMode('blur')} sx={(theme) => roundToolButtonSx(toolMode === 'blur', theme)}>
                       <BlurOnRoundedIcon />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Текст">
-                    <IconButton aria-label="Текст" onClick={() => setToolMode('text')} sx={roundToolButtonSx(toolMode === 'text')}>
+                    <IconButton aria-label="Текст" onClick={() => setToolMode('text')} sx={(theme) => roundToolButtonSx(toolMode === 'text', theme)}>
                       <TextFieldsRoundedIcon />
                     </IconButton>
                   </Tooltip>
-                  <Box sx={{ width: 1, height: 30, bgcolor: '#E2E4E8', flexShrink: 0 }} />
+                  <Box sx={(theme) => ({ width: 1, height: 30, bgcolor: getComposerColors(theme).fieldBorder, flexShrink: 0 })} />
                   <Tooltip title="Отменить">
                     <span>
                       <IconButton
                         aria-label="Отменить"
                         onClick={undoCurrentImageChange}
                         disabled={!currentImageHasHistory}
-                        sx={roundToolButtonSx(currentImageHasHistory)}
+                        sx={(theme) => roundToolButtonSx(currentImageHasHistory, theme)}
                       >
                         <UndoRoundedIcon />
                       </IconButton>
                     </span>
                   </Tooltip>
                   <Tooltip title="Сбросить правки">
-                    <IconButton aria-label="Сбросить правки" onClick={clearCurrentImageEdits} sx={roundToolButtonSx(false)}>
+                    <IconButton aria-label="Сбросить правки" onClick={clearCurrentImageEdits} sx={(theme) => roundToolButtonSx(false, theme)}>
                       <DoneRoundedIcon />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Убрать файл">
-                    <IconButton aria-label="Убрать файл" onClick={removeCurrentFile} sx={roundToolButtonSx(false)}>
+                    <IconButton aria-label="Убрать файл" onClick={removeCurrentFile} sx={(theme) => roundToolButtonSx(false, theme)}>
                       <DeleteOutlineRoundedIcon />
                     </IconButton>
                   </Tooltip>
@@ -1707,7 +1808,7 @@ export function MediaComposerDialog({
                         if (toolMode === 'text') setTextSize(next);
                         else setBrushSize(next);
                       }}
-                      sx={{ color: '#FF584F' }}
+                      sx={{ color: COMPOSER_ACCENT }}
                     />
                   </Box>
                 </Stack>
@@ -1719,27 +1820,7 @@ export function MediaComposerDialog({
                     value={textOverlayValue}
                     onChange={(event) => setTextOverlayValue(event.target.value)}
                     inputProps={{ 'aria-label': 'Текст на фото' }}
-                    sx={{
-                      mb: 1,
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: 3,
-                        bgcolor: '#F5F6F8',
-                        color: '#24272D',
-                      },
-                      '& .MuiOutlinedInput-input::placeholder': {
-                        color: '#8A909B',
-                        opacity: 1,
-                      },
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#E2E4E8',
-                      },
-                      '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#C8CBD2',
-                      },
-                      '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#FF584F',
-                      },
-                    }}
+                    sx={(theme) => composerTextFieldSx(theme, 1)}
                   />
                 )}
               </>
@@ -1748,7 +1829,7 @@ export function MediaComposerDialog({
             {!!currentVideoState && viewMode === 'edit' && (
               <Stack spacing={1} sx={{ mb: 1.1 }}>
                 <Typography sx={{ fontWeight: 700 }}>Видео</Typography>
-                <Typography sx={{ fontSize: 13, color: '#7A7F89' }}>
+                <Typography sx={(theme) => ({ fontSize: 13, color: getComposerColors(theme).muted })}>
                   Обрезка работает в браузере best-effort. На поддерживаемых устройствах клип экспортируется как новый файл.
                 </Typography>
                 <Box>
@@ -1774,7 +1855,7 @@ export function MediaComposerDialog({
                         posterTime: Math.min(Math.max(state.posterTime, start), Math.min(safeEnd, state.duration || safeEnd)),
                       }));
                     }}
-                    sx={{ color: '#FF584F' }}
+                    sx={{ color: COMPOSER_ACCENT }}
                   />
                 </Box>
                 <Box>
@@ -1818,26 +1899,7 @@ export function MediaComposerDialog({
               value={caption}
               onChange={(event) => setCaption(event.target.value)}
               inputProps={{ 'aria-label': 'Подпись к медиа' }}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 3,
-                  bgcolor: '#F5F6F8',
-                  color: '#24272D',
-                },
-                '& .MuiOutlinedInput-input::placeholder': {
-                  color: '#8A909B',
-                  opacity: 1,
-                },
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: '#E2E4E8',
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: '#C8CBD2',
-                },
-                '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                  borderColor: '#FF584F',
-                },
-              }}
+              sx={(theme) => composerTextFieldSx(theme)}
             />
 
             <Stack direction="row" spacing={0.8} sx={{ mt: 1.1, overflowX: 'auto', pb: 0.2 }}>
@@ -1845,22 +1907,29 @@ export function MediaComposerDialog({
                 <Button
                   key={`${file.name}-${index}`}
                   onClick={() => setCurrentIndex(index)}
-                  sx={{
-                    minWidth: 96,
-                    justifyContent: 'flex-start',
-                    borderRadius: 2.5,
-                    px: 0.8,
-                    py: 0.6,
-                    border: '1px solid',
-                    borderColor: currentIndex === index ? 'rgba(255,88,80,0.8)' : '#E2E4E8',
-                    bgcolor: currentIndex === index ? '#FFF0EE' : '#F7F8FA',
+                  sx={(theme) => {
+                    const colors = getComposerColors(theme);
+                    return {
+                      minWidth: 96,
+                      justifyContent: 'flex-start',
+                      borderRadius: 2.5,
+                      px: 0.8,
+                      py: 0.6,
+                      border: '1px solid',
+                      borderColor: currentIndex === index ? alpha(COMPOSER_ACCENT, 0.8) : colors.fieldBorder,
+                      bgcolor: currentIndex === index ? colors.active : colors.field,
+                      color: colors.text,
+                      '&:hover': {
+                        bgcolor: currentIndex === index ? colors.activeHover : colors.buttonHover,
+                      },
+                    };
                   }}
                 >
                   <Stack spacing={0.2} sx={{ alignItems: 'flex-start', minWidth: 0 }}>
                     <Typography sx={{ fontSize: 12, fontWeight: 700 }} noWrap>
                       {index + 1}. {isImageFile(file) ? cropLabel(editorStates[index]?.kind === 'image' ? editorStates[index].cropPreset : 'original') : isVideoFile(file) ? 'Видео' : 'Файл'}
                     </Typography>
-                    <Typography sx={{ fontSize: 11, color: '#7A7F89' }} noWrap>
+                    <Typography sx={(theme) => ({ fontSize: 11, color: getComposerColors(theme).muted })} noWrap>
                       {file.name}
                     </Typography>
                   </Stack>
